@@ -9,6 +9,7 @@ jackson = "3.2.3"
 jsoup = "1.23.2"
 wiremock = "3.13.2"
 pmd = "7.28.0"
+langchain4jBgeSmall = "1.20.2-beta30"
 
 [libraries]
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
@@ -19,6 +20,7 @@ archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref
 jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 wiremock-standalone = { module = "org.wiremock:wiremock-standalone", version.ref = "wiremock" }
+langchain4j-embeddings-bge-small-en-v15-q = { module = "dev.langchain4j:langchain4j-embeddings-bge-small-en-v15-q", version.ref = "langchain4jBgeSmall" }
 pmd-cli = { module = "net.sourceforge.pmd:pmd-cli", version.ref = "pmd" }
 pmd-java = { module = "net.sourceforge.pmd:pmd-java", version.ref = "pmd" }
 
