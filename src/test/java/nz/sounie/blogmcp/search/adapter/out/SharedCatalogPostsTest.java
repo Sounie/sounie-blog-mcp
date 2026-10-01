@@ -2,6 +2,9 @@ package nz.sounie.blogmcp.search.adapter.out;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Set;
 import nz.sounie.blogmcp.search.domain.PostToIndex;
@@ -61,5 +64,20 @@ class SharedCatalogPostsTest {
   @Test
   void an_empty_catalog_gives_no_posts() {
     assertThat(new SharedCatalogPosts(new FakeCatalogPosts()).currentPosts()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("A malformed state is logged and skipped; the other posts are still translated")
+  void skips_and_logs_a_malformed_state() {
+    CatalogPostState malformed = state("sounie-wp:3", "elegant", "FULL");
+    CatalogPostState valid = state("sounie-wp:4", "sounie-wp", "FULL");
+    ByteArrayOutputStream errors = new ByteArrayOutputStream();
+    var posts =
+        new SharedCatalogPosts(
+                new FakeCatalogPosts(malformed, valid),
+                new PrintStream(errors, true, StandardCharsets.UTF_8))
+            .currentPosts();
+    assertThat(posts).extracting(post -> post.id().external()).containsExactly("sounie-wp:4");
+    assertThat(errors.toString(StandardCharsets.UTF_8)).contains("sounie-wp:3");
   }
 }

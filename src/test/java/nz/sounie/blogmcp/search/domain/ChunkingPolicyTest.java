@@ -1,6 +1,8 @@
 package nz.sounie.blogmcp.search.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.HashSet;
 import java.util.List;
@@ -138,5 +140,55 @@ class ChunkingPolicyTest {
   @Test
   void chunk_text_is_words_joined_by_single_spaces() {
     assertThat(new Chunk(0, List.of("a", "b", "c")).text()).isEqualTo("a b c");
+  }
+
+  @Test
+  @DisplayName(
+      "A word that alone exceeds the budget becomes its own chunk, so chunking always ends")
+  void a_word_over_the_whole_budget_is_its_own_chunk() {
+    TokenCounter hugeWord = word -> word.equals("huge") ? 500 : 1;
+    List<Chunk> chunks = policy.chunk(WordSequence.of("a huge b"), hugeWord);
+    assertThat(chunks)
+        .containsExactly(
+            new Chunk(0, List.of("a")), new Chunk(1, List.of("huge")), new Chunk(2, List.of("b")));
+  }
+
+  @Test
+  void rejects_a_target_or_budget_below_one_and_a_negative_overlap() {
+    assertThatThrownBy(() -> new ChunkingPolicy(0, 400, 50, 100))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new ChunkingPolicy(300, 0, 50, 100))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new ChunkingPolicy(300, 400, -1, 100))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new ChunkingPolicy(300, 400, 50, -1))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void accepts_the_smallest_parameters() {
+    assertThatCode(() -> new ChunkingPolicy(1, 1, 0, 0)).doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("The overlap leaves room for the next word, so a chunk is never only overlap")
+  void overlap_leaves_room_for_an_expensive_next_word() {
+    TokenCounter costly = word -> word.equals("big") ? 350 : 2;
+    List<Chunk> chunks = policy.chunk(WordSequence.of(Words.numbered(60) + " big"), costly);
+    assertThat(chunks).hasSize(2);
+    assertThat(chunks.get(0).words()).isEqualTo(Words.range(1, 60));
+    assertThat(chunks.get(1).words()).startsWith("w36").endsWith("big");
+    assertThat(cost(chunks.get(1), costly)).isEqualTo(ChunkingPolicy.BODY_TOKEN_BUDGET);
+  }
+
+  @Test
+  @DisplayName("An overlap as long as the target still moves on by at least one word")
+  void each_chunk_starts_at_least_one_word_after_the_previous_start() {
+    ChunkingPolicy wideOverlap = new ChunkingPolicy(2, 400, 5, 100);
+    assertThat(wideOverlap.chunk(WordSequence.of("a b c d"), FakeTokenCounter.perWord(1)))
+        .containsExactly(
+            new Chunk(0, List.of("a", "b")),
+            new Chunk(1, List.of("b", "c")),
+            new Chunk(2, List.of("c", "d")));
   }
 }

@@ -1,14 +1,29 @@
 package nz.sounie.blogmcp.search.domain;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Set;
 
 /**
  * The catalog's current state of one post, in search language. The single input to every index
  * decision, whether it came from an event or from a reconcile.
+ *
+ * <p>The compact constructor throws {@link MalformedCatalogPost} if the metadata's site ID is not
+ * the post ID's site part.
  */
 public record PostToIndex(
     PostId id, Completeness completeness, PostMetadata metadata, String title, String body) {
+
+  public PostToIndex {
+    Objects.requireNonNull(id, "id");
+    Objects.requireNonNull(completeness, "completeness");
+    Objects.requireNonNull(title, "title");
+    Objects.requireNonNull(body, "body");
+    if (!metadata.siteId().equals(id.siteId())) {
+      throw new MalformedCatalogPost(
+          "Site ID " + metadata.siteId().value() + " differs from post ID " + id.external());
+    }
+  }
 
   /**
    * Translates a published-language payload. Called by both anti-corruption adapters.
@@ -27,6 +42,16 @@ public record PostToIndex(
       Set<String> tags,
       Instant publishedAt,
       Instant updatedAt) {
-    throw new UnsupportedOperationException("not implemented");
+    return new PostToIndex(
+        PostId.parse(postId),
+        Completeness.parse(completeness),
+        new PostMetadata(new SiteId(siteId), canonicalUrl, title, tags, publishedAt, updatedAt),
+        title,
+        body);
+  }
+
+  /** The content fingerprint of this post's title and body under the given recipe. */
+  public ContentFingerprint fingerprintUnder(IndexRecipe recipe) {
+    return ContentFingerprint.of(recipe, title, WordSequence.of(body));
   }
 }

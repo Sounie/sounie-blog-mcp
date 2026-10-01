@@ -55,7 +55,7 @@ final class IntegrationEvents {
     };
   }
 
-  private static <T> Set<String> names(Collection<T> items, Function<T, String> name) {
+  static <T> Set<String> names(Collection<T> items, Function<T, String> name) {
     Set<String> names = new LinkedHashSet<>();
     items.forEach(item -> names.add(name.apply(item)));
     return Collections.unmodifiableSet(names);

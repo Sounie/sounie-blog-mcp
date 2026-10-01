@@ -6,25 +6,35 @@ import java.time.ZoneId;
 
 /**
  * Optional inclusive {@code from} and {@code to} calendar dates in the blog time zone {@link
- * #ZONE}.
+ * #ZONE}. An absent bound is held as {@link LocalDate#MIN} or {@link LocalDate#MAX}.
  */
 public final class PublishedDateRange {
 
   /** The blog time zone: NZST (UTC+12) or NZDT (UTC+13). */
   public static final ZoneId ZONE = ZoneId.of("Pacific/Auckland");
 
-  private PublishedDateRange() {}
+  private final LocalDate from;
+  private final LocalDate to;
+
+  private PublishedDateRange(LocalDate from, LocalDate to) {
+    if (from.isAfter(to)) {
+      throw new InvalidSearchQuery(
+          InvalidSearchQuery.Reason.FROM_AFTER_TO, "From " + from + " is after to " + to);
+    }
+    this.from = from;
+    this.to = to;
+  }
 
   public static PublishedDateRange unbounded() {
-    throw new UnsupportedOperationException("not implemented");
+    return new PublishedDateRange(LocalDate.MIN, LocalDate.MAX);
   }
 
   public static PublishedDateRange from(LocalDate from) {
-    throw new UnsupportedOperationException("not implemented");
+    return new PublishedDateRange(from, LocalDate.MAX);
   }
 
   public static PublishedDateRange to(LocalDate to) {
-    throw new UnsupportedOperationException("not implemented");
+    return new PublishedDateRange(LocalDate.MIN, to);
   }
 
   /**
@@ -32,11 +42,12 @@ public final class PublishedDateRange {
    *     to}
    */
   public static PublishedDateRange between(LocalDate from, LocalDate to) {
-    throw new UnsupportedOperationException("not implemented");
+    return new PublishedDateRange(from, to);
   }
 
   /** Whether the instant's calendar date in {@link #ZONE} is within the range. */
   public boolean includes(Instant publishedAt) {
-    throw new UnsupportedOperationException("not implemented");
+    LocalDate day = LocalDate.ofInstant(publishedAt, ZONE);
+    return !day.isBefore(from) && !day.isAfter(to);
   }
 }

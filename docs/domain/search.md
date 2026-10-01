@@ -58,7 +58,7 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Embedder | Port for the local embedding model. Its only production implementation is `OnnxEmbedder`, the only class that touches LangChain4j. | `Embedder` (domain port) |
 | Embedding | A vector of exactly 384 finite floats, normalised to unit length when it is created. The model already uses CLS pooling with L2 normalisation, so in practice this is a defensive no-op. | `Embedding` |
 | Similarity | The cosine similarity of two embeddings. Because embeddings are unit length, this is their dot product. Its range is [-1, 1], and higher means more related. | `Similarity` |
-| Index recipe | The identity of the method used to build an index entry: model ID, chunking policy parameters and passage composition version, e.g. `bge-small-en-v1.5-q/w300-o50-t400-tt64-c64/p1`. Changing any part makes every entry stale. | `IndexRecipe` |
+| Index recipe | The identity of the method used to build an index entry: model ID, chunking policy parameters and passage composition version, e.g. `bge-small-en-v1.5-q/w300-t400-o50-oc100-c64/tt64-p1` (model ID; target words, body tokens, overlap words, overlap token cap, maximum word characters; title tokens and composition version). Changing any part makes every entry stale. | `IndexRecipe` |
 | Content fingerprint | SHA-256 over the index recipe, the normalised title and the normalised body. If two posts have the same fingerprint, they produce the same passages. Tags and other metadata are **not** included. | `ContentFingerprint` |
 | Indexed post | The aggregate: one post's metadata, its content fingerprint and its indexed chunks. | `IndexedPost` |
 | Indexed chunk | A chunk's index and text together with its embedding. | `IndexedChunk` |
@@ -181,6 +181,8 @@ Algorithm (deterministic):
    exceed 300 words or 400 body tokens.
 2. The next chunk starts at the longest suffix of the previous chunk that has at most 50 words **and**
    at most 100 tokens, but always at least one word after the previous start, so every chunk adds at least one new word.
+   The overlap also leaves room in the 400-token budget for the next word. With words of at most 64 tokens this never
+   binds, but after an unusually expensive word it shrinks the overlap instead of producing a chunk that is only overlap.
 3. Chunking stops when the chunk just closed contains the last word. No chunk consists only of overlap.
 4. An empty word sequence gives **one** chunk with empty text, so the passage is the title alone.
    If the title is also empty, the result is **zero** chunks.

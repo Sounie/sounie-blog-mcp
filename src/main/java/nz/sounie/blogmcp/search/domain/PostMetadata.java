@@ -1,6 +1,7 @@
 package nz.sounie.blogmcp.search.domain;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -13,4 +14,14 @@ public record PostMetadata(
     String title,
     Set<String> tags,
     Instant publishedAt,
-    Instant updatedAt) {}
+    Instant updatedAt) {
+
+  public PostMetadata {
+    Objects.requireNonNull(siteId, "siteId");
+    Objects.requireNonNull(canonicalUrl, "canonicalUrl");
+    Objects.requireNonNull(title, "title");
+    Objects.requireNonNull(publishedAt, "publishedAt");
+    Objects.requireNonNull(updatedAt, "updatedAt");
+    tags = Set.copyOf(tags);
+  }
+}

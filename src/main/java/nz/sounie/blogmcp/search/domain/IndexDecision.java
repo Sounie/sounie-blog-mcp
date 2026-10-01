@@ -1,5 +1,6 @@
 package nz.sounie.blogmcp.search.domain;
 
+import java.util.Objects;
 import java.util.Optional;
 
 /** What must happen to one post's index entry. */
@@ -15,55 +16,71 @@ public sealed interface IndexDecision {
    */
   static IndexDecision forPost(
       Optional<IndexedPost> existing, PostToIndex post, ContentFingerprint current) {
-    throw new UnsupportedOperationException("not implemented");
+    return post.completeness().decide(existing, post, current);
   }
 
   /** A {@code FULL} post with no entry. */
   static IndexDecision forAbsent(PostToIndex post) {
-    throw new UnsupportedOperationException("not implemented");
+    return new Add(post);
   }
 
   /** A withdrawal or an orphan. */
   static IndexDecision remove(PostId id) {
-    throw new UnsupportedOperationException("not implemented");
+    return new Remove(id);
   }
 
   /** Not indexed yet: index and save. Outcome {@code ADDED}. */
   record Add(PostToIndex post) implements IndexDecision {
+    public Add {
+      Objects.requireNonNull(post, "post");
+    }
+
     @Override
     public PostId postId() {
-      throw new UnsupportedOperationException("not implemented");
+      return post.id();
     }
 
     @Override
     public IndexOutcome apply(IndexWork work) {
-      throw new UnsupportedOperationException("not implemented");
+      work.indexAndSave(post);
+      return IndexOutcome.ADDED;
     }
   }
 
   /** The fingerprint differs: index again and replace. Outcome {@code RE_EMBEDDED}. */
   record ReEmbed(PostToIndex post) implements IndexDecision {
+    public ReEmbed {
+      Objects.requireNonNull(post, "post");
+    }
+
     @Override
     public PostId postId() {
-      throw new UnsupportedOperationException("not implemented");
+      return post.id();
     }
 
     @Override
     public IndexOutcome apply(IndexWork work) {
-      throw new UnsupportedOperationException("not implemented");
+      work.indexAndSave(post);
+      return IndexOutcome.RE_EMBEDDED;
     }
   }
 
   /** Same fingerprint, different metadata: save without embedding. */
   record RefreshMetadata(IndexedPost existing, PostMetadata metadata) implements IndexDecision {
+    public RefreshMetadata {
+      Objects.requireNonNull(existing, "existing");
+      Objects.requireNonNull(metadata, "metadata");
+    }
+
     @Override
     public PostId postId() {
-      throw new UnsupportedOperationException("not implemented");
+      return existing.id();
     }
 
     @Override
     public IndexOutcome apply(IndexWork work) {
-      throw new UnsupportedOperationException("not implemented");
+      work.index().save(existing.withMetadata(metadata));
+      return IndexOutcome.METADATA_REFRESHED;
     }
   }
 
@@ -71,7 +88,7 @@ public sealed interface IndexDecision {
   record Keep(PostId postId) implements IndexDecision {
     @Override
     public IndexOutcome apply(IndexWork work) {
-      throw new UnsupportedOperationException("not implemented");
+      return IndexOutcome.UNCHANGED;
     }
   }
 
@@ -79,7 +96,7 @@ public sealed interface IndexDecision {
   record Exclude(PostId postId) implements IndexDecision {
     @Override
     public IndexOutcome apply(IndexWork work) {
-      throw new UnsupportedOperationException("not implemented");
+      return work.index().remove(postId) ? IndexOutcome.REMOVED : IndexOutcome.EXCLUDED;
     }
   }
 
@@ -87,7 +104,7 @@ public sealed interface IndexDecision {
   record Remove(PostId postId) implements IndexDecision {
     @Override
     public IndexOutcome apply(IndexWork work) {
-      throw new UnsupportedOperationException("not implemented");
+      return work.index().remove(postId) ? IndexOutcome.REMOVED : IndexOutcome.ALREADY_ABSENT;
     }
   }
 }

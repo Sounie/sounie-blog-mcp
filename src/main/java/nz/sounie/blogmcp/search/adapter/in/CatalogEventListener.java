@@ -1,6 +1,7 @@
 package nz.sounie.blogmcp.search.adapter.in;
 
 import java.io.PrintStream;
+import java.util.Objects;
 import nz.sounie.blogmcp.search.application.IndexPost;
 import nz.sounie.blogmcp.shared.event.InProcessEventBus;
 import nz.sounie.blogmcp.shared.event.IntegrationEvent;
@@ -12,14 +13,32 @@ import nz.sounie.blogmcp.shared.event.IntegrationEvent;
  */
 public final class CatalogEventListener {
 
-  public CatalogEventListener(IndexPost indexPost, PrintStream errors) {}
+  private final IndexPost indexPost;
+  private final PrintStream errors;
+
+  public CatalogEventListener(IndexPost indexPost, PrintStream errors) {
+    this.indexPost = Objects.requireNonNull(indexPost, "indexPost");
+    this.errors = Objects.requireNonNull(errors, "errors");
+  }
 
   /** Subscribes to every catalog integration event. */
   public void subscribeTo(InProcessEventBus bus) {
-    throw new UnsupportedOperationException("not implemented");
+    bus.subscribe(IntegrationEvent.class, this::on);
   }
 
   public void on(IntegrationEvent event) {
-    throw new UnsupportedOperationException("not implemented");
+    try {
+      indexPost.apply(CatalogEventTranslation.toChange(event));
+    } catch (RuntimeException e) {
+      // The bus is synchronous: rethrowing would abort the catalog sync. The next reconcile
+      // repairs.
+      errors.println(
+          "search: could not index catalog post "
+              + CatalogEventTranslation.postIdOf(event)
+              + " ("
+              + event.getClass().getSimpleName()
+              + "): "
+              + e);
+    }
   }
 }

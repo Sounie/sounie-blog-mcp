@@ -37,6 +37,8 @@ tasks.test {
     // cannot write. DJL 0.36.0 reads DJL_CACHE_DIR as an environment variable or system property.
     val djlCache = layout.buildDirectory.dir("djl-cache")
     systemProperty("DJL_CACHE_DIR", djlCache.get().asFile.absolutePath)
+    // DJL loads its tokenizer library through JNA, which calls a restricted JDK method.
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
 // Complexity budget (ADR 0004): keeps execution paths per method small, so each type needs few

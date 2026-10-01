@@ -8,4 +8,8 @@ public final class EmbedderUnavailable extends RuntimeException {
   public EmbedderUnavailable(String message) {
     super(message);
   }
+
+  public EmbedderUnavailable(String message, Throwable cause) {
+    super(message, cause);
+  }
 }

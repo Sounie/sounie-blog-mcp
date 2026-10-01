@@ -1,6 +1,7 @@
 package nz.sounie.blogmcp.search.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class IndexRecipeTest {
 
@@ -62,5 +64,11 @@ class IndexRecipeTest {
   @DisplayName("AC-SRCH-32: the query instruction is not part of the recipe")
   void query_instruction_is_not_part_of_the_recipe() {
     assertThat(standard().id()).doesNotContain(QueryPassage.INSTRUCTION.strip());
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"", " "})
+  void rejects_a_blank_id(String id) {
+    assertThatThrownBy(() -> new IndexRecipe(id)).isInstanceOf(IllegalArgumentException.class);
   }
 }

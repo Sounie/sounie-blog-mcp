@@ -10,7 +10,7 @@ public sealed interface IndexChange {
   record Upsert(PostToIndex post) implements IndexChange {
     @Override
     public IndexOutcome applyTo(IndexWork work) {
-      throw new UnsupportedOperationException("not implemented");
+      return work.decisionFor(post).apply(work);
     }
   }
 
@@ -18,7 +18,7 @@ public sealed interface IndexChange {
   record Remove(PostId postId) implements IndexChange {
     @Override
     public IndexOutcome applyTo(IndexWork work) {
-      throw new UnsupportedOperationException("not implemented");
+      return IndexDecision.remove(postId).apply(work);
     }
   }
 }

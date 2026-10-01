@@ -7,7 +7,5 @@ public record ChunkHit(int chunkIndex, String text, Similarity similarity) {
 
   /** Similarity descending, then chunk index ascending. */
   public static final Comparator<ChunkHit> BEST_FIRST =
-      (a, b) -> {
-        throw new UnsupportedOperationException("not implemented");
-      };
+      Comparator.comparing(ChunkHit::similarity).reversed().thenComparingInt(ChunkHit::chunkIndex);
 }

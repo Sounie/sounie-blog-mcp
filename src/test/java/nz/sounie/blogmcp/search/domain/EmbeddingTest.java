@@ -95,4 +95,11 @@ class EmbeddingTest {
     }
     return Math.sqrt(sum);
   }
+
+  @Test
+  void embeddings_with_the_same_values_are_equal() {
+    assertThat(Vectors.axis(3)).isEqualTo(Vectors.axis(3)).hasSameHashCodeAs(Vectors.axis(3));
+    assertThat(Vectors.axis(3)).isNotEqualTo(Vectors.axis(4)).isNotEqualTo("not an embedding");
+    assertThat(Vectors.axis(3).hashCode()).isNotEqualTo(Vectors.axis(4).hashCode());
+  }
 }

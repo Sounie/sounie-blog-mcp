@@ -1,5 +1,7 @@
 package nz.sounie.blogmcp.search.domain;
 
+import java.util.Objects;
+
 /** Which sites a search covers. */
 public sealed interface SiteFilter {
 
@@ -9,15 +11,19 @@ public sealed interface SiteFilter {
   record AnySite() implements SiteFilter {
     @Override
     public boolean includes(SiteId siteId) {
-      throw new UnsupportedOperationException("not implemented");
+      return true;
     }
   }
 
   /** One site only. */
   record OnlySite(SiteId siteId) implements SiteFilter {
+    public OnlySite {
+      Objects.requireNonNull(siteId, "siteId");
+    }
+
     @Override
     public boolean includes(SiteId candidate) {
-      throw new UnsupportedOperationException("not implemented");
+      return siteId.equals(candidate);
     }
   }
 }

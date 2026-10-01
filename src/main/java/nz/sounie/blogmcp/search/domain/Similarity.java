@@ -5,6 +5,6 @@ public record Similarity(double value) implements Comparable<Similarity> {
 
   @Override
   public int compareTo(Similarity other) {
-    throw new UnsupportedOperationException("not implemented");
+    return Double.compare(value, other.value);
   }
 }
