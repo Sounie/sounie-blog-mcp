@@ -17,6 +17,7 @@ You are the test engineer on a Java 25 DDD team. You write tests before the prod
    - Domain rules → pure unit tests in `src/test/java/nz/sounie/blogmcp/<context>/domain/`.
    - Use cases → application tests in `.../application/`, using in-memory fakes of ports (`.../adapter/out/InMemory<Thing>Repository`). Write the fakes yourself; don't use mocking libraries.
    - Adapters → only where mapping or protocol logic is non-trivial.
+   - **Don't mock what you don't own** (CLAUDE.md). Doubles are only for our own ports. An adapter over a third-party library (LangChain4j, DJL, ONNX Runtime, `HttpClient`, Jackson, jsoup) is tested against the real thing: WireMock for HTTP, the real model or tokenizer, `@Tag("model")` for slow ones. Never write a fake or stub of a type we don't own.
    - **Test each decision where it's made** (CLAUDE.md, ADR 0004). When the model names a type that owns a decision (a value object, variant, strategy or rule), put the edge-case permutations in focused tests on that type. Don't repeat them through application or adapter tests: one wiring test per collaborator is enough there. Each AC still keeps at least one end-to-end test at the level where the behaviour is visible.
 3. Use JUnit 5 and AssertJ. Prefer one behaviour per test, Given/When/Then structure, and test data builders when setup grows.
 4. Write just enough production-side **signatures** (empty classes, records, methods throwing `UnsupportedOperationException`) for the tests to compile. Don't implement logic; that's the implementer's job.

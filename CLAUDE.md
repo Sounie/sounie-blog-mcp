@@ -53,6 +53,7 @@ Suppressing a PMD rule is allowed only on the narrowest element, with `@Suppress
 - **Domain**: many fast, pure unit tests. No mocks needed.
 - **Application**: test use cases with in-memory fakes of ports (put them in `src/test/.../adapter/out/InMemory*`). Prefer fakes to mocking libraries.
 - **Adapters**: a few focused integration tests where the mapping or protocol is non-trivial.
+- **Don't mock what you don't own.** Test doubles (fakes, stubs) stand in only for our own ports (e.g. `BlogSource`, `PostRepository`, `Embedder`, `TokenCounter`, `VectorIndex`, `CatalogPosts`). Never write a double of a third-party type: no fake LangChain4j model, DJL tokenizer, ONNX session, `HttpClient`, Jackson mapper or jsoup document. An adapter that wraps a library we don't own is tested against the real library: real HTTP via WireMock, the real BGE model and tokenizer, real Jackson and jsoup. Tag slow real-model tests `@Tag("model")`.
 - Don't test getters, record accessors, or framework wiring for its own sake.
 - **Test each decision where it's made.** A type needs about as many tests as its own paths, plus one per collaborator wiring. Keep acceptance-criteria tests as integration coverage, but don't repeat a lower type's edge cases in application or adapter tests.
 - Gates: JaCoCo ≥ 90% line coverage on `domain` + `application`; PIT ≥ 80% mutation score on `domain`.
