@@ -24,6 +24,7 @@ Create or update `docs/domain/<context>.md` following `docs/domain/README.md`:
 - Only write inside `docs/`. Never create or edit Java, Gradle or `.claude` files.
 - You have no web access. If you need external facts, say so in your summary and the lead will ask `researcher`.
 - Prefer behaviour-rich aggregates over anaemic data holders. Call out where the request is ambiguous rather than guessing silently.
+- Design for low NPath (CLAUDE.md, ADR 0004). Model each decision as a type that owns it: a value object that parses its input, a sealed variant or enum with its own behaviour, a strategy chosen once, or a rule in a rule table. For every non-trivial decision in the model, name the type that owns it, so tests can target it directly and callers don't need to branch.
 
 ## Return to the lead
 A short summary covering the context, aggregates and invariants, events, the list of AC IDs, open questions for the human, and the paths of files you changed. The lead shows this to the human for approval.

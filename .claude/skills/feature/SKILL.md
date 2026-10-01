@@ -19,7 +19,7 @@ Give `domain-modeler` the feature request. If the modeller raises a question abo
 Give `test-engineer` the approved model file path and the AC IDs. Check its report: every AC is mapped to a test, and the tests fail for the right reason. If a test passes before implementation, send it back.
 
 ## 3. Green (`java-implementer`)
-Give `java-implementer` the model, the failing test list, and `CLAUDE.md`. Expect `./gw check` to be green, plus the JaCoCo and PIT numbers. If the implementer says a test is wrong, take it to `test-engineer`. If they still disagree, ask the user.
+Give `java-implementer` the model, the failing test list, and `CLAUDE.md`. Expect `./gw check` to be green, including zero `pmdComplexity` violations, plus the JaCoCo and PIT numbers and any justified suppressions. If the implementer says a test is wrong, take it to `test-engineer`. If they still disagree, ask the user.
 
 ## 4. Review (`code-reviewer`)
 Run `code-reviewer`.
@@ -32,7 +32,7 @@ Run `./gw check pitest` yourself once to confirm the final state.
 ## 5. Pull request
 Don't use the `gh` CLI; it can't verify TLS inside the sandbox. Use the project scripts, which read `GH_TOKEN` without storing it.
 - `scripts/git-remote push`
-- Write the PR body to `$TMPDIR/pr-body.md`, following `.github/pull_request_template.md`. Fill it in from the model summary, the AC checklist, the gate results, the reviewer findings and how each was resolved, and known gaps.
+- Write the PR body to `$TMPDIR/pr-body.md`, following `.github/pull_request_template.md`. Fill it in from the model summary, the AC checklist, the gate results (including PMD complexity and any suppressions), the reviewer findings and how each was resolved, and known gaps.
 - `scripts/open-pr "<type>(<context>): <summary>" "$TMPDIR/pr-body.md"`. It prints the PR URL.
 
 **⏸ CHECKPOINT: give the user the PR URL and a 3-line summary.** The user reviews and merges. Never merge yourself.
