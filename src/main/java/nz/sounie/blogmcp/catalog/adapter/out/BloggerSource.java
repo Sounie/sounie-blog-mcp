@@ -67,7 +67,10 @@ public final class BloggerSource implements BlogSource {
     List<JsonNode> entries = feed.path("entry").values().stream().toList();
     BloggerEntryMapper mapper = new BloggerEntryMapper(site, htmlToText);
     PagingRule paging =
-        PagingRule.from(feed.path("openSearch$totalResults").path(TEXT).asStringOpt(), MAX_RESULTS);
+        new PagingRule.ShortPageEnds(
+            PagingRule.from(
+                feed.path("openSearch$totalResults").path(TEXT).asStringOpt(), MAX_RESULTS),
+            MAX_RESULTS);
     return new SourcePage(
         entries.stream().map(mapper::map).toList(), nextCursor(cursor, entries.size(), paging));
   }
@@ -89,13 +92,14 @@ public final class BloggerSource implements BlogSource {
   }
 
   /**
-   * The total counts entries; the listing has been read up to the last entry received. A short page
-   * always ends a Blogger listing, whatever the total says.
+   * The total counts entries; the listing has been read up to the last entry received. The rule
+   * ({@link PagingRule.ShortPageEnds}) also ends the listing on a short page.
    */
   private static Optional<PageCursor> nextCursor(
       PageCursor cursor, int received, PagingRule paging) {
     int nextIndex = cursor.value() + received;
-    boolean more = received >= MAX_RESULTS && paging.hasMore(nextIndex - 1, received);
-    return more ? Optional.of(new PageCursor(nextIndex)) : Optional.empty();
+    return paging.hasMore(nextIndex - 1, received)
+        ? Optional.of(new PageCursor(nextIndex))
+        : Optional.empty();
   }
 }

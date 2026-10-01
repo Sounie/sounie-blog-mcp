@@ -46,4 +46,15 @@ sealed interface PagingRule {
       return received >= pageSize;
     }
   }
+
+  /**
+   * A short page always ends the listing, whatever the wrapped rule says. Blogger: paging stops on
+   * a page of fewer than {@code pageSize} entries even when a total is reported.
+   */
+  record ShortPageEnds(PagingRule rule, int pageSize) implements PagingRule {
+    @Override
+    public boolean hasMore(int reached, int received) {
+      return received >= pageSize && rule.hasMore(reached, received);
+    }
+  }
 }

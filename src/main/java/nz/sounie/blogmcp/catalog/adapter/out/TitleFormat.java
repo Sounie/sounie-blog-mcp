@@ -23,7 +23,10 @@ enum TitleFormat {
 
   abstract String toPlainText(String raw, HtmlToText htmlToText);
 
-  /** The format named by an Atom {@code type} attribute; an absent or unknown type is text. */
+  /**
+   * The format named by an Atom {@code type} attribute. An unknown type is text; callers supply
+   * {@code "text"} for an absent type.
+   */
   static TitleFormat ofAtomType(String type) {
     return BY_ATOM_TYPE.getOrDefault(type, TEXT);
   }

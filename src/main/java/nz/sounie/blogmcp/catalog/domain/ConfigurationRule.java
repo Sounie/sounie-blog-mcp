@@ -2,8 +2,8 @@ package nz.sounie.blogmcp.catalog.domain;
 
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Stream;
 import nz.sounie.blogmcp.catalog.domain.SitesConfigurationViolation.Kind;
 
@@ -27,7 +27,8 @@ enum ConfigurationRule {
     List<SitesConfigurationViolation> check(List<SiteDefinition> definitions) {
       Stream<String> validIds =
           definitions.stream().map(SiteDefinition::id).filter(SiteId::isValid);
-      return repeats(validIds, Kind.DUPLICATE_SITE_ID, "site ID used more than once: ");
+      return repeats(
+          validIds, Function.identity(), Kind.DUPLICATE_SITE_ID, "site ID used more than once: ");
     }
   },
   UNIQUE_BASE_URLS {
@@ -36,22 +37,32 @@ enum ConfigurationRule {
       Stream<String> validBaseUrls =
           definitions.stream()
               .map(SiteDefinition::baseUrl)
-              .map(Site::validBaseUrl)
-              .flatMap(Optional::stream)
-              .map(Site::comparableBaseUrl);
-      return repeats(validBaseUrls, Kind.DUPLICATE_BASE_URL, "base URL used more than once: ");
+              .filter(text -> Site.validBaseUrl(text).isPresent());
+      return repeats(
+          validBaseUrls,
+          ConfigurationRule::comparableBaseUrl,
+          Kind.DUPLICATE_BASE_URL,
+          "base URL used more than once: ");
     }
   };
 
   abstract List<SitesConfigurationViolation> check(List<SiteDefinition> definitions);
 
-  /** One violation for every value that was already seen earlier in the stream. */
+  /**
+   * One violation for every value whose key was already seen earlier in the stream. The detail
+   * shows the value as the owner wrote it, never the key.
+   */
   private static List<SitesConfigurationViolation> repeats(
-      Stream<String> values, Kind kind, String label) {
-    Set<String> seen = new HashSet<>();
+      Stream<String> values, Function<String, String> key, Kind kind, String label) {
+    Set<String> seenKeys = new HashSet<>();
     return values
-        .filter(value -> !seen.add(value))
+        .filter(value -> !seenKeys.add(key.apply(value)))
         .map(value -> new SitesConfigurationViolation(kind, label + value))
         .toList();
+  }
+
+  /** Only called for text already known to be a valid base URL. */
+  private static String comparableBaseUrl(String validBaseUrl) {
+    return Site.validBaseUrl(validBaseUrl).map(Site::comparableBaseUrl).orElseThrow();
   }
 }
