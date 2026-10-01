@@ -61,4 +61,38 @@ class PagingRuleTest {
   void until_short_page_stops_on_a_short_or_empty_page(int received) {
     assertThat(new PagingRule.UntilShortPage(PAGE_SIZE).hasMore(1, received)).isFalse();
   }
+
+  // --- ShortPageEnds (Blogger): a short page ends the listing whatever the wrapped rule says ---
+
+  private static final int FEED_PAGE = 150;
+  private static final PagingRule SAYS_MORE = new PagingRule.KnownTotal(3);
+  private static final PagingRule SAYS_DONE = new PagingRule.KnownTotal(1);
+
+  @ParameterizedTest
+  @ValueSource(ints = {FEED_PAGE - 1, 59, 0})
+  @DisplayName("AC-CAT-4: a short page ends the listing even when the total says more")
+  void short_page_ends_the_listing_even_when_the_wrapped_rule_says_more(int received) {
+    assertThat(SAYS_MORE.hasMore(1, received)).as("wrapped rule alone").isTrue();
+
+    assertThat(new PagingRule.ShortPageEnds(SAYS_MORE, FEED_PAGE).hasMore(1, received)).isFalse();
+  }
+
+  @Test
+  void full_page_defers_to_the_wrapped_rule_when_it_says_more() {
+    assertThat(new PagingRule.ShortPageEnds(SAYS_MORE, FEED_PAGE).hasMore(1, FEED_PAGE)).isTrue();
+  }
+
+  @Test
+  void full_page_defers_to_the_wrapped_rule_when_it_says_done() {
+    assertThat(new PagingRule.ShortPageEnds(SAYS_DONE, FEED_PAGE).hasMore(1, FEED_PAGE)).isFalse();
+  }
+
+  @Test
+  void a_page_of_exactly_page_size_entries_counts_as_full() {
+    PagingRule rule =
+        new PagingRule.ShortPageEnds(new PagingRule.UntilShortPage(FEED_PAGE), FEED_PAGE);
+
+    assertThat(rule.hasMore(1, FEED_PAGE)).isTrue();
+    assertThat(rule.hasMore(1, FEED_PAGE - 1)).isFalse();
+  }
 }
