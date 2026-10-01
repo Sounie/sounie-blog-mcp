@@ -27,13 +27,13 @@ It is **not** responsible for:
 |---|---|---|
 | Site | One blog the owner has configured. It has a site ID, a platform and a base URL. Sites come from configuration, and the catalog never creates them. | `Site` |
 | Site ID | Owner-chosen, stable, lower-case slug that identifies a site (`[a-z0-9-]{1,40}`, e.g. `sounie-wp`). It is part of every post ID, so renaming it re-identifies every post of that site. | `SiteId` |
-| Platform | The blogging software behind a site: `WORDPRESS` or `BLOGGER`. | `Platform` |
+| Platform | The blogging software behind a site: `WORDPRESS` or `BLOGGER`. In the sites configuration, platform names match case-insensitively (`wordpress`, `WordPress` and `WORDPRESS` are all accepted). | `Platform` |
 | Base URL | Absolute `https` URL of the site (scheme, host and optionally a path, but no query or fragment). Its host is the **site host**. | `Site.baseUrl()` |
 | Sites configuration | The validated set of all sites. It is valid only as a whole (see invariants). | `SitesConfiguration` |
 | Post | One published blog post as the catalog knows it. It is the aggregate root. | `Post` |
 | Source post ID | The platform's own identifier for a post, as a string. WordPress: the numeric `id`. Blogger: the digits after `.post-` in `id.$t`. Never derived from the slug or URL, because those can change. | `SourcePostId` |
 | Post ID | The catalog-wide identity of a post: site ID plus source post ID. Its external form is `<siteId>:<sourcePostId>`, e.g. `sounie-wp:123`. | `PostId` |
-| Title | Plain-text title with HTML entities decoded. It may be empty, but is never null. | `Title` |
+| Title | Plain-text title. Any markup in the platform title (tags such as `<em>` or `<code>`) is removed and HTML entities are decoded, so it contains no HTML at all. It may be empty, but is never null. | `Title` |
 | Canonical URL | The public address of the post (WordPress `link`, Blogger `link[rel=alternate]`). It must be absolute `https` on the site host. | `CanonicalUrl` |
 | Published at / Updated at | Instants (UTC) at which the platform says the post was first published and last modified. | `publishedAt`, `updatedAt` |
 | Tag | Plain-text label attached to a post. Tags are compared case-insensitively and the casing seen first is kept. WordPress **tags** (resolved from their IDs) and Blogger labels become tags. WordPress **categories are ignored entirely**. | `Tag` |
@@ -46,16 +46,17 @@ It is **not** responsible for:
 | Source page | One page of source entries, plus whether more pages follow. | `SourcePage` |
 | Change order | The order in which a blog source returns changed entries: `OLDEST_FIRST`, `NEWEST_FIRST` or `UNORDERED`. It decides when the checkpoint may advance. WordPress is `OLDEST_FIRST` and Blogger is `NEWEST_FIRST` (both verified). | `ChangeOrder` |
 | Publish (a post) | Add a post the catalog has not seen before. | `Post.publish(...)` |
-| Revise (a post) | Apply a newer snapshot to a known post. A revision is **material** only if the title, body, body completeness, tags, canonical URL or published-at changed. | `Post.revise(...)` returns `Revision` |
+| Revise (a post) | Apply a snapshot to a known post, checked against the post's site exactly like publish. A revision is **material** only if the title, body, body completeness, tags, canonical URL or published-at changed. | `Revision Post.revise(Site site, PostSnapshot snapshot)` |
 | Withdraw (a post) | Remove a post from the catalog because it is no longer publicly listed. | `Post.withdraw(reason)` |
 | Withdrawal reason | `NO_LONGER_LISTED` (missing from a complete reconcile), `NO_LONGER_PUBLIC` (seen as not public, e.g. password-protected) or `SITE_REMOVED` (its site is no longer in the sites configuration; AC-CAT-32). | `WithdrawalReason` |
 | Sync | One run that brings a site's posts up to date with its blog source. A sync is either **incremental** (from the checkpoint) or a **reconcile**. | `SyncSite` use case |
 | Checkpoint | Per-site high-water mark: the latest `updatedAt` up to which every changed entry is known to have been handled. It is absent before the first successful sync. | `SyncCheckpoint` aggregate |
 | Overlap margin | How far before the checkpoint an incremental sync starts asking for changes, to tolerate equal timestamps and paging shifts. It is fixed at **1 hour** (owner decision, Q4). It does **not** need to cover site timezone offsets, because sources always send an explicit UTC offset (see 3.4). | `OverlapMargin` |
-| Reconcile | A full pass over every entry of a site, ignoring the checkpoint. It applies all snapshots and then withdraws posts that were not listed. It runs at most once a day per site. | `SyncSite` in `RECONCILE` mode |
-| Sync report | Outcome of one sync: mode, outcome, pages fetched, counts of published, revised, unchanged and withdrawn posts, skipped entries with their reasons, and the checkpoint before and after. | `SyncReport` |
+| Reconcile | A full pass over every entry of a site, ignoring the checkpoint. It applies all snapshots and then withdraws posts that were not listed. A reconcile is **due** only when the last one is *strictly* older than 24 hours, or there has never been one. `SyncAllSites.run(RECONCILE)` forces a reconcile of every site, whether due or not. | `SyncSite` in `RECONCILE` mode |
+| Sync report | Outcome of one sync: mode, outcome, pages fetched, counts of published, revised, unchanged and withdrawn posts, skipped entries with their reasons, warnings, and the checkpoint before and after. `Touched` and `Stale` revisions count as **unchanged**. A stored post that is seen as not public counts as **withdrawn**. | `SyncReport` |
+| Sync warning | Something the owner should know about that did not stop an entry being applied. Kinds: `SOURCE_NOTE` (a source-side oddity, e.g. an unresolvable WordPress tag ID); `EMPTY_LISTING_WITHDRAWALS_SUPPRESSED` (a complete reconcile listed zero entries, so nothing was withdrawn); `UNIDENTIFIED_MALFORMED_ENTRY_WITHDRAWALS_SUPPRESSED` (a reconcile met a malformed entry with no readable source post ID, so nothing was withdrawn). | `SyncWarning` (with `SyncWarning.Kind`) |
 | Sync outcome | `COMPLETED` (every page was handled), `PARTIAL` (failed after at least one page was handled), `FAILED` (no page was handled) or `SKIPPED` (a sync for the same site was already running). | `SyncOutcome` |
-| Skipped entry | A source entry that was not applied, with its source post ID (if readable) and reason: `MALFORMED`, `NOT_PUBLIC` or `DUPLICATE_CANONICAL_URL`. An unresolvable tag ID is *not* a skip; it is only noted in the report (AC-CAT-8). | `SkippedEntry` |
+| Skipped entry | A source entry that was not applied, with its source post ID (if readable) and reason: `MALFORMED`, `NOT_PUBLIC` or `DUPLICATE_CANONICAL_URL`. An unresolvable WordPress tag ID is *not* a skip; it is a `SyncWarning` of kind `SOURCE_NOTE` (AC-CAT-8). | `SkippedEntry` |
 | Get post | Look up one post by post ID or by URL. | `GetPost` use case |
 
 ## 3. Aggregates
@@ -67,7 +68,7 @@ State: `PostId id`, `CanonicalUrl url`, `Title title`, `Body body`, `BodyComplet
 
 Behaviour:
 - `static Published Post.publish(Site site, PostSnapshot s)` creates the post and returns it with a `PostPublished` event.
-- `Revision revise(PostSnapshot s)` returns one of:
+- `Revision revise(Site site, PostSnapshot snapshot)` first enforces invariants 1 and 2, exactly like `publish`: it throws `PostIdentityMismatch` if the snapshot is for another post, and `CanonicalUrlNotOnSite` if the URL is not https on `site`'s host. It then returns one of:
   - `Revision.Changed(PostRevised event)` when the snapshot is not older and something material changed;
   - `Revision.Touched` when only `updatedAt` moved forward (the new `updatedAt` is recorded, and no event is raised);
   - `Revision.Unchanged` when nothing changed;
@@ -75,8 +76,8 @@ Behaviour:
 - `PostWithdrawn withdraw(WithdrawalReason reason)`. The post is then deleted from the repository. No tombstone is kept, so a post that comes back is published again (AC-CAT-24).
 
 Invariants:
-1. **Identity**: `PostId` = (`SiteId`, `SourcePostId`). It is assigned once and never changes. A snapshot whose ID belongs to a different post is rejected (`PostIdentityMismatch`).
-2. **Canonical URL**: absolute, scheme `https`, and host equal (ignoring case) to the site host. Otherwise the snapshot is invalid (`CanonicalUrlNotOnSite`) and the entry is skipped as malformed. An `http` link is **never** upgraded to `https`; it makes the entry malformed (owner decision, Q7; AC-CAT-16).
+1. **Identity**: `PostId` = (`SiteId`, `SourcePostId`). It is assigned once and never changes. A snapshot whose ID belongs to a different post is rejected by `revise` (`PostIdentityMismatch`).
+2. **Canonical URL**: absolute, scheme `https`, and host equal (ignoring case) to the site host. This is checked by both `publish` and `revise`. Otherwise the snapshot is invalid (`CanonicalUrlNotOnSite`) and the entry is skipped as malformed. An `http` link is **never** upgraded to `https`; it makes the entry malformed (owner decision, Q7; AC-CAT-16).
 3. **Timestamps**: `updatedAt` is never earlier than `publishedAt`. If a source reports `updated < published`, the snapshot normalises `updatedAt := publishedAt`. A post's `updatedAt` **never moves backwards**: a stale snapshot is ignored (`Revision.Stale`).
 4. **Material change**: `PostRevised` is raised only when at least one of title, body, completeness, tag set (compared without regard to order or case), canonical URL or published-at differs. A snapshot with the *same* `updatedAt` but different content (for example after a short feed was switched to full) is still applied.
 5. **Tags**: trimmed, not blank, de-duplicated without regard to case. An empty set is allowed.
@@ -97,7 +98,7 @@ Behaviour and invariants:
    - `OLDEST_FIRST`: after a page has been fully handled (every entry applied, skipped or reported, and every changed post saved), the checkpoint advances to the greatest `updatedAt` on that page and is saved. A failure on a later page leaves it at the last fully handled page.
    - `NEWEST_FIRST` or `UNORDERED`: the checkpoint advances only once, after the **last** page, to the greatest `updatedAt` seen in the run. A failure leaves it unchanged. Posts already saved stay saved, and seeing them again later causes no event.
    - Malformed and not-public entries with a readable `updatedAt` count towards the high-water mark, so one permanently bad entry cannot pin the checkpoint. A daily reconcile retries them.
-5. `markReconciled(Instant now)` sets `lastReconciledAt`. It is only called after a reconcile with outcome `COMPLETED`. A reconcile is due when `lastReconciledAt` is empty or older than 24 hours (local clock, which is acceptable for scheduling).
+5. `markReconciled(Instant now)` sets `lastReconciledAt`. It is only called after a reconcile with outcome `COMPLETED`. A reconcile is due when `lastReconciledAt` is empty or *strictly* older than 24 hours (exactly 24 hours is not yet due). This uses the local clock, which is acceptable for scheduling. A reconcile that withdrew nothing because of a suppression warning does not call `markReconciled`, so it is retried on the next run.
 
 ### 3.3 `Site` and `SitesConfiguration` (reference data, not aggregates)
 
@@ -106,7 +107,7 @@ changes. `SitesConfiguration` validates the whole list and reports **all** viola
 one `InvalidSitesConfiguration` exception:
 - at least one site. An empty list is invalid, and a **missing** configuration file is a startup error (`SitesConfigurationMissing`, raised by the `SiteDirectory` adapter) naming the path it looked at (owner decision, Q6; AC-CAT-25);
 - site IDs unique and matching `[a-z0-9-]{1,40}`;
-- platform is one of the supported values (an unknown string such as `"ghost"` is a violation, not a crash);
+- platform is one of the supported values, matched case-insensitively (an unknown string such as `"ghost"` is a violation, not a crash);
 - base URL absolute, `https`, with a host, and with no query or fragment;
 - no two sites with the same base URL.
 
@@ -117,6 +118,10 @@ behind the domain port `SiteDirectory`.
 
 - `BlogSource`: `ChangeOrder changeOrder()`, `SourcePage fetch(Site site, Optional<Instant> changedSince, PageCursor cursor)`. It throws `SourceUnavailable` on transport or HTTP failure. Adapters choose by `Platform`.
   Contract for every implementation: `changedSince` is an `Instant` and must be sent to the platform **with an explicit UTC offset** (`Z` or `+00:00`), never as a zone-less local date-time. Zone-less values are interpreted in the site's local time by WordPress (AC-CAT-5).
+  **No false completeness**: a source must never report a page as the last one when the listing may be truncated.
+  - A response whose body has an unexpected shape (not the expected JSON object or array, or a missing entries container where one is required) is `SourceUnavailable`, never an empty page.
+  - A missing or unparseable total count (`X-WP-TotalPages`, `openSearch$totalResults`) means "keep paging until a short or empty page", never "no more pages".
+  - Why: a reconcile that wrongly believes it saw the complete listing would withdraw every post it did not see.
 - `PostRepository`: `findById(PostId)`, `findByCanonicalUrl(CanonicalUrl)`, `findIdsBySite(SiteId)`, `findSiteIds()`, `save(Post)`, `delete(PostId)`.
 - `SyncCheckpointRepository`: `find(SiteId)`, `save(SyncCheckpoint)`, `delete(SiteId)`.
 - `SiteDirectory`: `SitesConfiguration load()`.
@@ -125,7 +130,7 @@ behind the domain port `SiteDirectory`.
 ### 3.5 Application use cases (`catalog.application`)
 
 - `SyncSite(siteId, mode = INCREMENTAL | RECONCILE)` returns a `SyncReport`. For each entry it loads, publishes or revises, and saves **one post at a time** (one aggregate per transaction). It then advances and saves the checkpoint according to 3.2. A reconcile withdraws only if the run `COMPLETED` (see AC-CAT-21 to AC-CAT-23). At most one sync runs per site at any moment, and a second request returns `SKIPPED`.
-- `SyncAllSites(mode)` runs `SyncSite` for each configured site independently. A failure in one site does not stop the others. It uses `RECONCILE` for a site whose reconcile is due. Before syncing, it withdraws every stored post whose site ID is not in the (valid) sites configuration, with reason `SITE_REMOVED`, and deletes that site's checkpoint (owner decision, Q5; AC-CAT-32).
+- `SyncAllSites(mode)` runs `SyncSite` for each configured site independently. A failure in one site does not stop the others. `run(INCREMENTAL)` uses `RECONCILE` only for a site whose reconcile is due. `run(RECONCILE)` forces a reconcile of every site. Before syncing, it withdraws every stored post whose site ID is not in the (valid) sites configuration, with reason `SITE_REMOVED`, and deletes that site's checkpoint (owner decision, Q5; AC-CAT-32).
 - `GetPost(PostId | url)` returns `Optional<PostView>`. URL lookup **normalises**: lower-case scheme and host, `http` is treated as `https`, the fragment is dropped, the default port is dropped, and a trailing slash on the path is ignored. The query string is kept.
 - Scheduling (run at startup in the background, then every 6 hours) lives in an inbound adapter.
 
@@ -198,6 +203,7 @@ And the WordPress request carries `modified_after=2026-09-20T00:20:47Z` (Blogger
 Given a WordPress entry with `title.rendered` = `Don&#8217;t &amp; &lt;panic&gt;` and `content.rendered` = `<p>One&nbsp;line</p><script>x()</script><pre>  a\n  b</pre><p>Two</p>`,
 When it is applied,
 Then the post title is `Don’t & <panic>`, and the body contains `One line`, a paragraph break, the `pre` text with its leading spaces and newline kept, and `Two`, with no `x()` and no tags.
+And given a WordPress `title.rendered`, or an equivalent Blogger `title.$t`, of `Hello <em>World</em> &amp; more`, the post title is `Hello World & more` (markup removed, entities decoded).
 
 **AC-CAT-7: Timestamps are interpreted as UTC.**
 Given a WordPress entry with `date_gmt` `2026-09-20T01:20:47` (no zone), and a Blogger entry with `updated.$t` `2026-03-23T20:53:00.001+00:00`,
@@ -207,7 +213,7 @@ Then the stored instants are `2026-09-20T01:20:47Z` and `2026-03-23T20:53:00.001
 **AC-CAT-8: WordPress tag IDs resolve to tag names, and categories are ignored.**
 Given an entry with `tags: [5, 7, 99]` and `categories: [1, 3]`, where `/wp-json/wp/v2/tags` defines tag 5 `java` and tag 7 `Java`, and tag 99 does not exist,
 When it is applied,
-Then the post's tags are `{java}` (`Java` collapsed as a case-insensitive duplicate), the unknown tag ID 99 is dropped and noted in the report, the post is **not** skipped, the categories contribute nothing, and no request is made to `/wp-json/wp/v2/categories`.
+Then the post's tags are `{java}` (`Java` collapsed as a case-insensitive duplicate), the unknown tag ID 99 is dropped and reported as a `SyncWarning` of kind `SOURCE_NOTE`, the post is **not** skipped, the categories contribute nothing, and no request is made to `/wp-json/wp/v2/categories`.
 
 **AC-CAT-9: Blogger labels become tags.**
 Given a Blogger entry with `category: [{term: "DDD"}, {term: " ddd "}, {term: "Java"}]`,
@@ -252,6 +258,7 @@ and when the post was already stored, then it is withdrawn with reason `NO_LONGE
 Given a page of 3 entries where the middle one is malformed, for each of: missing `id`; unparseable `modified_gmt`; canonical URL `http://blog2.sounie.nz/x` (never upgraded to https); canonical URL on another host `https://evil.example/x`,
 When the page is applied,
 Then the other 2 entries are stored with their events, the malformed entry appears in the report with its source post ID (if readable) and reason, the outcome is `COMPLETED`, and the checkpoint advances as for a normal page.
+And this applies to revisions too: if the malformed entry is for an already stored post (for example its canonical URL is now `http://…` or on another host), `revise` rejects it, the stored post is left unchanged, no event is published, and the entry is reported as skipped `MALFORMED`.
 
 **AC-CAT-17: Duplicate canonical URL.**
 Given stored post `sounie-wp:123` with URL `https://blog2.sounie.nz/a/`, and an entry for source post ID `456` with the same canonical URL,
@@ -290,7 +297,7 @@ Given stored post `sounie-wp:2` and a complete reconcile in which the entry for 
 When the reconcile finishes,
 Then `sounie-wp:2` is **not** withdrawn.
 And given a complete reconcile containing a malformed entry whose source post ID cannot be read,
-Then no posts of that site are withdrawn in that run, and the report says so.
+Then no posts of that site are withdrawn in that run, the report carries the warning `UNIDENTIFIED_MALFORMED_ENTRY_WITHDRAWALS_SUPPRESSED`, and `lastReconciledAt` is unchanged, so the reconcile is retried on the next run.
 
 **AC-CAT-24: A withdrawn post that comes back is published again.**
 Given `sounie-wp:2` was withdrawn earlier,
@@ -303,6 +310,7 @@ Then it is stored and one `PostPublished` is published.
 Given a configuration with two sites both using ID `blog`, one with platform `ghost`, and one with base URL `http://blog2.sounie.nz`,
 When it is loaded,
 Then `InvalidSitesConfiguration` is raised listing all three violations (duplicate ID, unsupported platform, non-https base URL), and no sync starts. The same exception is raised for an empty site list, an ID that does not match `[a-z0-9-]{1,40}`, a base URL with a query or fragment, and two sites with the same base URL.
+And a platform written as `WordPress` or `blogger` is accepted (case-insensitive match).
 And given no configuration file at the resolved path (`BLOG_MCP_CONFIG` or `~/.config/blog-mcp/sites.json`), startup fails with `SitesConfigurationMissing` naming that path, and no sync starts.
 
 **AC-CAT-26: Sites sync independently.**
@@ -319,6 +327,7 @@ Then it returns immediately with outcome `SKIPPED` and changes nothing.
 Given site `sounie-wp` with `lastReconciledAt` 25 hours ago (or never), and site `elegant` reconciled 2 hours ago,
 When `SyncAllSites` runs,
 Then `sounie-wp` is synced in `RECONCILE` mode and `elegant` in `INCREMENTAL` mode.
+And a site reconciled exactly 24 hours ago is not yet due (it must be strictly older). And `SyncAllSites.run(RECONCILE)` reconciles both sites regardless.
 
 **AC-CAT-32: Posts of a site removed from the configuration are withdrawn.**
 Given stored posts `old-blog:1` and `old-blog:2` and a checkpoint for `old-blog`, and a valid sites configuration that no longer contains `old-blog`,
@@ -355,4 +364,13 @@ And when it is called with `not-an-id` or a non-URL string, then `InvalidPostRef
 - **Q5 (resolved 2026-10-01, owner): when a site is removed from the configuration, its posts are withdrawn** with `SITE_REMOVED` and its checkpoint is deleted (3.5, AC-CAT-32).
 - **Q6 (resolved 2026-10-01, owner): a missing configuration file or an empty site list is a startup error**, not a silent no-op (3.3, AC-CAT-25).
 - **Q7 (resolved 2026-10-01, owner): an `http` canonical URL makes the entry malformed.** It is never upgraded to https (3.1 invariant 2, AC-CAT-16).
+- **Lead decisions (2026-10-01, recorded at review and encoded in the tests):**
+  - An unresolvable WordPress tag ID is a `SyncWarning` of kind `SOURCE_NOTE`, not a skipped entry (AC-CAT-8).
+  - An unidentified malformed entry in a reconcile suppresses all withdrawals, raises `UNIDENTIFIED_MALFORMED_ENTRY_WITHDRAWALS_SUPPRESSED` and leaves `lastReconciledAt` unchanged, so the reconcile is retried on the next run (AC-CAT-23).
+  - A reconcile is due only when the last one is strictly older than 24 hours (AC-CAT-28).
+  - `SyncAllSites.run(RECONCILE)` forces a reconcile of every site (AC-CAT-28).
+  - Platform names in the configuration match case-insensitively (AC-CAT-25).
+  - `Post.revise(Site, PostSnapshot)` enforces identity and the canonical-URL invariant just as `publish` does (AC-CAT-16).
+  - Sources must never report false completeness for a truncated listing (3.4).
+  - Titles are plain text with all markup removed.
 - **Q8 (open, lead, for slice 2): event delivery.** Delivery is in-process and at most once, with no outbox. `search` will need a way to rebuild its index from the catalog (for example a `ListPosts` query or a replay), which is out of scope for this slice.

@@ -96,7 +96,7 @@ class PostTest {
     void identical_snapshot_is_unchanged() {
       Post post = stored.buildStoredPost();
 
-      Revision revision = post.revise(stored.build());
+      Revision revision = post.revise(SOUNIE_WP, stored.build());
 
       assertThat(revision).isInstanceOf(Revision.Unchanged.class);
       assertThat(post.updatedAt()).isEqualTo(T1);
@@ -109,7 +109,7 @@ class PostTest {
       PostSnapshot snapshot =
           aSnapshot().sourcePostId("123").title("New").tags("DDD", "Java").updatedAt(T2).build();
 
-      Revision revision = post.revise(snapshot);
+      Revision revision = post.revise(SOUNIE_WP, snapshot);
 
       assertThat(revision).isInstanceOf(Revision.Changed.class);
       PostRevised event = ((Revision.Changed) revision).event();
@@ -133,7 +133,7 @@ class PostTest {
               .updatedAt(T2)
               .build();
 
-      PostRevised event = ((Revision.Changed) post.revise(snapshot)).event();
+      PostRevised event = ((Revision.Changed) post.revise(SOUNIE_WP, snapshot)).event();
 
       assertThat(event.url()).isEqualTo(snapshot.url());
       assertThat(event.body()).isEqualTo(new Body("New body"));
@@ -149,7 +149,7 @@ class PostTest {
     void newer_timestamp_without_material_change_records_the_time_and_raises_no_event() {
       Post post = stored.buildStoredPost();
 
-      Revision revision = post.revise(stored.updatedAt(T2).build());
+      Revision revision = post.revise(SOUNIE_WP, stored.updatedAt(T2).build());
 
       assertThat(revision).isInstanceOf(Revision.Touched.class);
       assertThat(post.updatedAt()).isEqualTo(T2);
@@ -167,7 +167,7 @@ class PostTest {
               .updatedAt(T1)
               .build();
 
-      Revision revision = post.revise(older);
+      Revision revision = post.revise(SOUNIE_WP, older);
 
       assertThat(revision).isInstanceOf(Revision.Stale.class);
       assertThat(post.title()).isEqualTo(new Title("Old"));
@@ -192,7 +192,7 @@ class PostTest {
               .completeness(BodyCompleteness.FULL)
               .build();
 
-      Revision revision = post.revise(full);
+      Revision revision = post.revise(ELEGANT, full);
 
       assertThat(revision).isInstanceOf(Revision.Changed.class);
       assertThat(((Revision.Changed) revision).event().changed())
@@ -228,7 +228,7 @@ class PostTest {
               .updatedAt(T2)
               .build();
 
-      Revision revision = post.revise(snapshot);
+      Revision revision = post.revise(SOUNIE_WP, snapshot);
 
       assertThat(revision).isInstanceOf(Revision.Changed.class);
       assertThat(((Revision.Changed) revision).event().changed()).containsExactly(aspect);
@@ -240,7 +240,65 @@ class PostTest {
       PostSnapshot snapshot =
           aSnapshot().sourcePostId("123").title("Old").tags("java", "ddd").updatedAt(T1).build();
 
-      assertThat(post.revise(snapshot)).isInstanceOf(Revision.Unchanged.class);
+      assertThat(post.revise(SOUNIE_WP, snapshot)).isInstanceOf(Revision.Unchanged.class);
+    }
+
+    @Test
+    @DisplayName("Invariant 2: a revision whose URL is off the site host is rejected")
+    void rejects_a_revision_whose_url_is_not_on_the_site_host() {
+      Post post = stored.buildStoredPost();
+      PostSnapshot offSite =
+          aSnapshot()
+              .sourcePostId("123")
+              .title("Old")
+              .tags("DDD", "Java")
+              .url("https://evil.example/x")
+              .updatedAt(T2)
+              .build();
+
+      assertThatThrownBy(() -> post.revise(SOUNIE_WP, offSite))
+          .isInstanceOf(CanonicalUrlNotOnSite.class);
+      assertThat(post.url()).isEqualTo(stored.canonicalUrl());
+      assertThat(post.updatedAt()).isEqualTo(T1);
+    }
+
+    @Test
+    void rejects_a_revision_whose_url_is_on_a_lookalike_host() {
+      Post post = stored.buildStoredPost();
+      PostSnapshot lookalike =
+          aSnapshot()
+              .sourcePostId("123")
+              .url("https://blog2.sounie.nz.evil.example/123/")
+              .updatedAt(T2)
+              .build();
+
+      assertThatThrownBy(() -> post.revise(SOUNIE_WP, lookalike))
+          .isInstanceOf(CanonicalUrlNotOnSite.class);
+    }
+
+    @Test
+    void rejects_a_revision_through_a_site_that_is_not_the_posts_site() {
+      Post post = stored.buildStoredPost();
+      PostSnapshot snapshot = stored.updatedAt(T2).build();
+
+      assertThatThrownBy(() -> post.revise(ELEGANT, snapshot))
+          .isInstanceOf(PostIdentityMismatch.class);
+      assertThat(post.updatedAt()).isEqualTo(T1);
+    }
+
+    @Test
+    void rejects_a_snapshot_whose_id_belongs_to_another_site() {
+      Post post = stored.buildStoredPost();
+      PostSnapshot elegantSnapshot =
+          aSnapshot()
+              .on(ELEGANT)
+              .sourcePostId("123")
+              .url("https://blog.elegant-solutions.london/123/")
+              .updatedAt(T2)
+              .build();
+
+      assertThatThrownBy(() -> post.revise(SOUNIE_WP, elegantSnapshot))
+          .isInstanceOf(PostIdentityMismatch.class);
     }
 
     @Test
@@ -248,7 +306,8 @@ class PostTest {
       Post post = stored.buildStoredPost();
       PostSnapshot other = aSnapshot().sourcePostId("456").updatedAt(T2).build();
 
-      assertThatThrownBy(() -> post.revise(other)).isInstanceOf(PostIdentityMismatch.class);
+      assertThatThrownBy(() -> post.revise(SOUNIE_WP, other))
+          .isInstanceOf(PostIdentityMismatch.class);
     }
   }
 

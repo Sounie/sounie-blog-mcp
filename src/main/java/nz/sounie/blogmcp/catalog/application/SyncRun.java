@@ -171,7 +171,7 @@ final class SyncRun {
   }
 
   private void revise(Post post, PostSnapshot snapshot) {
-    switch (post.revise(snapshot)) {
+    switch (post.revise(site, snapshot)) {
       case Revision.Changed changed -> {
         posts.save(post);
         events.publish(IntegrationEvents.from(changed.event()));

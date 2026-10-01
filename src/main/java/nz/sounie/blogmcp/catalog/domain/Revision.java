@@ -1,6 +1,6 @@
 package nz.sounie.blogmcp.catalog.domain;
 
-/** Outcome of {@link Post#revise(PostSnapshot)}. */
+/** Outcome of {@link Post#revise(Site, PostSnapshot)}. */
 public sealed interface Revision {
 
   /** The snapshot is not older and something material changed. */

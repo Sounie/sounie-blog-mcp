@@ -37,6 +37,8 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class WordPressSourceTest {
 
@@ -282,6 +284,83 @@ class WordPressSourceTest {
               assertThat(malformed.reason()).isNotBlank();
               assertThat(malformed.updatedAt()).isEqualTo(expectedUpdatedAt);
             });
+  }
+
+  @Test
+  @DisplayName("Review fix 3: titles with markup become plain text")
+  void title_markup_is_stripped_and_entities_decoded() {
+    stubSinglePageOfPosts(Fixtures.read("wordpress/posts-title-markup.json"));
+
+    PostSnapshot snapshot = snapshotOf(fetchFirstPage().entries().getFirst());
+
+    assertThat(snapshot.title().value()).isEqualTo("Hello World & more");
+  }
+
+  static Stream<Arguments> nonArrayBodies() {
+    return Stream.of(
+        Arguments.of("application/json", "{}"),
+        Arguments.of("application/json", "{\"code\":\"rest_no_route\"}"),
+        Arguments.of("text/html", "<html><body><h1>Maintenance</h1></body></html>"));
+  }
+
+  @ParameterizedTest(name = "{1}")
+  @MethodSource("nonArrayBodies")
+  @DisplayName("Review fix 2: a 200 response that is not a JSON array is not an empty listing")
+  void a_successful_response_that_is_not_a_json_array_makes_the_source_unavailable(
+      String contentType, String body) {
+    wordPressApi.stubFor(
+        get(urlPathEqualTo(POSTS))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", contentType)
+                    .withHeader("X-WP-Total", "0")
+                    .withHeader("X-WP-TotalPages", "0")
+                    .withBody(body)));
+
+    assertThatThrownBy(this::fetchFirstPage).isInstanceOf(SourceUnavailable.class);
+  }
+
+  private void stubPostsPageWithTotalPagesHeader(int page, String body, String totalPages) {
+    var response =
+        aResponse().withHeader("Content-Type", "application/json; charset=UTF-8").withBody(body);
+    if (totalPages != null) {
+      response = response.withHeader("X-WP-TotalPages", totalPages);
+    }
+    wordPressApi.stubFor(
+        get(urlPathEqualTo(POSTS))
+            .withQueryParam("page", equalTo(String.valueOf(page)))
+            .willReturn(response));
+  }
+
+  @ParameterizedTest(name = "X-WP-TotalPages = {0}")
+  @NullSource
+  @ValueSource(strings = {"", "not-a-number"})
+  @DisplayName(
+      "Review fix 2: without a usable X-WP-TotalPages, paging continues while pages are full")
+  void without_a_usable_total_pages_header_keeps_paging_until_a_short_page(String totalPages) {
+    stubPostsPageWithTotalPagesHeader(1, Fixtures.wordPressPosts(1, 100), totalPages);
+    stubPostsPageWithTotalPagesHeader(2, Fixtures.wordPressPosts(101, 100), totalPages);
+    stubPostsPageWithTotalPagesHeader(3, Fixtures.wordPressPosts(201, 30), totalPages);
+
+    List<SourceEntry> entries = Fixtures.fetchAll(source, SOUNIE_WP, Optional.empty());
+
+    assertThat(entries).hasSize(230);
+    wordPressApi.verify(3, getRequestedFor(urlPathEqualTo(POSTS)));
+    wordPressApi.verify(
+        0, getRequestedFor(urlPathEqualTo(POSTS)).withQueryParam("page", equalTo("4")));
+  }
+
+  @Test
+  @DisplayName("Review fix 2: without X-WP-TotalPages, an empty page ends the listing")
+  void without_a_total_pages_header_an_empty_page_ends_the_listing() {
+    stubPostsPageWithTotalPagesHeader(1, Fixtures.wordPressPosts(1, 100), null);
+    stubPostsPageWithTotalPagesHeader(2, "[]", null);
+
+    List<SourceEntry> entries = Fixtures.fetchAll(source, SOUNIE_WP, Optional.empty());
+
+    assertThat(entries).hasSize(100);
+    wordPressApi.verify(2, getRequestedFor(urlPathEqualTo(POSTS)));
   }
 
   @Test

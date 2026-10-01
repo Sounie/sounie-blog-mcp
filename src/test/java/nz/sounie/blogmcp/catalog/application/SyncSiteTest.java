@@ -514,6 +514,32 @@ class SyncSiteTest {
     }
 
     @Test
+    @DisplayName("Invariant 2: a stored post's entry with an off-site URL is skipped as malformed")
+    void stored_post_entry_with_url_off_the_site_is_skipped_and_the_post_is_unchanged() {
+      givenStored(wpPost("123", T1).url("https://blog2.sounie.nz/hello/").title("Hello"));
+      wordPress.willServe(
+          SOUNIE_WP_ID,
+          page(available(wpPost("123", T2).url("https://evil.example/hello/").title("Hijacked"))));
+
+      SyncReport report = syncSite.run(SOUNIE_WP_ID, SyncMode.INCREMENTAL);
+
+      Post stored = posts.findById(wpId("123")).orElseThrow();
+      assertThat(stored.url().value().toString()).isEqualTo("https://blog2.sounie.nz/hello/");
+      assertThat(stored.title()).isEqualTo(new Title("Hello"));
+      assertThat(stored.updatedAt()).isEqualTo(T1);
+      assertThat(events.events()).isEmpty();
+      assertThat(report.revised()).isZero();
+      assertThat(report.skipped())
+          .singleElement()
+          .satisfies(
+              skipped -> {
+                assertThat(skipped.sourcePostId()).contains(new SourcePostId("123"));
+                assertThat(skipped.reason()).isEqualTo(SkipReason.MALFORMED);
+              });
+      assertThat(report.outcome()).isEqualTo(SyncOutcome.COMPLETED);
+    }
+
+    @Test
     @DisplayName("AC-CAT-17: an entry with another post's canonical URL is skipped")
     void entry_with_a_canonical_url_held_by_another_post_is_skipped() {
       givenStored(wpPost("123", T1).url("https://blog2.sounie.nz/a/").title("Original"));

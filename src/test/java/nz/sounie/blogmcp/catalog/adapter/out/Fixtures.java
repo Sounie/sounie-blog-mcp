@@ -58,6 +58,19 @@ final class Fixtures {
 
   /** A Blogger feed page of {@code count} minimal entries, numbered from {@code firstNumber}. */
   static String bloggerFeed(int totalResults, int startIndex, int firstNumber, int count) {
+    return bloggerFeedWithTotalField(
+        "\"openSearch$totalResults\":{\"$t\":\"" + totalResults + "\"},",
+        startIndex,
+        firstNumber,
+        count);
+  }
+
+  /**
+   * Like {@link #bloggerFeed} but with the raw {@code openSearch$totalResults} member (including
+   * its trailing comma) supplied by the caller, or {@code ""} to leave it out.
+   */
+  static String bloggerFeedWithTotalField(
+      String totalResultsMember, int startIndex, int firstNumber, int count) {
     String entries =
         IntStream.range(firstNumber, firstNumber + count)
             .mapToObj(
@@ -79,11 +92,11 @@ final class Fixtures {
             .collect(Collectors.joining(","));
     return """
         {"version":"1.0","encoding":"UTF-8","feed":{\
-        "openSearch$totalResults":{"$t":"%d"},\
+        %s\
         "openSearch$startIndex":{"$t":"%d"},\
         "openSearch$itemsPerPage":{"$t":"150"},\
         "entry":[%s]}}"""
-        .formatted(totalResults, startIndex, entries);
+        .formatted(totalResultsMember, startIndex, entries);
   }
 
   /** Follows a source's pages from the first, with a safety cap. */

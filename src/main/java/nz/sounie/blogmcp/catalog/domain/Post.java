@@ -93,11 +93,13 @@ public final class Post {
   }
 
   /**
-   * Applies a newer snapshot.
+   * Applies a newer snapshot from the post's own site.
    *
-   * @throws PostIdentityMismatch if the snapshot belongs to a different post
+   * @throws PostIdentityMismatch if the site is not this post's site, or the snapshot belongs to a
+   *     different post
+   * @throws CanonicalUrlNotOnSite if the snapshot URL is not on the site host
    */
-  public Revision revise(PostSnapshot snapshot) {
+  public Revision revise(Site site, PostSnapshot snapshot) {
     if (!snapshot.id().equals(id)) {
       throw new PostIdentityMismatch(
           "Snapshot " + snapshot.id().external() + " does not belong to post " + id.external());

@@ -31,6 +31,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class BloggerSourceTest {
 
@@ -203,6 +206,79 @@ class BloggerSourceTest {
 
     bloggerFeed.verify(
         getRequestedFor(urlPathEqualTo(FEED)).withQueryParam("updated-min", absent()));
+  }
+
+  @Test
+  @DisplayName("Review fix 3: titles with markup become plain text")
+  void title_markup_is_stripped_and_entities_decoded() {
+    stubFeed(Fixtures.read("blogger/feed-title-markup.json"));
+
+    PostSnapshot snapshot = snapshotOf(fetchFirstPage().entries().getFirst());
+
+    assertThat(snapshot.title().value()).isEqualTo("Hello World & more");
+  }
+
+  @ParameterizedTest(name = "{1}")
+  @CsvSource(
+      delimiter = '|',
+      value = {
+        "application/json|{}",
+        "application/json|[]",
+        "application/json|{\"version\":\"1.0\",\"encoding\":\"UTF-8\"}",
+        "application/json|{\"feed\":\"oops\"}",
+        "text/html|<html><body>Blog not found</body></html>"
+      })
+  @DisplayName("Review fix 2: a 200 response without a feed object is not an empty listing")
+  void a_successful_response_without_a_feed_object_makes_the_source_unavailable(
+      String contentType, String body) {
+    bloggerFeed.stubFor(
+        get(urlPathEqualTo(FEED))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", contentType)
+                    .withBody(body)));
+
+    assertThatThrownBy(this::fetchFirstPage).isInstanceOf(SourceUnavailable.class);
+  }
+
+  private void stubFeedPage(String startIndex, String body) {
+    bloggerFeed.stubFor(
+        get(urlPathEqualTo(FEED))
+            .withQueryParam("start-index", equalTo(startIndex))
+            .willReturn(okJson(body)));
+  }
+
+  @ParameterizedTest(name = "totalResults member: [{0}]")
+  @ValueSource(
+      strings = {
+        "",
+        "\"openSearch$totalResults\":{\"$t\":\"many\"},",
+        "\"openSearch$totalResults\":{},"
+      })
+  @DisplayName(
+      "Review fix 2: without a usable totalResults, paging continues after a full page of 150")
+  void without_a_usable_total_keeps_paging_until_a_short_page(String totalResultsMember) {
+    stubFeedPage("1", Fixtures.bloggerFeedWithTotalField(totalResultsMember, 1, 1, 150));
+    stubFeedPage("151", Fixtures.bloggerFeedWithTotalField(totalResultsMember, 151, 151, 59));
+
+    List<SourceEntry> entries = Fixtures.fetchAll(source, ELEGANT, Optional.empty());
+
+    assertThat(entries).hasSize(209);
+    bloggerFeed.verify(2, getRequestedFor(urlPathEqualTo(FEED)));
+  }
+
+  @Test
+  @DisplayName(
+      "Review fix 2: without totalResults, an empty page after a full one ends the listing")
+  void without_a_total_an_empty_page_after_a_full_page_ends_the_listing() {
+    stubFeedPage("1", Fixtures.bloggerFeedWithTotalField("", 1, 1, 150));
+    stubFeedPage("151", Fixtures.bloggerFeedWithTotalField("", 151, 151, 0));
+
+    List<SourceEntry> entries = Fixtures.fetchAll(source, ELEGANT, Optional.empty());
+
+    assertThat(entries).hasSize(150);
+    bloggerFeed.verify(2, getRequestedFor(urlPathEqualTo(FEED)));
   }
 
   @Test
