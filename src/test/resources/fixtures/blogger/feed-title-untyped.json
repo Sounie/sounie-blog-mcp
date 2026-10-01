@@ -1,0 +1,92 @@
+{
+  "version": "1.0",
+  "encoding": "UTF-8",
+  "feed": {
+    "id": {
+      "$t": "tag:blogger.com,1999:blog-1481195935080195479"
+    },
+    "updated": {
+      "$t": "2026-04-13T23:39:42.552+01:00"
+    },
+    "title": {
+      "type": "text",
+      "$t": "Thoughts on software development"
+    },
+    "openSearch$totalResults": {
+      "$t": "1"
+    },
+    "openSearch$startIndex": {
+      "$t": "1"
+    },
+    "openSearch$itemsPerPage": {
+      "$t": "2"
+    },
+    "entry": [
+      {
+        "id": {
+          "$t": "tag:blogger.com,1999:blog-1481195935080195479.post-371460637286630063"
+        },
+        "published": {
+          "$t": "2026-03-23T20:53:00.001+00:00"
+        },
+        "updated": {
+          "$t": "2026-03-23T20:53:30.835+00:00"
+        },
+        "category": [
+          {
+            "scheme": "http://www.blogger.com/atom/ns#",
+            "term": "DDD"
+          },
+          {
+            "scheme": "http://www.blogger.com/atom/ns#",
+            "term": " ddd "
+          },
+          {
+            "scheme": "http://www.blogger.com/atom/ns#",
+            "term": "Java"
+          }
+        ],
+        "title": {
+          "$t": "Generics: List<String> & co"
+        },
+        "summary": {
+          "type": "text",
+          "$t": "In March 2026 I got caught up in the 10% workforce reduction by Atlassian.I am not taking it personally as I have seen that&nbsp;a lot of other very experienced and well regarded individuals have also been posting their new status on LinkedIn.As\n I was the last one to join a team of more than 10 developers I can see \nhow some metrics would have zoomed in on me as a suitable sacrificial lamb to \n"
+        },
+        "link": [
+          {
+            "rel": "replies",
+            "type": "application/atom+xml",
+            "href": "https://blog.elegant-solutions.london/feeds/371460637286630063/comments/default",
+            "title": "Post Comments"
+          },
+          {
+            "rel": "replies",
+            "type": "text/html",
+            "href": "https://blog.elegant-solutions.london/2026/03/experiences-with-microservices.html#comment-form",
+            "title": "0 Comments"
+          },
+          {
+            "rel": "edit",
+            "type": "application/atom+xml",
+            "href": "https://www.blogger.com/feeds/1481195935080195479/posts/default/371460637286630063"
+          },
+          {
+            "rel": "self",
+            "type": "application/atom+xml",
+            "href": "https://www.blogger.com/feeds/1481195935080195479/posts/default/371460637286630063"
+          },
+          {
+            "rel": "alternate",
+            "type": "text/html",
+            "href": "https://blog.elegant-solutions.london/2026/03/experiences-with-microservices.html",
+            "title": "Fresh posts about experiences developing and maintaining microservices"
+          }
+        ],
+        "thr$total": {
+          "$t": "0"
+        }
+      }
+    ]
+  }
+}

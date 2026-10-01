@@ -32,6 +32,7 @@ import nz.sounie.blogmcp.catalog.domain.ChangeOrder;
 import nz.sounie.blogmcp.catalog.domain.Platform;
 import nz.sounie.blogmcp.catalog.domain.Post;
 import nz.sounie.blogmcp.catalog.domain.PostId;
+import nz.sounie.blogmcp.catalog.domain.PostIdentityMismatch;
 import nz.sounie.blogmcp.catalog.domain.PostSnapshotBuilder;
 import nz.sounie.blogmcp.catalog.domain.SiteId;
 import nz.sounie.blogmcp.catalog.domain.SourceEntry;
@@ -537,6 +538,45 @@ class SyncSiteTest {
                 assertThat(skipped.reason()).isEqualTo(SkipReason.MALFORMED);
               });
       assertThat(report.outcome()).isEqualTo(SyncOutcome.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("AC-CAT-17: a revision that takes another post's canonical URL is skipped")
+    void revision_moving_to_a_canonical_url_held_by_another_post_is_skipped() {
+      givenStored(wpPost("123", T1).url("https://blog2.sounie.nz/a/").title("A"));
+      givenStored(wpPost("456", T1).url("https://blog2.sounie.nz/b/").title("B"));
+      wordPress.willServe(
+          SOUNIE_WP_ID,
+          page(available(wpPost("456", T2).url("https://blog2.sounie.nz/a/").title("B moved"))));
+
+      SyncReport report = syncSite.run(SOUNIE_WP_ID, SyncMode.INCREMENTAL);
+
+      Post a = posts.findById(wpId("123")).orElseThrow();
+      assertThat(a.url().value().toString()).isEqualTo("https://blog2.sounie.nz/a/");
+      assertThat(a.title()).isEqualTo(new Title("A"));
+      Post b = posts.findById(wpId("456")).orElseThrow();
+      assertThat(b.url().value().toString()).isEqualTo("https://blog2.sounie.nz/b/");
+      assertThat(b.title()).isEqualTo(new Title("B"));
+      assertThat(b.updatedAt()).isEqualTo(T1);
+      assertThat(events.events()).isEmpty();
+      assertThat(report.skipped())
+          .singleElement()
+          .satisfies(
+              skipped -> {
+                assertThat(skipped.sourcePostId()).contains(new SourcePostId("456"));
+                assertThat(skipped.reason()).isEqualTo(SkipReason.DUPLICATE_CANONICAL_URL);
+              });
+    }
+
+    @Test
+    @DisplayName("Invariant 1: a source returning another site's post is a bug, not bad data")
+    void snapshot_for_another_site_raises_PostIdentityMismatch_and_changes_nothing() {
+      wordPress.willServe(SOUNIE_WP_ID, page(available(elegantPost("1", T1))));
+
+      assertThatThrownBy(() -> syncSite.run(SOUNIE_WP_ID, SyncMode.INCREMENTAL))
+          .isInstanceOf(PostIdentityMismatch.class);
+      assertThat(posts.size()).isZero();
+      assertThat(events.events()).isEmpty();
     }
 
     @Test

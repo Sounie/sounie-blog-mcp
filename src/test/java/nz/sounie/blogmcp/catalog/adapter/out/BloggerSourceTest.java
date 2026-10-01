@@ -208,14 +208,27 @@ class BloggerSourceTest {
         getRequestedFor(urlPathEqualTo(FEED)).withQueryParam("updated-min", absent()));
   }
 
-  @Test
-  @DisplayName("Review fix 3: titles with markup become plain text")
-  void title_markup_is_stripped_and_entities_decoded() {
-    stubFeed(Fixtures.read("blogger/feed-title-markup.json"));
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {"blogger/feed-title-markup.json", "blogger/feed-title-xhtml.json"})
+  @DisplayName("AC-CAT-6: an html or xhtml title becomes plain text")
+  void title_markup_is_stripped_and_entities_decoded(String fixture) {
+    stubFeed(Fixtures.read(fixture));
 
     PostSnapshot snapshot = snapshotOf(fetchFirstPage().entries().getFirst());
 
     assertThat(snapshot.title().value()).isEqualTo("Hello World & more");
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(
+      strings = {"blogger/feed-title-text-literal.json", "blogger/feed-title-untyped.json"})
+  @DisplayName("AC-CAT-6: a text title (or one without a type) is literal and kept as written")
+  void text_title_is_taken_literally(String fixture) {
+    stubFeed(Fixtures.read(fixture));
+
+    PostSnapshot snapshot = snapshotOf(fetchFirstPage().entries().getFirst());
+
+    assertThat(snapshot.title().value()).isEqualTo("Generics: List<String> & co");
   }
 
   @ParameterizedTest(name = "{1}")
@@ -226,9 +239,11 @@ class BloggerSourceTest {
         "application/json|[]",
         "application/json|{\"version\":\"1.0\",\"encoding\":\"UTF-8\"}",
         "application/json|{\"feed\":\"oops\"}",
+        "application/json|{\"feed\":{\"entry\":{}}}",
         "text/html|<html><body>Blog not found</body></html>"
       })
-  @DisplayName("Review fix 2: a 200 response without a feed object is not an empty listing")
+  @DisplayName(
+      "§3.4 no false completeness: a 200 response without a usable feed is SourceUnavailable")
   void a_successful_response_without_a_feed_object_makes_the_source_unavailable(
       String contentType, String body) {
     bloggerFeed.stubFor(
@@ -257,7 +272,7 @@ class BloggerSourceTest {
         "\"openSearch$totalResults\":{},"
       })
   @DisplayName(
-      "Review fix 2: without a usable totalResults, paging continues after a full page of 150")
+      "§3.4 no false completeness: without a usable totalResults, paging continues after 150")
   void without_a_usable_total_keeps_paging_until_a_short_page(String totalResultsMember) {
     stubFeedPage("1", Fixtures.bloggerFeedWithTotalField(totalResultsMember, 1, 1, 150));
     stubFeedPage("151", Fixtures.bloggerFeedWithTotalField(totalResultsMember, 151, 151, 59));
@@ -269,8 +284,7 @@ class BloggerSourceTest {
   }
 
   @Test
-  @DisplayName(
-      "Review fix 2: without totalResults, an empty page after a full one ends the listing")
+  @DisplayName("§3.4 no false completeness: without totalResults, an empty page ends the listing")
   void without_a_total_an_empty_page_after_a_full_page_ends_the_listing() {
     stubFeedPage("1", Fixtures.bloggerFeedWithTotalField("", 1, 1, 150));
     stubFeedPage("151", Fixtures.bloggerFeedWithTotalField("", 151, 151, 0));

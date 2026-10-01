@@ -33,7 +33,7 @@ It is **not** responsible for:
 | Post | One published blog post as the catalog knows it. It is the aggregate root. | `Post` |
 | Source post ID | The platform's own identifier for a post, as a string. WordPress: the numeric `id`. Blogger: the digits after `.post-` in `id.$t`. Never derived from the slug or URL, because those can change. | `SourcePostId` |
 | Post ID | The catalog-wide identity of a post: site ID plus source post ID. Its external form is `<siteId>:<sourcePostId>`, e.g. `sounie-wp:123`. | `PostId` |
-| Title | Plain-text title. Any markup in the platform title (tags such as `<em>` or `<code>`) is removed and HTML entities are decoded, so it contains no HTML at all. It may be empty, but is never null. | `Title` |
+| Title | Plain-text title. Markup is removed **only where the platform declares the title as HTML**. WordPress `title.rendered` is always HTML, so its tags are stripped and its entities decoded. A Blogger `title.$t` is stripped only when `title.type` is `html` or `xhtml`. When the type is `text` or missing, the title is kept verbatim. So a text title such as `Generics: List<String> & co` is preserved exactly. A title may be empty, but is never null. | `Title` |
 | Canonical URL | The public address of the post (WordPress `link`, Blogger `link[rel=alternate]`). It must be absolute `https` on the site host. | `CanonicalUrl` |
 | Published at / Updated at | Instants (UTC) at which the platform says the post was first published and last modified. | `publishedAt`, `updatedAt` |
 | Tag | Plain-text label attached to a post. Tags are compared case-insensitively and the casing seen first is kept. WordPress **tags** (resolved from their IDs) and Blogger labels become tags. WordPress **categories are ignored entirely**. | `Tag` |
@@ -163,6 +163,7 @@ the catalog. Delivery is in-process and at most once, so `search` will need a re
   - `modified_after` must carry an explicit UTC offset, e.g. `2026-09-20T05:00:00Z`. Verified: without a zone suffix, WordPress compares against the site's **local** time (the site is UTC+12). With `Z` or `+00:00`, it compares correctly as UTC.
   - *Optional adapter guidance, not a domain rule:* add `_fields=id,date_gmt,modified_gmt,link,status,type,title,content,tags` to shrink responses. Do the same with `_fields=id,name` on the tag lookup. If used, an adapter test must show that every field the mapping needs is still requested.
 - **Blogger** (`blog.elegant-solutions.london`): `GET /feeds/posts/default?alt=json&max-results=150&start-index=N[&updated-min=…&orderby=updated]`. `start-index` is 1-based and advances by the number of entries received. Paging stops when a page has fewer than 150 entries, the `entry` key is absent, or `start-index > openSearch$totalResults`. The source post ID is the digits after `.post-`. Tags come from `category[].term`. `updated-min` is sent as RFC 3339 with an explicit offset.
+  - Title: honour `title.type`. If it is `html` or `xhtml`, strip markup and decode entities. If it is `text` or missing, keep `title.$t` verbatim. All 209 real entries are `type: text` (AC-CAT-6).
   - `ChangeOrder` is `NEWEST_FIRST`. Verified: with `orderby=updated` the first of 150 entries was from 2026-04-13 and the last from 2010-01-19. So the Blogger checkpoint advances only after the final page of a complete sync (AC-CAT-4, AC-CAT-19).
   - Body source (owner decision, Q1, option (a)): the owner switches the site feed to *Full*, so `/feeds/posts/default` carries `content.$t`, which goes through text extraction with completeness `FULL`. Until then, or whenever an entry has no `content`, the snapshot carries the `summary` with completeness `SUMMARY`. Such posts upgrade through AC-CAT-14. No page scraping and no Blogger API v3.
 
@@ -203,7 +204,8 @@ And the WordPress request carries `modified_after=2026-09-20T00:20:47Z` (Blogger
 Given a WordPress entry with `title.rendered` = `Don&#8217;t &amp; &lt;panic&gt;` and `content.rendered` = `<p>One&nbsp;line</p><script>x()</script><pre>  a\n  b</pre><p>Two</p>`,
 When it is applied,
 Then the post title is `Don’t & <panic>`, and the body contains `One line`, a paragraph break, the `pre` text with its leading spaces and newline kept, and `Two`, with no `x()` and no tags.
-And given a WordPress `title.rendered`, or an equivalent Blogger `title.$t`, of `Hello <em>World</em> &amp; more`, the post title is `Hello World & more` (markup removed, entities decoded).
+And given an **HTML** title `Hello <em>World</em> &amp; more` (a WordPress `title.rendered`, or a Blogger `title.$t` with `title.type` `html` or `xhtml`), the post title is `Hello World & more` (markup removed, entities decoded).
+And given a Blogger **text** title `Generics: List<String> & co` (`title.type` `text` or missing), the post title is exactly `Generics: List<String> & co` (kept verbatim, nothing stripped).
 
 **AC-CAT-7: Timestamps are interpreted as UTC.**
 Given a WordPress entry with `date_gmt` `2026-09-20T01:20:47` (no zone), and a Blogger entry with `updated.$t` `2026-03-23T20:53:00.001+00:00`,
@@ -372,5 +374,5 @@ And when it is called with `not-an-id` or a non-URL string, then `InvalidPostRef
   - Platform names in the configuration match case-insensitively (AC-CAT-25).
   - `Post.revise(Site, PostSnapshot)` enforces identity and the canonical-URL invariant just as `publish` does (AC-CAT-16).
   - Sources must never report false completeness for a truncated listing (3.4).
-  - Titles are plain text with all markup removed.
+  - Titles are plain text. Markup is removed only where the platform declares the title as HTML: always for WordPress `title.rendered`, and for Blogger only when `title.type` is `html` or `xhtml`. Blogger `text` titles are kept verbatim (AC-CAT-6). This was corrected in review loop 2.
 - **Q8 (open, lead, for slice 2): event delivery.** Delivery is in-process and at most once, with no outbox. `search` will need a way to rebuild its index from the catalog (for example a `ListPosts` query or a replay), which is out of scope for this slice.

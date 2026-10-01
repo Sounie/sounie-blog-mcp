@@ -287,7 +287,7 @@ class WordPressSourceTest {
   }
 
   @Test
-  @DisplayName("Review fix 3: titles with markup become plain text")
+  @DisplayName("AC-CAT-6: a title with markup becomes plain text")
   void title_markup_is_stripped_and_entities_decoded() {
     stubSinglePageOfPosts(Fixtures.read("wordpress/posts-title-markup.json"));
 
@@ -305,7 +305,8 @@ class WordPressSourceTest {
 
   @ParameterizedTest(name = "{1}")
   @MethodSource("nonArrayBodies")
-  @DisplayName("Review fix 2: a 200 response that is not a JSON array is not an empty listing")
+  @DisplayName(
+      "§3.4 no false completeness: a 200 response that is not a JSON array is SourceUnavailable")
   void a_successful_response_that_is_not_a_json_array_makes_the_source_unavailable(
       String contentType, String body) {
     wordPressApi.stubFor(
@@ -337,7 +338,7 @@ class WordPressSourceTest {
   @NullSource
   @ValueSource(strings = {"", "not-a-number"})
   @DisplayName(
-      "Review fix 2: without a usable X-WP-TotalPages, paging continues while pages are full")
+      "§3.4 no false completeness: without a usable X-WP-TotalPages, paging continues while full")
   void without_a_usable_total_pages_header_keeps_paging_until_a_short_page(String totalPages) {
     stubPostsPageWithTotalPagesHeader(1, Fixtures.wordPressPosts(1, 100), totalPages);
     stubPostsPageWithTotalPagesHeader(2, Fixtures.wordPressPosts(101, 100), totalPages);
@@ -352,7 +353,8 @@ class WordPressSourceTest {
   }
 
   @Test
-  @DisplayName("Review fix 2: without X-WP-TotalPages, an empty page ends the listing")
+  @DisplayName(
+      "§3.4 no false completeness: without X-WP-TotalPages, an empty page ends the listing")
   void without_a_total_pages_header_an_empty_page_ends_the_listing() {
     stubPostsPageWithTotalPagesHeader(1, Fixtures.wordPressPosts(1, 100), null);
     stubPostsPageWithTotalPagesHeader(2, "[]", null);
