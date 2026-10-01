@@ -7,7 +7,7 @@ argument-hint: <feature description>
 You are the tech lead. You coordinate the team in `.claude/agents/`; you don't write production code or tests yourself. Feature request: **$ARGUMENTS**
 
 ## 0. Prepare
-- Make sure the working tree is clean and `main` is up to date (`git status`, `git fetch`, `git switch main`, `git pull --ff-only`). If the tree is dirty, stop and tell the user.
+- Make sure the working tree is clean and `main` is up to date (`git status`, `git switch main`, `scripts/git-remote pull`). If the tree is dirty, stop and tell the user.
 - Create a branch: `git switch -c feature/<short-kebab-slug>`.
 
 ## 1. Model (`domain-modeler`)
@@ -30,8 +30,10 @@ Run `code-reviewer`.
 Run `./gw check pitest` yourself once to confirm the final state.
 
 ## 5. Pull request
-- `git push -u origin HEAD`
-- `gh pr create --base main` with a body that follows `.github/pull_request_template.md`. Fill it in from the model summary, the AC checklist, the gate results, the reviewer findings and how each was resolved, and known gaps.
+Don't use the `gh` CLI; it can't verify TLS inside the sandbox. Use the project scripts, which read `GH_TOKEN` without storing it.
+- `scripts/git-remote push`
+- Write the PR body to `$TMPDIR/pr-body.md`, following `.github/pull_request_template.md`. Fill it in from the model summary, the AC checklist, the gate results, the reviewer findings and how each was resolved, and known gaps.
+- `scripts/open-pr "<type>(<context>): <summary>" "$TMPDIR/pr-body.md"`. It prints the PR URL.
 
 **⏸ CHECKPOINT: give the user the PR URL and a 3-line summary.** The user reviews and merges. Never merge yourself.
 

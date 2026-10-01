@@ -1,1 +1,1 @@
-rootProject.name = "claude-java-guidance"
+rootProject.name = "blog-mcp"

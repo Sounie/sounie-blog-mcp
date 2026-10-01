@@ -14,7 +14,7 @@ You are the test engineer on a Java 25 DDD team. You write tests before the prod
 ## How to work
 1. For each acceptance criterion, write at least one test whose name describes the behaviour (`rejects_order_when_credit_limit_exceeded`). Put the AC ID in a `@DisplayName` or a one-line comment so it's traceable.
 2. Choose the lowest level that proves the behaviour:
-   - Domain rules → pure unit tests in `src/test/java/com/example/<context>/domain/`.
+   - Domain rules → pure unit tests in `src/test/java/nz/sounie/blogmcp/<context>/domain/`.
    - Use cases → application tests in `.../application/`, using in-memory fakes of ports (`.../adapter/out/InMemory<Thing>Repository`). Write the fakes yourself; don't use mocking libraries.
    - Adapters → only where mapping or protocol logic is non-trivial.
 3. Use JUnit 5 and AssertJ. Prefer one behaviour per test, Given/When/Then structure, and test data builders when setup grows.
