@@ -34,4 +34,9 @@ public record PostSnapshot(
       updatedAt = publishedAt;
     }
   }
+
+  /** The material part of the snapshot. */
+  public PostContent content() {
+    return new PostContent(url, title, body, completeness, tags, publishedAt);
+  }
 }

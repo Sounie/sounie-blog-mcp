@@ -2,9 +2,9 @@ package nz.sounie.blogmcp.catalog.adapter.out;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import nz.sounie.blogmcp.catalog.domain.SiteDefinition;
 import nz.sounie.blogmcp.catalog.domain.SiteDirectory;
 import nz.sounie.blogmcp.catalog.domain.SitesConfiguration;
@@ -45,26 +45,36 @@ public final class JsonFileSiteDirectory implements SiteDirectory {
    */
   @Override
   public SitesConfiguration load() {
+    return SitesConfiguration.of(definitionsIn(readJson()));
+  }
+
+  private JsonNode readJson() {
     if (!Files.isRegularFile(path)) {
       throw new SitesConfigurationMissing(path);
     }
-    JsonNode root;
     try {
-      root = JsonMapper.builder().build().readTree(path);
+      return JsonMapper.builder().build().readTree(path);
     } catch (JacksonException e) {
       throw new IllegalStateException("Sites configuration at " + path + " is not valid JSON", e);
     }
-    List<SiteDefinition> definitions = new ArrayList<>();
-    for (JsonNode site : root.path("sites").values()) {
-      definitions.add(
-          new SiteDefinition(text(site, "id"), text(site, "platform"), text(site, "baseUrl")));
-    }
-    return SitesConfiguration.of(definitions);
+  }
+
+  /**
+   * Raw definitions in file order; a missing {@code sites} list is empty, so validation reports it.
+   */
+  private static List<SiteDefinition> definitionsIn(JsonNode root) {
+    return root.path("sites").values().stream()
+        .map(
+            site ->
+                new SiteDefinition(text(site, "id"), text(site, "platform"), text(site, "baseUrl")))
+        .toList();
   }
 
   /** The string value of a field, or {@code null} so validation reports it. */
   private static String text(JsonNode node, String field) {
-    JsonNode value = node.path(field);
-    return value.isString() ? value.stringValue() : null;
+    return Optional.of(node.path(field))
+        .filter(JsonNode::isString)
+        .map(JsonNode::stringValue)
+        .orElse(null);
   }
 }

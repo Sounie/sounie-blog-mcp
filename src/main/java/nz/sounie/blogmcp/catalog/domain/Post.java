@@ -1,9 +1,6 @@
 package nz.sounie.blogmcp.catalog.domain;
 
 import java.time.Instant;
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 
@@ -11,30 +8,12 @@ import java.util.Set;
 public final class Post {
 
   private final PostId id;
-  private CanonicalUrl url;
-  private Title title;
-  private Body body;
-  private BodyCompleteness completeness;
-  private Set<Tag> tags;
-  private Instant publishedAt;
+  private PostContent content;
   private Instant updatedAt;
 
-  private Post(
-      PostId id,
-      CanonicalUrl url,
-      Title title,
-      Body body,
-      BodyCompleteness completeness,
-      Set<Tag> tags,
-      Instant publishedAt,
-      Instant updatedAt) {
+  private Post(PostId id, PostContent content, Instant updatedAt) {
     this.id = Objects.requireNonNull(id, "id");
-    this.url = Objects.requireNonNull(url, "url");
-    this.title = Objects.requireNonNull(title, "title");
-    this.body = Objects.requireNonNull(body, "body");
-    this.completeness = Objects.requireNonNull(completeness, "completeness");
-    this.tags = unmodifiableCopy(tags);
-    this.publishedAt = Objects.requireNonNull(publishedAt, "publishedAt");
+    this.content = Objects.requireNonNull(content, "content");
     this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt");
   }
 
@@ -49,26 +28,18 @@ public final class Post {
    */
   public static Published publish(Site site, PostSnapshot snapshot) {
     requireSnapshotOf(site, snapshot);
-    Post post =
-        new Post(
-            snapshot.id(),
-            snapshot.url(),
-            snapshot.title(),
-            snapshot.body(),
-            snapshot.completeness(),
-            snapshot.tags(),
-            snapshot.publishedAt(),
-            snapshot.updatedAt());
+    Post post = new Post(snapshot.id(), snapshot.content(), snapshot.updatedAt());
+    PostContent c = post.content;
     return new Published(
         post,
         new PostPublished(
             post.id,
-            post.url,
-            post.title,
-            post.body,
-            post.completeness,
-            post.tags,
-            post.publishedAt,
+            c.url(),
+            c.title(),
+            c.body(),
+            c.completeness(),
+            c.tags(),
+            c.publishedAt(),
             post.updatedAt));
   }
 
@@ -82,49 +53,36 @@ public final class Post {
       Set<Tag> tags,
       Instant publishedAt,
       Instant updatedAt) {
-    return new Post(id, url, title, body, completeness, tags, publishedAt, updatedAt);
+    return new Post(
+        id, new PostContent(url, title, body, completeness, tags, publishedAt), updatedAt);
   }
 
   /**
-   * Applies a newer snapshot from the post's own site.
+   * Applies a snapshot from the post's own site.
    *
    * @throws PostIdentityMismatch if the site is not this post's site, or the snapshot belongs to a
    *     different post
    * @throws CanonicalUrlNotOnSite if the snapshot URL is not on the site host
    */
   public Revision revise(Site site, PostSnapshot snapshot) {
-    if (!site.id().equals(id.siteId())) {
-      throw new PostIdentityMismatch(
-          "Post " + id.external() + " does not belong to site " + site.id().value());
-    }
-    if (!snapshot.id().equals(id)) {
-      throw new PostIdentityMismatch(
-          "Snapshot " + snapshot.id().external() + " does not belong to post " + id.external());
-    }
+    requireSamePost(snapshot);
     requireSnapshotOf(site, snapshot);
     if (snapshot.updatedAt().isBefore(updatedAt)) {
       return new Revision.Stale();
     }
-    Set<RevisedAspect> changed = materialChangesIn(snapshot);
-    if (!changed.isEmpty()) {
-      adopt(snapshot);
-      return new Revision.Changed(
-          new PostRevised(
-              id, url, title, body, completeness, tags, publishedAt, updatedAt, changed));
-    }
-    if (snapshot.updatedAt().isAfter(updatedAt)) {
-      updatedAt = snapshot.updatedAt();
-      return new Revision.Touched();
-    }
-    return new Revision.Unchanged();
+    Set<RevisedAspect> changed = content.changedAspects(snapshot.content());
+    return changed.isEmpty() ? recordTimestamp(snapshot.updatedAt()) : adopt(snapshot, changed);
   }
 
   /** Removes the post from the catalog. The caller then deletes it from the repository. */
   public PostWithdrawn withdraw(WithdrawalReason reason) {
-    return new PostWithdrawn(id, url, Objects.requireNonNull(reason, "reason"));
+    return new PostWithdrawn(id, content.url(), Objects.requireNonNull(reason, "reason"));
   }
 
-  /** Invariants 1 and 2: the snapshot is of a post on this site, at a URL on the site host. */
+  /**
+   * Invariants 1 and 2, shared by publish and revise: the snapshot is of a post on this site, at a
+   * URL on the site host.
+   */
   private static void requireSnapshotOf(Site site, PostSnapshot snapshot) {
     if (!snapshot.id().siteId().equals(site.id())) {
       throw new PostIdentityMismatch(
@@ -136,41 +94,36 @@ public final class Post {
     }
   }
 
-  private Set<RevisedAspect> materialChangesIn(PostSnapshot snapshot) {
-    Set<RevisedAspect> changed = EnumSet.noneOf(RevisedAspect.class);
-    if (!snapshot.title().equals(title)) {
-      changed.add(RevisedAspect.TITLE);
+  private void requireSamePost(PostSnapshot snapshot) {
+    if (!snapshot.id().equals(id)) {
+      throw new PostIdentityMismatch(
+          "Snapshot " + snapshot.id().external() + " does not belong to post " + id.external());
     }
-    if (!snapshot.body().equals(body)) {
-      changed.add(RevisedAspect.BODY);
-    }
-    if (snapshot.completeness() != completeness) {
-      changed.add(RevisedAspect.COMPLETENESS);
-    }
-    if (!snapshot.tags().equals(tags)) {
-      changed.add(RevisedAspect.TAGS);
-    }
-    if (!snapshot.url().equals(url)) {
-      changed.add(RevisedAspect.URL);
-    }
-    if (!snapshot.publishedAt().equals(publishedAt)) {
-      changed.add(RevisedAspect.PUBLISHED_AT);
-    }
-    return changed;
   }
 
-  private void adopt(PostSnapshot snapshot) {
-    url = snapshot.url();
-    title = snapshot.title();
-    body = snapshot.body();
-    completeness = snapshot.completeness();
-    tags = unmodifiableCopy(snapshot.tags());
-    publishedAt = snapshot.publishedAt();
+  /** No material change: a newer timestamp is recorded (Touched), an equal one is Unchanged. */
+  private Revision recordTimestamp(Instant snapshotUpdatedAt) {
+    if (!snapshotUpdatedAt.isAfter(updatedAt)) {
+      return new Revision.Unchanged();
+    }
+    updatedAt = snapshotUpdatedAt;
+    return new Revision.Touched();
+  }
+
+  private Revision adopt(PostSnapshot snapshot, Set<RevisedAspect> changed) {
+    content = snapshot.content();
     updatedAt = snapshot.updatedAt();
-  }
-
-  private static Set<Tag> unmodifiableCopy(Set<Tag> tags) {
-    return Collections.unmodifiableSet(new LinkedHashSet<>(tags));
+    return new Revision.Changed(
+        new PostRevised(
+            id,
+            content.url(),
+            content.title(),
+            content.body(),
+            content.completeness(),
+            content.tags(),
+            content.publishedAt(),
+            updatedAt,
+            changed));
   }
 
   public PostId id() {
@@ -178,27 +131,27 @@ public final class Post {
   }
 
   public CanonicalUrl url() {
-    return url;
+    return content.url();
   }
 
   public Title title() {
-    return title;
+    return content.title();
   }
 
   public Body body() {
-    return body;
+    return content.body();
   }
 
   public BodyCompleteness completeness() {
-    return completeness;
+    return content.completeness();
   }
 
   public Set<Tag> tags() {
-    return tags;
+    return content.tags();
   }
 
   public Instant publishedAt() {
-    return publishedAt;
+    return content.publishedAt();
   }
 
   public Instant updatedAt() {

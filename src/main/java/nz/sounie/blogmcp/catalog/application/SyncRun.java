@@ -3,14 +3,10 @@ package nz.sounie.blogmcp.catalog.application;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import nz.sounie.blogmcp.catalog.domain.BlogSource;
 import nz.sounie.blogmcp.catalog.domain.CanonicalUrlNotOnSite;
-import nz.sounie.blogmcp.catalog.domain.ChangeOrder;
-import nz.sounie.blogmcp.catalog.domain.OverlapMargin;
 import nz.sounie.blogmcp.catalog.domain.PageCursor;
 import nz.sounie.blogmcp.catalog.domain.Post;
 import nz.sounie.blogmcp.catalog.domain.PostId;
@@ -44,17 +40,15 @@ final class SyncRun {
 
   private final SyncCheckpoint checkpoint;
   private final Optional<Instant> checkpointBefore;
+  private final Listing listing = new Listing();
 
   private int pagesFetched;
-  private int entriesSeen;
   private int published;
   private int revised;
   private int unchanged;
   private int withdrawn;
   private final List<SkippedEntry> skipped = new ArrayList<>();
   private final List<SyncWarning> warnings = new ArrayList<>();
-  private final Set<SourcePostId> listed = new HashSet<>();
-  private boolean unidentifiedEntrySeen;
   private Optional<Instant> highWaterMark = Optional.empty();
 
   SyncRun(
@@ -84,26 +78,19 @@ final class SyncRun {
       SyncOutcome outcome = pagesFetched == 0 ? SyncOutcome.FAILED : SyncOutcome.PARTIAL;
       return report(outcome, Optional.of(e.getMessage()));
     }
-    advanceCheckpoint();
-    if (mode == SyncMode.RECONCILE) {
-      withdrawUnlistedPosts();
-    }
+    source.changeOrder().afterLastPage(this::advanceCheckpoint);
+    mode.afterCompleteRun(this::reconcile);
     return report(SyncOutcome.COMPLETED, Optional.empty());
   }
 
   private void fetchEveryPage() {
-    Optional<Instant> changedSince =
-        mode == SyncMode.RECONCILE
-            ? Optional.empty()
-            : checkpoint.changesSinceForNextSync(OverlapMargin.STANDARD);
+    Optional<Instant> changedSince = mode.changedSince(checkpoint);
     Optional<PageCursor> cursor = Optional.of(PageCursor.first());
     while (cursor.isPresent()) {
       SourcePage page = source.fetch(site, changedSince, cursor.get());
       page.entries().forEach(this::handle);
       pagesFetched++;
-      if (source.changeOrder() == ChangeOrder.OLDEST_FIRST) {
-        advanceCheckpoint();
-      }
+      source.changeOrder().afterPageHandled(this::advanceCheckpoint);
       cursor = page.next();
     }
   }
@@ -111,7 +98,7 @@ final class SyncRun {
   // --- entries ---------------------------------------------------------------------------------
 
   private void handle(SourceEntry entry) {
-    entriesSeen++;
+    listing.record(entry);
     entry.updatedAt().ifPresent(this::noteSourceTimestamp);
     switch (entry) {
       case SourceEntry.Available available -> handleAvailable(available);
@@ -122,44 +109,39 @@ final class SyncRun {
 
   private void handleAvailable(SourceEntry.Available available) {
     PostSnapshot snapshot = available.snapshot();
-    SourcePostId sourcePostId = snapshot.id().sourcePostId();
-    listed.add(sourcePostId);
-    available
-        .notes()
-        .forEach(
-            note ->
-                warnings.add(
-                    new SyncWarning(
-                        SyncWarning.Kind.SOURCE_NOTE, Optional.of(sourcePostId), note)));
-    // Only a URL on the site host can be a duplicate; an off-host URL is left for the domain to
-    // reject as malformed. Checking first means a loaded post is never revised and then dropped.
-    if (snapshot.url().isOn(site) && urlHeldByAnotherPost(snapshot)) {
+    available.notes().forEach(note -> warnSourceNote(snapshot.id().sourcePostId(), note));
+    if (takesUrlOfAnotherPost(snapshot)) {
       skipAsDuplicate(snapshot);
-      return;
+    } else {
+      apply(snapshot);
     }
+  }
+
+  /**
+   * Cross-aggregate rule (AC-CAT-17): a canonical URL belongs to at most one post. Only a URL on
+   * the site host can be a duplicate; an off-host URL is left for the domain to reject. Checking
+   * before applying means a loaded post is never revised and then dropped.
+   */
+  private boolean takesUrlOfAnotherPost(PostSnapshot snapshot) {
+    return snapshot.url().isOn(site)
+        && posts
+            .findByCanonicalUrl(snapshot.url())
+            .filter(holder -> !holder.id().equals(snapshot.id()))
+            .isPresent();
+  }
+
+  /**
+   * Publishes or revises. The domain enforces the site host: an off-host URL is bad source data and
+   * is skipped as malformed. {@code PostIdentityMismatch} is an adapter bug, so it propagates.
+   */
+  private void apply(PostSnapshot snapshot) {
     try {
       posts
           .findById(snapshot.id())
           .ifPresentOrElse(post -> revise(post, snapshot), () -> publish(snapshot));
     } catch (CanonicalUrlNotOnSite e) {
-      // Bad source data, not a bug: report it and carry on. PostIdentityMismatch propagates.
-      skip(Optional.of(sourcePostId), SkipReason.MALFORMED, e.getMessage());
+      skip(Optional.of(snapshot.id().sourcePostId()), SkipReason.MALFORMED, e.getMessage());
     }
-  }
-
-  private boolean urlHeldByAnotherPost(PostSnapshot snapshot) {
-    return posts
-        .findByCanonicalUrl(snapshot.url())
-        .filter(holder -> !holder.id().equals(snapshot.id()))
-        .isPresent();
-  }
-
-  /** Cross-aggregate rule: a canonical URL belongs to at most one post (AC-CAT-17). */
-  private void skipAsDuplicate(PostSnapshot snapshot) {
-    skip(
-        Optional.of(snapshot.id().sourcePostId()),
-        SkipReason.DUPLICATE_CANONICAL_URL,
-        "canonical URL " + snapshot.url().value() + " belongs to another post");
   }
 
   private void publish(PostSnapshot snapshot) {
@@ -171,21 +153,24 @@ final class SyncRun {
 
   private void revise(Post post, PostSnapshot snapshot) {
     switch (post.revise(site, snapshot)) {
-      case Revision.Changed changed -> {
-        posts.save(post);
-        events.publish(IntegrationEvents.from(changed.event()));
-        revised++;
-      }
-      case Revision.Touched _ -> {
-        posts.save(post);
-        unchanged++;
-      }
+      case Revision.Changed changed -> saveRevision(post, changed);
+      case Revision.Touched _ -> saveTimestamp(post);
       case Revision.Unchanged _, Revision.Stale _ -> unchanged++;
     }
   }
 
+  private void saveRevision(Post post, Revision.Changed changed) {
+    posts.save(post);
+    events.publish(IntegrationEvents.from(changed.event()));
+    revised++;
+  }
+
+  private void saveTimestamp(Post post) {
+    posts.save(post);
+    unchanged++;
+  }
+
   private void handleNotPublic(SourceEntry.NotPublic notPublic) {
-    listed.add(notPublic.sourcePostId());
     posts
         .findById(new PostId(site.id(), notPublic.sourcePostId()))
         .ifPresentOrElse(
@@ -198,8 +183,14 @@ final class SyncRun {
   }
 
   private void handleMalformed(SourceEntry.Malformed malformed) {
-    malformed.sourcePostId().ifPresentOrElse(listed::add, () -> unidentifiedEntrySeen = true);
     skip(malformed.sourcePostId(), SkipReason.MALFORMED, malformed.reason());
+  }
+
+  private void skipAsDuplicate(PostSnapshot snapshot) {
+    skip(
+        Optional.of(snapshot.id().sourcePostId()),
+        SkipReason.DUPLICATE_CANONICAL_URL,
+        "canonical URL " + snapshot.url().value() + " belongs to another post");
   }
 
   private void skip(Optional<SourcePostId> sourcePostId, SkipReason reason, String detail) {
@@ -214,18 +205,18 @@ final class SyncRun {
   // --- checkpoint ------------------------------------------------------------------------------
 
   private void noteSourceTimestamp(Instant updatedAt) {
-    if (highWaterMark.isEmpty() || updatedAt.isAfter(highWaterMark.get())) {
-      highWaterMark = Optional.of(updatedAt);
-    }
+    highWaterMark =
+        Optional.of(highWaterMark.filter(mark -> mark.isAfter(updatedAt)).orElse(updatedAt));
   }
 
-  /** Moves the checkpoint to the high-water mark and saves it, if that moves it forward. */
+  /** Moves the checkpoint to the high-water mark, and saves it if that moved it forward. */
   private void advanceCheckpoint() {
-    if (highWaterMark.isEmpty()) {
-      return;
-    }
+    highWaterMark.ifPresent(this::advanceCheckpointTo);
+  }
+
+  private void advanceCheckpointTo(Instant mark) {
     Optional<Instant> before = checkpoint.changesSeenUpTo();
-    checkpoint.advanceTo(highWaterMark.get());
+    checkpoint.advanceTo(mark);
     if (!checkpoint.changesSeenUpTo().equals(before)) {
       checkpoints.save(checkpoint);
     }
@@ -233,31 +224,26 @@ final class SyncRun {
 
   // --- reconcile -------------------------------------------------------------------------------
 
-  /**
-   * After a complete reconcile, withdraws every stored post of the site that was not listed. Does
-   * nothing, and leaves the reconcile due, when the listing was empty or contained an entry whose
-   * source post ID could not be read: either could make a listed post look missing.
-   */
+  /** After a complete reconcile, withdraws unlisted posts unless the listing cannot be trusted. */
+  private void reconcile() {
+    switch (listing.withdrawalDecision()) {
+      case WithdrawalDecision.Withdraw _ -> withdrawUnlistedPosts();
+      case WithdrawalDecision.Suppress suppress -> warn(suppress.warning(), suppress.detail());
+    }
+  }
+
   private void withdrawUnlistedPosts() {
-    if (entriesSeen == 0) {
-      warn(
-          SyncWarning.Kind.EMPTY_LISTING_WITHDRAWALS_SUPPRESSED,
-          "the reconcile listed no entries, so no post was withdrawn");
-      return;
-    }
-    if (unidentifiedEntrySeen) {
-      warn(
-          SyncWarning.Kind.UNIDENTIFIED_MALFORMED_ENTRY_WITHDRAWALS_SUPPRESSED,
-          "a malformed entry had no readable source post ID, so no post was withdrawn");
-      return;
-    }
-    for (PostId id : posts.findIdsBySite(site.id())) {
-      if (!listed.contains(id.sourcePostId())) {
-        posts.findById(id).ifPresent(post -> withdraw(post, WithdrawalReason.NO_LONGER_LISTED));
-      }
-    }
+    posts.findIdsBySite(site.id()).stream()
+        .filter(id -> !listing.lists(id.sourcePostId()))
+        .map(posts::findById)
+        .flatMap(Optional::stream)
+        .forEach(post -> withdraw(post, WithdrawalReason.NO_LONGER_LISTED));
     checkpoint.markReconciled(clock.instant());
     checkpoints.save(checkpoint);
+  }
+
+  private void warnSourceNote(SourcePostId sourcePostId, String note) {
+    warnings.add(new SyncWarning(SyncWarning.Kind.SOURCE_NOTE, Optional.of(sourcePostId), note));
   }
 
   private void warn(SyncWarning.Kind kind, String detail) {

@@ -1,8 +1,10 @@
 package nz.sounie.blogmcp.catalog.adapter.out;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
+import java.util.stream.Stream;
 import nz.sounie.blogmcp.catalog.domain.HtmlToText;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Element;
@@ -18,47 +20,6 @@ public final class JsoupHtmlToText implements HtmlToText {
 
   /** Stands in for a {@code <br>} until whitespace has been collapsed. */
   private static final char LINE_BREAK_MARK = (char) 0x2028; // LINE SEPARATOR
-
-  private static final Set<String> DROPPED = Set.of("script", "style", "noscript", "template");
-
-  private static final Set<String> BLOCKS =
-      Set.of(
-          "address",
-          "article",
-          "aside",
-          "blockquote",
-          "dd",
-          "details",
-          "div",
-          "dl",
-          "dt",
-          "figcaption",
-          "figure",
-          "footer",
-          "form",
-          "h1",
-          "h2",
-          "h3",
-          "h4",
-          "h5",
-          "h6",
-          "header",
-          "hr",
-          "li",
-          "main",
-          "nav",
-          "ol",
-          "p",
-          "section",
-          "summary",
-          "table",
-          "tbody",
-          "td",
-          "tfoot",
-          "th",
-          "thead",
-          "tr",
-          "ul");
 
   @Override
   public String extract(String html) {
@@ -91,29 +52,26 @@ public final class JsoupHtmlToText implements HtmlToText {
     }
 
     private void visit(Element element) {
-      String name = element.normalName();
-      if (DROPPED.contains(name)) {
-        return;
-      }
-      if (name.equals("br")) {
-        current.append(LINE_BREAK_MARK);
-      } else if (name.equals("pre")) {
-        endBlock();
-        addPreformatted(element.wholeText());
-      } else if (BLOCKS.contains(name)) {
-        endBlock();
-        walk(element);
-        endBlock();
-      } else {
-        walk(element);
-      }
+      ElementHandling.of(element.normalName()).apply(this, element);
+    }
+
+    private void lineBreak() {
+      current.append(LINE_BREAK_MARK);
+    }
+
+    private void block(Element element) {
+      endBlock();
+      walk(element);
+      endBlock();
+    }
+
+    private void preformatted(Element element) {
+      endBlock();
+      addPreformatted(element.wholeText());
     }
 
     private void addPreformatted(String text) {
-      String kept = text.replace(NO_BREAK_SPACE, ' ').stripTrailing();
-      while (kept.startsWith("\n")) {
-        kept = kept.substring(1);
-      }
+      String kept = text.replace(NO_BREAK_SPACE, ' ').stripTrailing().replaceFirst("^\n+", "");
       if (!kept.isBlank()) {
         blocks.add(kept);
       }
@@ -136,6 +94,98 @@ public final class JsoupHtmlToText implements HtmlToText {
     String text() {
       endBlock();
       return String.join(PARAGRAPH_BREAK, blocks);
+    }
+  }
+
+  /** What an element contributes to the text, looked up by element name. */
+  private enum ElementHandling {
+    /** Scripts, styles and the like carry no visible text. */
+    DROP {
+      @Override
+      void apply(Blocks blocks, Element element) {
+        // nothing visible
+      }
+    },
+    LINE_BREAK {
+      @Override
+      void apply(Blocks blocks, Element element) {
+        blocks.lineBreak();
+      }
+    },
+    /** Whitespace is kept exactly. */
+    PREFORMATTED {
+      @Override
+      void apply(Blocks blocks, Element element) {
+        blocks.preformatted(element);
+      }
+    },
+    /** Ends in a paragraph break. */
+    BLOCK {
+      @Override
+      void apply(Blocks blocks, Element element) {
+        blocks.block(element);
+      }
+    },
+    /** Part of the surrounding text. */
+    INLINE {
+      @Override
+      void apply(Blocks blocks, Element element) {
+        blocks.walk(element);
+      }
+    };
+
+    private static final Map<String, ElementHandling> BY_NAME = byName();
+
+    abstract void apply(Blocks blocks, Element element);
+
+    static ElementHandling of(String elementName) {
+      return BY_NAME.getOrDefault(elementName, INLINE);
+    }
+
+    private static Map<String, ElementHandling> byName() {
+      Map<String, ElementHandling> byName = new HashMap<>();
+      Stream.of("script", "style", "noscript", "template").forEach(name -> byName.put(name, DROP));
+      Stream.of(
+              "address",
+              "article",
+              "aside",
+              "blockquote",
+              "dd",
+              "details",
+              "div",
+              "dl",
+              "dt",
+              "figcaption",
+              "figure",
+              "footer",
+              "form",
+              "h1",
+              "h2",
+              "h3",
+              "h4",
+              "h5",
+              "h6",
+              "header",
+              "hr",
+              "li",
+              "main",
+              "nav",
+              "ol",
+              "p",
+              "section",
+              "summary",
+              "table",
+              "tbody",
+              "td",
+              "tfoot",
+              "th",
+              "thead",
+              "tr",
+              "ul")
+          .forEach(name -> byName.put(name, BLOCK));
+      byName.put("br", LINE_BREAK);
+      byName.put("pre", PREFORMATTED);
+      return Map.copyOf(byName);
     }
   }
 }

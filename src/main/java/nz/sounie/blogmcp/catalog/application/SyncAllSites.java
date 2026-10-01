@@ -2,8 +2,8 @@ package nz.sounie.blogmcp.catalog.application;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
-import nz.sounie.blogmcp.catalog.domain.PostId;
 import nz.sounie.blogmcp.catalog.domain.PostRepository;
 import nz.sounie.blogmcp.catalog.domain.Site;
 import nz.sounie.blogmcp.catalog.domain.SiteDirectory;
@@ -54,16 +54,18 @@ public final class SyncAllSites {
   }
 
   private void withdrawRemovedSites(Set<SiteId> configured) {
-    for (SiteId siteId : posts.findSiteIds()) {
-      if (!configured.contains(siteId)) {
-        for (PostId id : posts.findIdsBySite(siteId)) {
-          posts
-              .findById(id)
-              .ifPresent(post -> withdrawals.withdraw(post, WithdrawalReason.SITE_REMOVED));
-        }
-        checkpoints.delete(siteId);
-      }
-    }
+    posts.findSiteIds().stream()
+        .filter(siteId -> !configured.contains(siteId))
+        .forEach(this::withdrawRemovedSite);
+  }
+
+  /** AC-CAT-32: every post of a site no longer configured is withdrawn, and its checkpoint goes. */
+  private void withdrawRemovedSite(SiteId siteId) {
+    posts.findIdsBySite(siteId).stream()
+        .map(posts::findById)
+        .flatMap(Optional::stream)
+        .forEach(post -> withdrawals.withdraw(post, WithdrawalReason.SITE_REMOVED));
+    checkpoints.delete(siteId);
   }
 
   /** A failure of one site becomes its report, so the other sites still sync (AC-CAT-26). */
