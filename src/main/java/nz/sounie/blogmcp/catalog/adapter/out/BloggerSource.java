@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -28,6 +29,7 @@ import nz.sounie.blogmcp.catalog.domain.Site;
 import nz.sounie.blogmcp.catalog.domain.SourceEntry;
 import nz.sounie.blogmcp.catalog.domain.SourcePage;
 import nz.sounie.blogmcp.catalog.domain.SourcePostId;
+import nz.sounie.blogmcp.catalog.domain.SourceUnavailable;
 import nz.sounie.blogmcp.catalog.domain.Tag;
 import nz.sounie.blogmcp.catalog.domain.Title;
 import tools.jackson.databind.JsonNode;
@@ -78,27 +80,39 @@ public final class BloggerSource implements BlogSource {
     changedSince.ifPresent(
         since -> query.put("updated-min", DateTimeFormatter.ISO_INSTANT.format(since)));
 
-    JsonNode feed = http.get(apiBase.apply(site), FEED, query).body().path("feed");
+    JsonNode feed = feedOf(http.get(apiBase.apply(site), FEED, query).body());
     List<JsonNode> entries = feed.path("entry").values().stream().toList();
     List<SourceEntry> mapped =
         entries.stream().map(entry -> new EntryMapping(site, entry).entry()).toList();
-    return new SourcePage(mapped, nextCursor(cursor, entries.size(), totalResults(feed)));
+    OptionalInt total =
+        JsonHttp.count(feed.path("openSearch$totalResults").path(TEXT).asStringOpt());
+    return new SourcePage(mapped, nextCursor(cursor, entries.size(), total));
   }
 
-  /** Paging stops on a short page, or once the start index passes the total number of results. */
-  private static Optional<PageCursor> nextCursor(PageCursor cursor, int received, int total) {
+  /** The {@code feed} object; anything else is not a listing, so the source is unavailable. */
+  private static JsonNode feedOf(JsonNode body) {
+    JsonNode feed = body.path("feed");
+    if (!body.isObject() || !feed.isObject()) {
+      throw new SourceUnavailable("Blogger response has no feed object");
+    }
+    JsonNode entries = feed.path("entry");
+    if (!entries.isMissingNode() && !entries.isArray()) {
+      throw new SourceUnavailable("Blogger feed entries are not an array");
+    }
+    return feed;
+  }
+
+  /**
+   * Paging stops on a short page, or once the start index passes the total number of results.
+   * Without a usable total, a full page means more may follow, so paging continues.
+   */
+  private static Optional<PageCursor> nextCursor(
+      PageCursor cursor, int received, OptionalInt total) {
     int nextIndex = cursor.value() + received;
-    return received < MAX_RESULTS || nextIndex > total
+    boolean pastTotal = total.isPresent() && nextIndex > total.getAsInt();
+    return received < MAX_RESULTS || pastTotal
         ? Optional.empty()
         : Optional.of(new PageCursor(nextIndex));
-  }
-
-  private static int totalResults(JsonNode feed) {
-    try {
-      return Integer.parseInt(feed.path("openSearch$totalResults").path(TEXT).asString("0"));
-    } catch (NumberFormatException e) {
-      return 0;
-    }
   }
 
   private static String text(JsonNode node) {
@@ -141,7 +155,7 @@ public final class BloggerSource implements BlogSource {
           new PostSnapshot(
               new PostId(site.id(), id.get()),
               url,
-              new Title(htmlToText.decodeEntities(text(entry.path("title")))),
+              new Title(htmlToText.extract(text(entry.path("title")))),
               new Body(htmlToText.extract(html)),
               hasContent ? BodyCompleteness.FULL : BodyCompleteness.SUMMARY,
               Tag.setOf(labels()),

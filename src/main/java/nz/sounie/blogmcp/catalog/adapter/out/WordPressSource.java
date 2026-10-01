@@ -14,6 +14,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -31,6 +32,7 @@ import nz.sounie.blogmcp.catalog.domain.Site;
 import nz.sounie.blogmcp.catalog.domain.SourceEntry;
 import nz.sounie.blogmcp.catalog.domain.SourcePage;
 import nz.sounie.blogmcp.catalog.domain.SourcePostId;
+import nz.sounie.blogmcp.catalog.domain.SourceUnavailable;
 import nz.sounie.blogmcp.catalog.domain.Tag;
 import nz.sounie.blogmcp.catalog.domain.Title;
 import tools.jackson.databind.JsonNode;
@@ -85,27 +87,26 @@ public final class WordPressSource implements BlogSource {
         since -> query.put("modified_after", DateTimeFormatter.ISO_INSTANT.format(since)));
 
     JsonHttp.Response response = http.get(base, POSTS, query);
-    List<JsonNode> posts =
-        response.body().isArray() ? response.body().values().stream().toList() : List.of();
+    if (!response.body().isArray()) {
+      throw new SourceUnavailable("WordPress posts response is not a JSON array");
+    }
+    List<JsonNode> posts = response.body().values().stream().toList();
     Map<Long, String> tagNames = tagNames(base, tagIdsOf(posts));
     List<SourceEntry> entries =
         posts.stream().map(post -> new EntryMapping(site, post, tagNames).entry()).toList();
-
-    int totalPages =
-        response.headers().firstValue(TOTAL_PAGES).map(WordPressSource::parseIntOrZero).orElse(0);
-    Optional<PageCursor> next =
-        cursor.value() < totalPages
-            ? Optional.of(new PageCursor(cursor.value() + 1))
-            : Optional.empty();
-    return new SourcePage(entries, next);
+    OptionalInt totalPages = JsonHttp.count(response.headers().firstValue(TOTAL_PAGES));
+    return new SourcePage(entries, nextCursor(cursor, posts.size(), totalPages));
   }
 
-  private static int parseIntOrZero(String text) {
-    try {
-      return Integer.parseInt(text.strip());
-    } catch (NumberFormatException e) {
-      return 0;
-    }
+  /**
+   * The next page number while {@code X-WP-TotalPages} says more follow. Without a usable total,
+   * keeps paging while pages are full, so a truncated listing is never reported as complete.
+   */
+  private static Optional<PageCursor> nextCursor(
+      PageCursor cursor, int received, OptionalInt totalPages) {
+    boolean more =
+        totalPages.isPresent() ? cursor.value() < totalPages.getAsInt() : received >= PER_PAGE;
+    return more ? Optional.of(new PageCursor(cursor.value() + 1)) : Optional.empty();
   }
 
   private static Set<Long> tagIdsOf(List<JsonNode> posts) {
@@ -180,8 +181,7 @@ public final class WordPressSource implements BlogSource {
           new PostSnapshot(
               new PostId(site.id(), id.get()),
               url,
-              new Title(
-                  htmlToText.decodeEntities(post.path("title").path("rendered").asString(""))),
+              new Title(htmlToText.extract(post.path("title").path("rendered").asString(""))),
               new Body(htmlToText.extract(post.path("content").path("rendered").asString(""))),
               BodyCompleteness.FULL,
               tags(notes),

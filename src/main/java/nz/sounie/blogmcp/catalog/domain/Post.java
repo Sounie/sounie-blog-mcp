@@ -48,14 +48,7 @@ public final class Post {
    * @throws CanonicalUrlNotOnSite if the snapshot URL is not on the site host
    */
   public static Published publish(Site site, PostSnapshot snapshot) {
-    if (!snapshot.id().siteId().equals(site.id())) {
-      throw new PostIdentityMismatch(
-          "Snapshot " + snapshot.id().external() + " does not belong to site " + site.id().value());
-    }
-    if (!snapshot.url().isOn(site)) {
-      throw new CanonicalUrlNotOnSite(
-          "Canonical URL " + snapshot.url().value() + " is not on the site host " + site.host());
-    }
+    requireSnapshotOf(site, snapshot);
     Post post =
         new Post(
             snapshot.id(),
@@ -100,10 +93,15 @@ public final class Post {
    * @throws CanonicalUrlNotOnSite if the snapshot URL is not on the site host
    */
   public Revision revise(Site site, PostSnapshot snapshot) {
+    if (!site.id().equals(id.siteId())) {
+      throw new PostIdentityMismatch(
+          "Post " + id.external() + " does not belong to site " + site.id().value());
+    }
     if (!snapshot.id().equals(id)) {
       throw new PostIdentityMismatch(
           "Snapshot " + snapshot.id().external() + " does not belong to post " + id.external());
     }
+    requireSnapshotOf(site, snapshot);
     if (snapshot.updatedAt().isBefore(updatedAt)) {
       return new Revision.Stale();
     }
@@ -124,6 +122,18 @@ public final class Post {
   /** Removes the post from the catalog. The caller then deletes it from the repository. */
   public PostWithdrawn withdraw(WithdrawalReason reason) {
     return new PostWithdrawn(id, url, Objects.requireNonNull(reason, "reason"));
+  }
+
+  /** Invariants 1 and 2: the snapshot is of a post on this site, at a URL on the site host. */
+  private static void requireSnapshotOf(Site site, PostSnapshot snapshot) {
+    if (!snapshot.id().siteId().equals(site.id())) {
+      throw new PostIdentityMismatch(
+          "Snapshot " + snapshot.id().external() + " does not belong to site " + site.id().value());
+    }
+    if (!snapshot.url().isOn(site)) {
+      throw new CanonicalUrlNotOnSite(
+          "Canonical URL " + snapshot.url().value() + " is not on the site host " + site.host());
+    }
   }
 
   private Set<RevisedAspect> materialChangesIn(PostSnapshot snapshot) {

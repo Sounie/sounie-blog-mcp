@@ -10,6 +10,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.stream.Collectors;
 import nz.sounie.blogmcp.catalog.domain.SourceUnavailable;
 import tools.jackson.core.JacksonException;
@@ -68,6 +70,17 @@ final class JsonHttp {
       return new Response(json.readTree(response.body()), response.headers());
     } catch (JacksonException e) {
       throw new SourceUnavailable("Unreadable JSON from " + uri, e);
+    }
+  }
+
+  /** A non-negative count reported by a platform, or empty if it is missing or unparseable. */
+  static OptionalInt count(Optional<String> reported) {
+    try {
+      return reported.isPresent() && !reported.get().isBlank()
+          ? OptionalInt.of(Math.max(0, Integer.parseInt(reported.get().strip())))
+          : OptionalInt.empty();
+    } catch (NumberFormatException e) {
+      return OptionalInt.empty();
     }
   }
 

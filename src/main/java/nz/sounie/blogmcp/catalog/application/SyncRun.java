@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import nz.sounie.blogmcp.catalog.domain.BlogSource;
+import nz.sounie.blogmcp.catalog.domain.CanonicalUrlNotOnSite;
 import nz.sounie.blogmcp.catalog.domain.ChangeOrder;
 import nz.sounie.blogmcp.catalog.domain.OverlapMargin;
 import nz.sounie.blogmcp.catalog.domain.PageCursor;
@@ -130,30 +131,14 @@ final class SyncRun {
                 warnings.add(
                     new SyncWarning(
                         SyncWarning.Kind.SOURCE_NOTE, Optional.of(sourcePostId), note)));
-    Optional<String> malformation = malformationOf(snapshot);
-    if (malformation.isPresent()) {
-      skip(Optional.of(sourcePostId), SkipReason.MALFORMED, malformation.get());
-    } else if (urlHeldByAnotherPost(snapshot)) {
-      skip(
-          Optional.of(sourcePostId),
-          SkipReason.DUPLICATE_CANONICAL_URL,
-          "canonical URL " + snapshot.url().value() + " belongs to another post");
-    } else {
+    try {
       posts
           .findById(snapshot.id())
           .ifPresentOrElse(post -> revise(post, snapshot), () -> publish(snapshot));
+    } catch (CanonicalUrlNotOnSite e) {
+      // Bad source data, not a bug: report it and carry on. PostIdentityMismatch propagates.
+      skip(Optional.of(sourcePostId), SkipReason.MALFORMED, e.getMessage());
     }
-  }
-
-  private Optional<String> malformationOf(PostSnapshot snapshot) {
-    if (!snapshot.id().siteId().equals(site.id())) {
-      return Optional.of("post " + snapshot.id().external() + " is not on " + site.id().value());
-    }
-    if (!snapshot.url().isOn(site)) {
-      return Optional.of(
-          "canonical URL " + snapshot.url().value() + " is not on the site host " + site.host());
-    }
-    return Optional.empty();
   }
 
   private boolean urlHeldByAnotherPost(PostSnapshot snapshot) {
@@ -163,8 +148,20 @@ final class SyncRun {
         .isPresent();
   }
 
+  /** Cross-aggregate rule: a canonical URL belongs to at most one post (AC-CAT-17). */
+  private void skipAsDuplicate(PostSnapshot snapshot) {
+    skip(
+        Optional.of(snapshot.id().sourcePostId()),
+        SkipReason.DUPLICATE_CANONICAL_URL,
+        "canonical URL " + snapshot.url().value() + " belongs to another post");
+  }
+
   private void publish(PostSnapshot snapshot) {
     Post.Published publication = Post.publish(site, snapshot);
+    if (urlHeldByAnotherPost(snapshot)) {
+      skipAsDuplicate(snapshot);
+      return;
+    }
     posts.save(publication.post());
     events.publish(IntegrationEvents.from(publication.event()));
     published++;
@@ -172,6 +169,7 @@ final class SyncRun {
 
   private void revise(Post post, PostSnapshot snapshot) {
     switch (post.revise(site, snapshot)) {
+      case Revision.Changed _ when urlHeldByAnotherPost(snapshot) -> skipAsDuplicate(snapshot);
       case Revision.Changed changed -> {
         posts.save(post);
         events.publish(IntegrationEvents.from(changed.event()));
