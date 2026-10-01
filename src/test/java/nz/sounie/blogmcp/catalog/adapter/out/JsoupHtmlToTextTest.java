@@ -48,6 +48,31 @@ class JsoupHtmlToTextTest {
   }
 
   @Test
+  void a_line_break_starts_a_new_line_within_the_paragraph() {
+    assertThat(htmlToText.extract("<p>one<br>two</p>")).isEqualTo("one\ntwo");
+  }
+
+  @Test
+  void drops_noscript_and_template_elements() {
+    assertThat(
+            htmlToText.extract(
+                "<noscript>Enable JS</noscript><template><p>t</p></template><p>Shown</p>"))
+        .isEqualTo("Shown");
+  }
+
+  @Test
+  void ignores_comments_and_treats_unknown_elements_as_inline() {
+    assertThat(htmlToText.extract("<p>a <!-- hidden --><custom-el>b</custom-el> c</p>"))
+        .isEqualTo("a b c");
+  }
+
+  @Test
+  void table_cells_are_blocks() {
+    assertThat(htmlToText.extract("<table><tr><td>a</td><td>b</td></tr></table>"))
+        .isEqualTo("a\n\nb");
+  }
+
+  @Test
   void empty_html_gives_empty_text() {
     assertThat(htmlToText.extract("")).isEmpty();
   }

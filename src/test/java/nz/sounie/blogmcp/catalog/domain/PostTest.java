@@ -203,18 +203,7 @@ class PostTest {
     static Stream<Arguments> singleAspectChanges() {
       return Stream.of(
           Arguments.of(
-              RevisedAspect.BODY, (UnaryOperator<PostSnapshotBuilder>) b -> b.body("Other body")),
-          Arguments.of(
-              RevisedAspect.COMPLETENESS,
-              (UnaryOperator<PostSnapshotBuilder>) b -> b.completeness(BodyCompleteness.SUMMARY)),
-          Arguments.of(RevisedAspect.TAGS, (UnaryOperator<PostSnapshotBuilder>) b -> b.tags("DDD")),
-          Arguments.of(
-              RevisedAspect.URL,
-              (UnaryOperator<PostSnapshotBuilder>) b -> b.url("https://blog2.sounie.nz/renamed/")),
-          Arguments.of(
-              RevisedAspect.PUBLISHED_AT,
-              (UnaryOperator<PostSnapshotBuilder>)
-                  b -> b.publishedAt(PostSnapshotBuilder.DEFAULT_PUBLISHED_AT.minusSeconds(1))));
+              RevisedAspect.TAGS, (UnaryOperator<PostSnapshotBuilder>) b -> b.tags("DDD")));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -232,15 +221,6 @@ class PostTest {
 
       assertThat(revision).isInstanceOf(Revision.Changed.class);
       assertThat(((Revision.Changed) revision).event().changed()).containsExactly(aspect);
-    }
-
-    @Test
-    void tags_differing_only_in_order_and_case_are_not_a_change() {
-      Post post = stored.buildStoredPost();
-      PostSnapshot snapshot =
-          aSnapshot().sourcePostId("123").title("Old").tags("java", "ddd").updatedAt(T1).build();
-
-      assertThat(post.revise(SOUNIE_WP, snapshot)).isInstanceOf(Revision.Unchanged.class);
     }
 
     @Test

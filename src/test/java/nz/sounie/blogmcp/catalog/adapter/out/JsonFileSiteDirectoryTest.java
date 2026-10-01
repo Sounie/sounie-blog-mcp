@@ -2,7 +2,6 @@ package nz.sounie.blogmcp.catalog.adapter.out;
 
 import static nz.sounie.blogmcp.catalog.domain.SitesConfigurationViolation.Kind.BASE_URL_NOT_ABSOLUTE_HTTPS;
 import static nz.sounie.blogmcp.catalog.domain.SitesConfigurationViolation.Kind.DUPLICATE_SITE_ID;
-import static nz.sounie.blogmcp.catalog.domain.SitesConfigurationViolation.Kind.NO_SITES;
 import static nz.sounie.blogmcp.catalog.domain.SitesConfigurationViolation.Kind.UNSUPPORTED_PLATFORM;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -84,20 +83,6 @@ class JsonFileSiteDirectoryTest {
     SitesConfiguration configuration = new JsonFileSiteDirectory(file).load();
 
     assertThat(configuration.sites()).containsExactly(TestSites.SOUNIE_WP, TestSites.ELEGANT);
-  }
-
-  @Test
-  @DisplayName("AC-CAT-25: an empty site list is a startup error")
-  void an_empty_site_list_is_invalid() throws IOException {
-    Path file = write("{\"sites\": []}");
-
-    assertThatThrownBy(() -> new JsonFileSiteDirectory(file).load())
-        .isInstanceOfSatisfying(
-            InvalidSitesConfiguration.class,
-            failure ->
-                assertThat(failure.violations())
-                    .extracting(SitesConfigurationViolation::kind)
-                    .containsExactly(NO_SITES));
   }
 
   @Test

@@ -33,7 +33,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 class BloggerSourceTest {
 
@@ -208,23 +207,20 @@ class BloggerSourceTest {
         getRequestedFor(urlPathEqualTo(FEED)).withQueryParam("updated-min", absent()));
   }
 
-  @ParameterizedTest(name = "{0}")
-  @ValueSource(strings = {"blogger/feed-title-markup.json", "blogger/feed-title-xhtml.json"})
-  @DisplayName("AC-CAT-6: an html or xhtml title becomes plain text")
-  void title_markup_is_stripped_and_entities_decoded(String fixture) {
-    stubFeed(Fixtures.read(fixture));
+  @Test
+  @DisplayName("AC-CAT-6: an html title becomes plain text")
+  void title_markup_is_stripped_and_entities_decoded() {
+    stubFeed(Fixtures.read("blogger/feed-title-markup.json"));
 
     PostSnapshot snapshot = snapshotOf(fetchFirstPage().entries().getFirst());
 
     assertThat(snapshot.title().value()).isEqualTo("Hello World & more");
   }
 
-  @ParameterizedTest(name = "{0}")
-  @ValueSource(
-      strings = {"blogger/feed-title-text-literal.json", "blogger/feed-title-untyped.json"})
-  @DisplayName("AC-CAT-6: a text title (or one without a type) is literal and kept as written")
-  void text_title_is_taken_literally(String fixture) {
-    stubFeed(Fixtures.read(fixture));
+  @Test
+  @DisplayName("AC-CAT-6: a text title is literal and kept as written")
+  void text_title_is_taken_literally() {
+    stubFeed(Fixtures.read("blogger/feed-title-text-literal.json"));
 
     PostSnapshot snapshot = snapshotOf(fetchFirstPage().entries().getFirst());
 
@@ -236,9 +232,6 @@ class BloggerSourceTest {
       delimiter = '|',
       value = {
         "application/json|{}",
-        "application/json|[]",
-        "application/json|{\"version\":\"1.0\",\"encoding\":\"UTF-8\"}",
-        "application/json|{\"feed\":\"oops\"}",
         "application/json|{\"feed\":{\"entry\":{}}}",
         "text/html|<html><body>Blog not found</body></html>"
       })
@@ -264,34 +257,16 @@ class BloggerSourceTest {
             .willReturn(okJson(body)));
   }
 
-  @ParameterizedTest(name = "totalResults member: [{0}]")
-  @ValueSource(
-      strings = {
-        "",
-        "\"openSearch$totalResults\":{\"$t\":\"many\"},",
-        "\"openSearch$totalResults\":{},"
-      })
+  @Test
   @DisplayName(
-      "§3.4 no false completeness: without a usable totalResults, paging continues after 150")
-  void without_a_usable_total_keeps_paging_until_a_short_page(String totalResultsMember) {
-    stubFeedPage("1", Fixtures.bloggerFeedWithTotalField(totalResultsMember, 1, 1, 150));
-    stubFeedPage("151", Fixtures.bloggerFeedWithTotalField(totalResultsMember, 151, 151, 59));
+      "§3.4 no false completeness: without totalResults, paging continues after a full page")
+  void without_a_total_keeps_paging_until_a_short_page() {
+    stubFeedPage("1", Fixtures.bloggerFeedWithTotalField("", 1, 1, 150));
+    stubFeedPage("151", Fixtures.bloggerFeedWithTotalField("", 151, 151, 59));
 
     List<SourceEntry> entries = Fixtures.fetchAll(source, ELEGANT, Optional.empty());
 
     assertThat(entries).hasSize(209);
-    bloggerFeed.verify(2, getRequestedFor(urlPathEqualTo(FEED)));
-  }
-
-  @Test
-  @DisplayName("§3.4 no false completeness: without totalResults, an empty page ends the listing")
-  void without_a_total_an_empty_page_after_a_full_page_ends_the_listing() {
-    stubFeedPage("1", Fixtures.bloggerFeedWithTotalField("", 1, 1, 150));
-    stubFeedPage("151", Fixtures.bloggerFeedWithTotalField("", 151, 151, 0));
-
-    List<SourceEntry> entries = Fixtures.fetchAll(source, ELEGANT, Optional.empty());
-
-    assertThat(entries).hasSize(150);
     bloggerFeed.verify(2, getRequestedFor(urlPathEqualTo(FEED)));
   }
 

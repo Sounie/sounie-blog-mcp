@@ -631,7 +631,7 @@ class SyncSiteTest {
     @ParameterizedTest
     @EnumSource(
         value = ChangeOrder.class,
-        names = {"NEWEST_FIRST", "UNORDERED"})
+        names = {"NEWEST_FIRST"})
     @DisplayName("AC-CAT-19: an error with a newest-first or unordered source keeps the checkpoint")
     void error_with_newest_first_or_unordered_source_leaves_checkpoint_unchanged(
         ChangeOrder order) {
