@@ -5,7 +5,7 @@ plugins {
     alias(libs.plugins.pitest)
 }
 
-group = "com.example"
+group = "nz.sounie"
 
 java {
     toolchain { languageVersion = JavaLanguageVersion.of(25) }
@@ -76,8 +76,8 @@ val pitestJunit5Version = libs.versions.pitestJunit5.get()
 pitest {
     pitestVersion = pitestCoreVersion
     junit5PluginVersion = pitestJunit5Version
-    targetClasses = setOf("com.example.*.domain.*")
-    targetTests = setOf("com.example.*")
+    targetClasses = setOf("nz.sounie.blogmcp.*.domain.*")
+    targetTests = setOf("nz.sounie.blogmcp.*")
     mutationThreshold = 80
     timestampedReports = false
     outputFormats = setOf("HTML", "XML")

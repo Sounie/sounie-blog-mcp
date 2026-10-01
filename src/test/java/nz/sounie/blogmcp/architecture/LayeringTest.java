@@ -1,4 +1,4 @@
-package com.example.architecture;
+package nz.sounie.blogmcp.architecture;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
@@ -8,7 +8,9 @@ import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 
-@AnalyzeClasses(packages = "com.example", importOptions = ImportOption.DoNotIncludeTests.class)
+@AnalyzeClasses(
+    packages = "nz.sounie.blogmcp",
+    importOptions = ImportOption.DoNotIncludeTests.class)
 class LayeringTest {
 
   @ArchTest
@@ -21,7 +23,7 @@ class LayeringTest {
           .resideInAnyPackage("..application..", "..adapter..")
           .orShould()
           .dependOnClassesThat()
-          .resideOutsideOfPackages("com.example..", "java..", "javax.annotation..")
+          .resideOutsideOfPackages("nz.sounie.blogmcp..", "java..", "javax.annotation..")
           .allowEmptyShould(true);
 
   @ArchTest
@@ -46,5 +48,5 @@ class LayeringTest {
 
   @ArchTest
   static final ArchRule bounded_contexts_are_free_of_cycles =
-      slices().matching("com.example.(*)..").should().beFreeOfCycles().allowEmptyShould(true);
+      slices().matching("nz.sounie.blogmcp.(*)..").should().beFreeOfCycles().allowEmptyShould(true);
 }

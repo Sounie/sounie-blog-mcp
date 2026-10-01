@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Opens a GitHub pull request for the current branch using the REST API.
+# Used instead of the gh CLI, which can't verify TLS inside the Claude Code sandbox.
+#
+# Usage: scripts/open-pr "<title>" <body-file> [base-branch]
+# Requires GH_TOKEN (repo-scoped fine-grained token) in the environment.
+set -euo pipefail
+
+title="${1:?usage: scripts/open-pr \"<title>\" <body-file> [base]}"
+body_file="${2:?usage: scripts/open-pr \"<title>\" <body-file> [base]}"
+base="${3:-main}"
+: "${GH_TOKEN:?GH_TOKEN is not set}"
+
+head="$(git rev-parse --abbrev-ref HEAD)"
+if [[ "$head" == "$base" ]]; then
+  echo "Refusing to open a PR from $base to itself" >&2
+  exit 1
+fi
+
+# owner/repo from the origin URL (https or ssh form).
+repo="$(git remote get-url origin | sed -E 's#^(https://github.com/|git@github.com:)##; s#\.git$##')"
+
+payload="$(jq -n --arg title "$title" --arg head "$head" --arg base "$base" \
+  --rawfile body "$body_file" '{title: $title, head: $head, base: $base, body: $body}')"
+
+response="$(curl -sS -m 30 -X POST \
+  -H "Authorization: Bearer $GH_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/$repo/pulls" \
+  -d "$payload")"
+
+url="$(jq -r '.html_url // empty' <<<"$response")"
+if [[ -z "$url" ]]; then
+  echo "Failed to open PR: $(jq -r '.message // .' <<<"$response")" >&2
+  jq -r '.errors[]?.message // empty' <<<"$response" >&2
+  exit 1
+fi
+echo "$url"

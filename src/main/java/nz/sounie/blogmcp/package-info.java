@@ -3,4 +3,4 @@
  * <context>.domain}, {@code <context>.application}, {@code <context>.adapter.in} and {@code
  * <context>.adapter.out}. See CLAUDE.md.
  */
-package com.example;
+package nz.sounie.blogmcp;
