@@ -6,6 +6,7 @@ import static nz.sounie.blogmcp.catalog.domain.SitesConfigurationViolation.Kind.
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class ConfigurationRuleTest {
@@ -57,6 +58,23 @@ class ConfigurationRuleTest {
     assertThat(ConfigurationRule.UNIQUE_BASE_URLS.check(definitions))
         .extracting(SitesConfigurationViolation::kind)
         .containsExactly(DUPLICATE_BASE_URL);
+  }
+
+  @Test
+  @DisplayName("AC-CAT-25: a duplicate base URL is reported as the owner wrote it")
+  void a_duplicate_base_url_is_reported_as_written() {
+    List<SiteDefinition> definitions =
+        List.of(site("one", "https://A.example/blog"), site("two", "https://a.example/blog/"));
+
+    assertThat(ConfigurationRule.UNIQUE_BASE_URLS.check(definitions))
+        .singleElement()
+        .satisfies(
+            violation -> {
+              assertThat(violation.kind()).isEqualTo(DUPLICATE_BASE_URL);
+              assertThat(violation.detail())
+                  .contains("https://a.example/blog/")
+                  .doesNotContain(":-1");
+            });
   }
 
   @Test

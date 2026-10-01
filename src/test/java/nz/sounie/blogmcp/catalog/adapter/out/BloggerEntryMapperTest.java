@@ -94,6 +94,15 @@ class BloggerEntryMapperTest {
   }
 
   @Test
+  @DisplayName("AC-CAT-6: a title without a type is literal text")
+  void a_title_without_a_type_is_kept_as_written() {
+    ObjectNode entry = entry();
+    entry.putObject("title").put("$t", "List<String> & co");
+
+    assertThat(snapshotOf(mapper.map(entry)).title().value()).isEqualTo("List<String> & co");
+  }
+
+  @Test
   @DisplayName("AC-CAT-9: labels become tags")
   void labels_become_tags() {
     assertThat(snapshotOf(mapper.map(entry())).tags())
