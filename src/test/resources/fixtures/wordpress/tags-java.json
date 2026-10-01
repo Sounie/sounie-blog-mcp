@@ -1,0 +1,16 @@
+[
+  {
+    "id": 5,
+    "count": 1,
+    "name": "java",
+    "slug": "java",
+    "taxonomy": "post_tag"
+  },
+  {
+    "id": 7,
+    "count": 1,
+    "name": "Java",
+    "slug": "java-2",
+    "taxonomy": "post_tag"
+  }
+]

@@ -1,0 +1,33 @@
+[
+  {
+    "id": 124,
+    "date": "2026-09-20T13:20:47",
+    "date_gmt": "2026-09-20T01:20:47",
+    "guid": {
+      "rendered": "https://blog2.sounie.nz/?p=124"
+    },
+    "modified": "2026-09-20T13:20:47",
+    "modified_gmt": "2026-09-20T01:20:47",
+    "slug": "tagged",
+    "status": "publish",
+    "type": "post",
+    "link": "https://blog2.sounie.nz/2026/09/20/tagged/",
+    "title": {
+      "rendered": "Tagged"
+    },
+    "content": {
+      "rendered": "<p>Tagged post</p>",
+      "protected": false
+    },
+    "author": 1,
+    "categories": [
+      1,
+      3
+    ],
+    "tags": [
+      5,
+      7,
+      99
+    ]
+  }
+]

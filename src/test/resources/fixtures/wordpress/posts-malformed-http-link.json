@@ -1,0 +1,98 @@
+[
+  {
+    "id": 34,
+    "date": "2026-05-05T10:27:45",
+    "date_gmt": "2026-05-04T22:27:45",
+    "guid": {
+      "rendered": "https://blog2.sounie.nz/?p=34"
+    },
+    "modified": "2026-05-06T14:19:50",
+    "modified_gmt": "2026-05-06T02:19:50",
+    "slug": "what-have-i-done-lately-part-1-ai",
+    "status": "publish",
+    "type": "post",
+    "link": "https://blog2.sounie.nz/what-have-i-done-lately-part-1-ai/",
+    "title": {
+      "rendered": "What have I done lately? &#8211; Part 1: AI"
+    },
+    "content": {
+      "rendered": "\n<p class=\"wp-block-paragraph\">This post is my attempt at jotting down some work and hobby project work that I have been leading or dabbling in for the last couple of years. It is partly intended as a way to avoid getting nostalgic remembering projects that I worked on much earlier in my career, as not many people will be interested in tales of compiling BIND and sendmail from source back at the start of the century.</p>\n\n\n\n<p class=\"wp-block-paragraph\">In the interests of not turning into a full book chapter, this will be a series of posts covering different topics.</p>\n",
+      "protected": false
+    },
+    "author": 1,
+    "categories": [
+      30
+    ],
+    "tags": [
+      20,
+      22,
+      21
+    ]
+  },
+  {
+    "id": 30,
+    "date": "2026-04-29T11:31:19",
+    "date_gmt": "2026-04-28T23:31:19",
+    "guid": {
+      "rendered": "https://blog2.sounie.nz/?p=30"
+    },
+    "modified": "2026-05-06T14:20:21",
+    "modified_gmt": "2026-05-06T02:20:00",
+    "slug": "middle",
+    "status": "publish",
+    "type": "post",
+    "link": "http://blog2.sounie.nz/x",
+    "title": {
+      "rendered": "Middle"
+    },
+    "content": {
+      "rendered": "\n<p class=\"wp-block-paragraph\">GitHub Copilot has recently announced that it will be <a href=\"https://github.blog/news-insights/company-news/github-copilot-is-moving-to-usage-based-billing\">moving to usage based billing.</a></p>\n\n\n\n<p class=\"wp-block-paragraph\">I see this as an inflection point, where one of the big players in the AI market is confident that the level of usefulness of their product warrants customers paying for access to it in a similar way to how they would expect to pay for Internet access or mobile phone contracts, or water use.</p>\n",
+      "protected": false
+    },
+    "author": 1,
+    "categories": [
+      30
+    ],
+    "tags": [
+      12,
+      8,
+      9,
+      10,
+      13,
+      11
+    ]
+  },
+  {
+    "id": 27,
+    "date": "2026-04-29T11:31:19",
+    "date_gmt": "2026-04-28T23:31:19",
+    "guid": {
+      "rendered": "https://blog2.sounie.nz/?p=27"
+    },
+    "modified": "2026-05-06T14:20:21",
+    "modified_gmt": "2026-05-06T02:20:21",
+    "slug": "ai-reaching-utility-level-for-billing",
+    "status": "publish",
+    "type": "post",
+    "link": "https://blog2.sounie.nz/ai-reaching-utility-level-for-billing/",
+    "title": {
+      "rendered": "AI Reaching Utility Level &#8211; For Billing"
+    },
+    "content": {
+      "rendered": "\n<p class=\"wp-block-paragraph\">GitHub Copilot has recently announced that it will be <a href=\"https://github.blog/news-insights/company-news/github-copilot-is-moving-to-usage-based-billing\">moving to usage based billing.</a></p>\n\n\n\n<p class=\"wp-block-paragraph\">I see this as an inflection point, where one of the big players in the AI market is confident that the level of usefulness of their product warrants customers paying for access to it in a similar way to how they would expect to pay for Internet access or mobile phone contracts, or water use.</p>\n",
+      "protected": false
+    },
+    "author": 1,
+    "categories": [
+      30
+    ],
+    "tags": [
+      12,
+      8,
+      9,
+      10,
+      13,
+      11
+    ]
+  }
+]

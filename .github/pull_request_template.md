@@ -11,6 +11,7 @@
 - `./gw check`: <!-- pass/fail -->
 - JaCoCo (domain + application): <!-- % -->
 - PIT mutation score (domain): <!-- % -->
+- PMD complexity (NPath ≤ 16, cyclomatic ≤ 5, cognitive ≤ 7): <!-- violations: 0; suppressions: none / list with justification -->
 
 ## Review
 <!-- Reviewer findings and how each was resolved. -->

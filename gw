@@ -31,4 +31,5 @@ fi
 
 # The JVM echoes JAVA_TOOL_OPTIONS (including the proxy password) to stderr; drop that line.
 # A plain pipe (not process substitution, which the sandbox blocks); pipefail keeps Gradle's exit code.
-./gradlew "$@" 2>&1 | grep -v '^Picked up JAVA_TOOL_OPTIONS'
+# Match anywhere in the line: forked JVMs (tests, PIT minions) print it behind a prefix.
+./gradlew "$@" 2>&1 | grep -v 'Picked up JAVA_TOOL_OPTIONS'
