@@ -2,9 +2,15 @@ package nz.sounie.blogmcp.catalog.application;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.Set;
+import nz.sounie.blogmcp.catalog.domain.PostId;
 import nz.sounie.blogmcp.catalog.domain.PostRepository;
+import nz.sounie.blogmcp.catalog.domain.Site;
 import nz.sounie.blogmcp.catalog.domain.SiteDirectory;
+import nz.sounie.blogmcp.catalog.domain.SiteId;
+import nz.sounie.blogmcp.catalog.domain.SitesConfiguration;
 import nz.sounie.blogmcp.catalog.domain.SyncCheckpointRepository;
+import nz.sounie.blogmcp.catalog.domain.WithdrawalReason;
 import nz.sounie.blogmcp.shared.event.IntegrationEventPublisher;
 
 /**
@@ -18,7 +24,7 @@ public final class SyncAllSites {
   private final SyncSite syncSite;
   private final PostRepository posts;
   private final SyncCheckpointRepository checkpoints;
-  private final IntegrationEventPublisher events;
+  private final PostWithdrawals withdrawals;
   private final Clock clock;
 
   public SyncAllSites(
@@ -32,7 +38,7 @@ public final class SyncAllSites {
     this.syncSite = syncSite;
     this.posts = posts;
     this.checkpoints = checkpoints;
-    this.events = events;
+    this.withdrawals = new PostWithdrawals(posts, events);
     this.clock = clock;
   }
 
@@ -42,6 +48,42 @@ public final class SyncAllSites {
    * @return one report per configured site, in configuration order
    */
   public List<SyncReport> run(SyncMode mode) {
-    throw new UnsupportedOperationException("not implemented");
+    SitesConfiguration configuration = siteDirectory.load();
+    withdrawRemovedSites(configuration.siteIds());
+    return configuration.sites().stream().map(site -> syncIndependently(site, mode)).toList();
+  }
+
+  private void withdrawRemovedSites(Set<SiteId> configured) {
+    for (SiteId siteId : posts.findSiteIds()) {
+      if (!configured.contains(siteId)) {
+        for (PostId id : posts.findIdsBySite(siteId)) {
+          posts
+              .findById(id)
+              .ifPresent(post -> withdrawals.withdraw(post, WithdrawalReason.SITE_REMOVED));
+        }
+        checkpoints.delete(siteId);
+      }
+    }
+  }
+
+  /** A failure of one site becomes its report, so the other sites still sync (AC-CAT-26). */
+  private SyncReport syncIndependently(Site site, SyncMode requested) {
+    SyncMode mode = modeFor(site, requested);
+    try {
+      return syncSite.run(site, mode);
+    } catch (RuntimeException e) {
+      return SyncReport.failed(site.id(), mode, String.valueOf(e.getMessage()));
+    }
+  }
+
+  private SyncMode modeFor(Site site, SyncMode requested) {
+    boolean reconcileDue =
+        checkpoints
+            .find(site.id())
+            .map(checkpoint -> checkpoint.isReconcileDue(clock.instant()))
+            .orElse(true);
+    return requested == SyncMode.RECONCILE || reconcileDue
+        ? SyncMode.RECONCILE
+        : SyncMode.INCREMENTAL;
   }
 }

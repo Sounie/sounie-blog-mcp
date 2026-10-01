@@ -1,10 +1,17 @@
 package nz.sounie.blogmcp.catalog.application;
 
+import java.util.Objects;
 import java.util.Optional;
 import nz.sounie.blogmcp.catalog.domain.SourcePostId;
 
 /** Something worth noting in a sync report that is not a skipped entry. */
 public record SyncWarning(Kind kind, Optional<SourcePostId> sourcePostId, String detail) {
+
+  public SyncWarning {
+    Objects.requireNonNull(kind, "kind");
+    Objects.requireNonNull(sourcePostId, "source post ID");
+    Objects.requireNonNull(detail, "detail");
+  }
 
   /** What the warning is about. */
   public enum Kind {

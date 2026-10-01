@@ -1,7 +1,14 @@
 package nz.sounie.blogmcp.catalog.domain;
 
+import java.util.Objects;
+
 /** One reason why a sites configuration is invalid. */
 public record SitesConfigurationViolation(Kind kind, String detail) {
+
+  public SitesConfigurationViolation {
+    Objects.requireNonNull(kind, "kind");
+    Objects.requireNonNull(detail, "detail");
+  }
 
   /** The rule that was broken. */
   public enum Kind {

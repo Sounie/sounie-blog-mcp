@@ -6,6 +6,12 @@ package nz.sounie.blogmcp.catalog.domain;
  */
 public record PageCursor(int value) {
 
+  public PageCursor {
+    if (value < 1) {
+      throw new IllegalArgumentException("Page cursor is 1-based: " + value);
+    }
+  }
+
   public static PageCursor first() {
     return new PageCursor(1);
   }

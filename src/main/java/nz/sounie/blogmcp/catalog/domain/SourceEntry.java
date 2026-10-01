@@ -2,6 +2,7 @@ package nz.sounie.blogmcp.catalog.domain;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /** One item returned by a blog source. */
@@ -16,6 +17,11 @@ public sealed interface SourceEntry {
    */
   record Available(PostSnapshot snapshot, List<String> notes) implements SourceEntry {
 
+    public Available {
+      Objects.requireNonNull(snapshot, "snapshot");
+      notes = List.copyOf(notes);
+    }
+
     public Available(PostSnapshot snapshot) {
       this(snapshot, List.of());
     }
@@ -27,9 +33,22 @@ public sealed interface SourceEntry {
   }
 
   /** A post that exists but is not public, for example password-protected. */
-  record NotPublic(SourcePostId sourcePostId, Optional<Instant> updatedAt) implements SourceEntry {}
+  record NotPublic(SourcePostId sourcePostId, Optional<Instant> updatedAt) implements SourceEntry {
+
+    public NotPublic {
+      Objects.requireNonNull(sourcePostId, "source post ID");
+      Objects.requireNonNull(updatedAt, "updatedAt");
+    }
+  }
 
   /** An entry that could not be mapped. */
   record Malformed(Optional<SourcePostId> sourcePostId, String reason, Optional<Instant> updatedAt)
-      implements SourceEntry {}
+      implements SourceEntry {
+
+    public Malformed {
+      Objects.requireNonNull(sourcePostId, "source post ID");
+      Objects.requireNonNull(reason, "reason");
+      Objects.requireNonNull(updatedAt, "updatedAt");
+    }
+  }
 }

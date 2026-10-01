@@ -1,6 +1,9 @@
 package nz.sounie.blogmcp.catalog.domain;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -16,4 +19,19 @@ public record PostSnapshot(
     BodyCompleteness completeness,
     Set<Tag> tags,
     Instant publishedAt,
-    Instant updatedAt) {}
+    Instant updatedAt) {
+
+  public PostSnapshot {
+    Objects.requireNonNull(id, "id");
+    Objects.requireNonNull(url, "url");
+    Objects.requireNonNull(title, "title");
+    Objects.requireNonNull(body, "body");
+    Objects.requireNonNull(completeness, "completeness");
+    Objects.requireNonNull(publishedAt, "publishedAt");
+    Objects.requireNonNull(updatedAt, "updatedAt");
+    tags = Collections.unmodifiableSet(new LinkedHashSet<>(tags));
+    if (updatedAt.isBefore(publishedAt)) {
+      updatedAt = publishedAt;
+    }
+  }
+}
