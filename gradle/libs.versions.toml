@@ -5,6 +5,9 @@ archunit = "1.5.1"
 pitestCore = "1.30.0"
 pitestJunit5 = "1.2.3"
 googleJavaFormat = "1.36.1"
+jackson = "3.2.3"
+jsoup = "1.23.2"
+wiremock = "3.13.2"
 
 [libraries]
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
@@ -12,6 +15,9 @@ junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
+jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
+wiremock-standalone = { module = "org.wiremock:wiremock-standalone", version.ref = "wiremock" }
 
 [plugins]
 spotless = { id = "com.diffplug.spotless", version = "8.10.3" }

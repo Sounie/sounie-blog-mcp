@@ -1,0 +1,65 @@
+[
+  {
+    "id": 12,
+    "count": 1,
+    "name": "AI as utility",
+    "slug": "ai-as-utility",
+    "taxonomy": "post_tag"
+  },
+  {
+    "id": 8,
+    "count": 1,
+    "name": "AI billing",
+    "slug": "ai-billing",
+    "taxonomy": "post_tag"
+  },
+  {
+    "id": 9,
+    "count": 1,
+    "name": "AI charging",
+    "slug": "ai-charging",
+    "taxonomy": "post_tag"
+  },
+  {
+    "id": 10,
+    "count": 1,
+    "name": "AI efficiency",
+    "slug": "ai-efficiency",
+    "taxonomy": "post_tag"
+  },
+  {
+    "id": 20,
+    "count": 1,
+    "name": "AI hallucination",
+    "slug": "ai-hallucination",
+    "taxonomy": "post_tag"
+  },
+  {
+    "id": 22,
+    "count": 1,
+    "name": "AI performance analysis",
+    "slug": "ai-performance-analysis",
+    "taxonomy": "post_tag"
+  },
+  {
+    "id": 21,
+    "count": 1,
+    "name": "AI strengths and weaknesses",
+    "slug": "ai-strengths-and-weaknesses",
+    "taxonomy": "post_tag"
+  },
+  {
+    "id": 13,
+    "count": 1,
+    "name": "Artificial Intelligence",
+    "slug": "artificial-intelligence",
+    "taxonomy": "post_tag"
+  },
+  {
+    "id": 11,
+    "count": 1,
+    "name": "GitHub Copilot billing",
+    "slug": "github-copilot-billing",
+    "taxonomy": "post_tag"
+  }
+]

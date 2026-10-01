@@ -1,0 +1,26 @@
+[
+  {
+    "id": 123,
+    "date": "2026-09-20T13:20:47",
+    "date_gmt": "2026-09-20T01:20:47",
+    "guid": {
+      "rendered": "https://blog2.sounie.nz/?p=123"
+    },
+    "modified": "2026-09-20T13:20:47",
+    "modified_gmt": "2026-09-20T01:20:47",
+    "slug": "hello",
+    "status": "publish",
+    "type": "post",
+    "link": "https://blog2.sounie.nz/2026/09/20/hello/",
+    "title": {
+      "rendered": "Don&#8217;t &amp; &lt;panic&gt;"
+    },
+    "content": {
+      "rendered": "<p>One&nbsp;line</p><script>x()</script><pre>  a\n  b</pre><p>Two</p>",
+      "protected": false
+    },
+    "author": 1,
+    "categories": [],
+    "tags": []
+  }
+]

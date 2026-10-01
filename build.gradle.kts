@@ -14,10 +14,14 @@ java {
 repositories { mavenCentral() }
 
 dependencies {
+    implementation(libs.jackson.databind)
+    implementation(libs.jsoup)
+
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
     testImplementation(libs.archunit.junit5)
+    testImplementation(libs.wiremock.standalone)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

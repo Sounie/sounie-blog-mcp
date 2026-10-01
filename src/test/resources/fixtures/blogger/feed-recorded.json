@@ -1,0 +1,167 @@
+{
+  "version": "1.0",
+  "encoding": "UTF-8",
+  "feed": {
+    "id": {
+      "$t": "tag:blogger.com,1999:blog-1481195935080195479"
+    },
+    "updated": {
+      "$t": "2026-04-13T23:39:42.552+01:00"
+    },
+    "title": {
+      "type": "text",
+      "$t": "Thoughts on software development"
+    },
+    "openSearch$totalResults": {
+      "$t": "209"
+    },
+    "openSearch$startIndex": {
+      "$t": "1"
+    },
+    "openSearch$itemsPerPage": {
+      "$t": "2"
+    },
+    "entry": [
+      {
+        "id": {
+          "$t": "tag:blogger.com,1999:blog-1481195935080195479.post-371460637286630063"
+        },
+        "published": {
+          "$t": "2026-03-23T20:53:00.001+00:00"
+        },
+        "updated": {
+          "$t": "2026-03-23T20:53:30.835+00:00"
+        },
+        "category": [
+          {
+            "scheme": "http://www.blogger.com/atom/ns#",
+            "term": "Atlassian 1600"
+          },
+          {
+            "scheme": "http://www.blogger.com/atom/ns#",
+            "term": "Fresh blogs"
+          },
+          {
+            "scheme": "http://www.blogger.com/atom/ns#",
+            "term": "March 2026"
+          }
+        ],
+        "title": {
+          "type": "text",
+          "$t": "Fresh posts about experiences developing and maintaining microservices"
+        },
+        "summary": {
+          "type": "text",
+          "$t": "In March 2026 I got caught up in the 10% workforce reduction by Atlassian.I am not taking it personally as I have seen that&nbsp;a lot of other very experienced and well regarded individuals have also been posting their new status on LinkedIn.As\n I was the last one to join a team of more than 10 developers I can see \nhow some metrics would have zoomed in on me as a suitable sacrificial lamb to \n"
+        },
+        "link": [
+          {
+            "rel": "replies",
+            "type": "application/atom+xml",
+            "href": "https://blog.elegant-solutions.london/feeds/371460637286630063/comments/default",
+            "title": "Post Comments"
+          },
+          {
+            "rel": "replies",
+            "type": "text/html",
+            "href": "https://blog.elegant-solutions.london/2026/03/experiences-with-microservices.html#comment-form",
+            "title": "0 Comments"
+          },
+          {
+            "rel": "edit",
+            "type": "application/atom+xml",
+            "href": "https://www.blogger.com/feeds/1481195935080195479/posts/default/371460637286630063"
+          },
+          {
+            "rel": "self",
+            "type": "application/atom+xml",
+            "href": "https://www.blogger.com/feeds/1481195935080195479/posts/default/371460637286630063"
+          },
+          {
+            "rel": "alternate",
+            "type": "text/html",
+            "href": "https://blog.elegant-solutions.london/2026/03/experiences-with-microservices.html",
+            "title": "Fresh posts about experiences developing and maintaining microservices"
+          }
+        ],
+        "thr$total": {
+          "$t": "0"
+        }
+      },
+      {
+        "id": {
+          "$t": "tag:blogger.com,1999:blog-1481195935080195479.post-3145279241138581814"
+        },
+        "published": {
+          "$t": "2021-10-06T21:38:00.004+01:00"
+        },
+        "updated": {
+          "$t": "2021-10-11T22:30:29.652+01:00"
+        },
+        "category": [
+          {
+            "scheme": "http://www.blogger.com/atom/ns#",
+            "term": "back in New Zealand"
+          },
+          {
+            "scheme": "http://www.blogger.com/atom/ns#",
+            "term": "new blog"
+          },
+          {
+            "scheme": "http://www.blogger.com/atom/ns#",
+            "term": "New Zealand domain names"
+          },
+          {
+            "scheme": "http://www.blogger.com/atom/ns#",
+            "term": "New Zealand domains"
+          },
+          {
+            "scheme": "http://www.blogger.com/atom/ns#",
+            "term": "Stephen Souness"
+          }
+        ],
+        "title": {
+          "type": "text",
+          "$t": "New Country, new domain name, new blog"
+        },
+        "summary": {
+          "type": "text",
+          "$t": "Now that I have moved back to New Zealand, it makes sense for me to switch over to having a \"dot en zed\" domain name - like I have the \"dot london\" domain for this blog.Domain name management has changed a bit since I left, so instead of having to decide whether I'm a \".co.nz\" or \".org.nz\" or something similar, I can just go for a top level \".nz\".&nbsp; My name of choice this time around is \""
+        },
+        "link": [
+          {
+            "rel": "replies",
+            "type": "application/atom+xml",
+            "href": "https://blog.elegant-solutions.london/feeds/3145279241138581814/comments/default",
+            "title": "Post Comments"
+          },
+          {
+            "rel": "replies",
+            "type": "text/html",
+            "href": "https://blog.elegant-solutions.london/2021/10/new-country-new-domain-name-new-blog.html#comment-form",
+            "title": "0 Comments"
+          },
+          {
+            "rel": "edit",
+            "type": "application/atom+xml",
+            "href": "https://www.blogger.com/feeds/1481195935080195479/posts/default/3145279241138581814"
+          },
+          {
+            "rel": "self",
+            "type": "application/atom+xml",
+            "href": "https://www.blogger.com/feeds/1481195935080195479/posts/default/3145279241138581814"
+          },
+          {
+            "rel": "alternate",
+            "type": "text/html",
+            "href": "https://blog.elegant-solutions.london/2021/10/new-country-new-domain-name-new-blog.html",
+            "title": "New Country, new domain name, new blog"
+          }
+        ],
+        "thr$total": {
+          "$t": "0"
+        }
+      }
+    ]
+  }
+}
