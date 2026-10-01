@@ -12,17 +12,19 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '25'
+      # v6 requires accepting Gradle's Terms of Use for its closed-source caching component;
+      # staying on v5 until the owner decides.
       - uses: gradle/actions/setup-gradle@v5
       - name: Check (tests, ArchUnit, coverage, formatting)
         run: ./gradlew check pitest
       - name: Upload reports
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: reports
           path: |
