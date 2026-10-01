@@ -70,6 +70,23 @@ class JsonFileSiteDirectoryTest {
   }
 
   @Test
+  void loads_platform_names_written_in_lower_or_mixed_case() throws IOException {
+    Path file =
+        write(
+            """
+            {"sites": [
+              {"id": "sounie-wp", "platform": "wordpress", "baseUrl": "https://blog2.sounie.nz"},
+              {"id": "elegant", "platform": "Blogger",
+               "baseUrl": "https://blog.elegant-solutions.london"}
+            ]}
+            """);
+
+    SitesConfiguration configuration = new JsonFileSiteDirectory(file).load();
+
+    assertThat(configuration.sites()).containsExactly(TestSites.SOUNIE_WP, TestSites.ELEGANT);
+  }
+
+  @Test
   @DisplayName("AC-CAT-25: an empty site list is a startup error")
   void an_empty_site_list_is_invalid() throws IOException {
     Path file = write("{\"sites\": []}");

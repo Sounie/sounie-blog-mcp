@@ -110,6 +110,31 @@ class SitesConfigurationTest {
         .containsExactly(UNSUPPORTED_PLATFORM);
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"wordpress", "WordPress", "WORDPRESS"})
+  void platform_names_are_matched_ignoring_case_for_wordpress(String platform) {
+    SitesConfiguration configuration =
+        SitesConfiguration.of(List.of(new SiteDefinition("blog", platform, "https://a.example")));
+
+    assertThat(configuration.sites().getFirst().platform()).isEqualTo(Platform.WORDPRESS);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"blogger", "Blogger", "BLOGGER"})
+  void platform_names_are_matched_ignoring_case_for_blogger(String platform) {
+    SitesConfiguration configuration =
+        SitesConfiguration.of(List.of(new SiteDefinition("blog", platform, "https://a.example")));
+
+    assertThat(configuration.sites().getFirst().platform()).isEqualTo(Platform.BLOGGER);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"ghost", "GHOST", "word press", ""})
+  void an_unknown_platform_name_is_unsupported_in_any_case(String platform) {
+    assertThat(violationKinds(List.of(new SiteDefinition("blog", platform, "https://a.example"))))
+        .containsExactly(UNSUPPORTED_PLATFORM);
+  }
+
   private static List<Kind> violationKinds(List<SiteDefinition> definitions) {
     InvalidSitesConfiguration failure =
         catchThrowableOfType(

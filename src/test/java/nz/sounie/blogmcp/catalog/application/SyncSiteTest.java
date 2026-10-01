@@ -740,6 +740,9 @@ class SyncSiteTest {
       assertThat(report.warnings())
           .extracting(SyncWarning::kind)
           .contains(SyncWarning.Kind.UNIDENTIFIED_MALFORMED_ENTRY_WITHDRAWALS_SUPPRESSED);
+      assertThat(lastReconciledAtOf(SOUNIE_WP_ID))
+          .as("not marked reconciled, so the reconcile is retried next run")
+          .contains(previousReconcile);
     }
 
     @Test
