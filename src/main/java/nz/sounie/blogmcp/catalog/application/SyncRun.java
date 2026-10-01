@@ -131,6 +131,12 @@ final class SyncRun {
                 warnings.add(
                     new SyncWarning(
                         SyncWarning.Kind.SOURCE_NOTE, Optional.of(sourcePostId), note)));
+    // Only a URL on the site host can be a duplicate; an off-host URL is left for the domain to
+    // reject as malformed. Checking first means a loaded post is never revised and then dropped.
+    if (snapshot.url().isOn(site) && urlHeldByAnotherPost(snapshot)) {
+      skipAsDuplicate(snapshot);
+      return;
+    }
     try {
       posts
           .findById(snapshot.id())
@@ -158,10 +164,6 @@ final class SyncRun {
 
   private void publish(PostSnapshot snapshot) {
     Post.Published publication = Post.publish(site, snapshot);
-    if (urlHeldByAnotherPost(snapshot)) {
-      skipAsDuplicate(snapshot);
-      return;
-    }
     posts.save(publication.post());
     events.publish(IntegrationEvents.from(publication.event()));
     published++;
@@ -169,7 +171,6 @@ final class SyncRun {
 
   private void revise(Post post, PostSnapshot snapshot) {
     switch (post.revise(site, snapshot)) {
-      case Revision.Changed _ when urlHeldByAnotherPost(snapshot) -> skipAsDuplicate(snapshot);
       case Revision.Changed changed -> {
         posts.save(post);
         events.publish(IntegrationEvents.from(changed.event()));

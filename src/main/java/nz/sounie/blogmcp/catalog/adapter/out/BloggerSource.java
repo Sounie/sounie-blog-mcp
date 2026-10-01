@@ -155,12 +155,23 @@ public final class BloggerSource implements BlogSource {
           new PostSnapshot(
               new PostId(site.id(), id.get()),
               url,
-              new Title(htmlToText.extract(text(entry.path("title")))),
+              new Title(title()),
               new Body(htmlToText.extract(html)),
               hasContent ? BodyCompleteness.FULL : BodyCompleteness.SUMMARY,
               Tag.setOf(labels()),
               published.get(),
               updated.get()));
+    }
+
+    /**
+     * An {@code html} or {@code xhtml} title is markup; a {@code text} or untyped one is literal.
+     */
+    private String title() {
+      JsonNode title = entry.path("title");
+      return switch (title.path("type").asString("text")) {
+        case "html", "xhtml" -> htmlToText.extract(text(title));
+        default -> text(title);
+      };
     }
 
     /** The digits after {@code .post-} in the entry ID. */
