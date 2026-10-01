@@ -1,0 +1,8 @@
+.m2/
+.gradle-home/
+.gradle/
+.claude/settings.local.json
+build/
+.idea/
+*.iml
+.DS_Store

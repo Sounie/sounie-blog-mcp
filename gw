@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Runs ./gradlew, passing the Claude Code sandbox's network proxy (HTTPS_PROXY) to the JVM.
+# Java ignores proxy environment variables, so without this Gradle can't reach Maven Central.
+# Outside the sandbox (no HTTPS_PROXY) it behaves exactly like ./gradlew.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+if [[ -n "${HTTPS_PROXY:-}" ]]; then
+  proxy="${HTTPS_PROXY#*://}"
+  host_port="${proxy##*@}"
+  host="${host_port%:*}"
+  port="${host_port##*:}"
+  opts="-Dhttp.proxyHost=$host -Dhttp.proxyPort=$port -Dhttps.proxyHost=$host -Dhttps.proxyPort=$port"
+  opts+=" -Dhttp.nonProxyHosts=localhost|127.0.0.1"
+  if [[ "$proxy" == *@* ]]; then
+    creds="${proxy%@*}"
+    user="${creds%%:*}"
+    pass="${creds#*:}"
+    opts+=" -Dhttp.proxyUser=$user -Dhttp.proxyPassword=$pass"
+    opts+=" -Dhttps.proxyUser=$user -Dhttps.proxyPassword=$pass"
+    # Java disables Basic auth for HTTPS tunnelling by default; the sandbox proxy needs it.
+    opts+=" -Djdk.http.auth.tunneling.disabledSchemes="
+  fi
+  export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} $opts"
+fi
+
+# On macOS the JVM ignores $TMPDIR and uses /var/folders, which the sandbox can't write to.
+if [[ -n "${TMPDIR:-}" ]]; then
+  export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Djava.io.tmpdir=$TMPDIR"
+fi
+
+# The JVM echoes JAVA_TOOL_OPTIONS (including the proxy password) to stderr; drop that line.
+# A plain pipe (not process substitution, which the sandbox blocks); pipefail keeps Gradle's exit code.
+./gradlew "$@" 2>&1 | grep -v '^Picked up JAVA_TOOL_OPTIONS'

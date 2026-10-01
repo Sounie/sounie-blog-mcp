@@ -1,0 +1,21 @@
+{
+  "env": {
+    "MAVEN_OPTS": "-Dmaven.repo.local=.m2/repository",
+    "GRADLE_USER_HOME": ".gradle-home"
+  },
+  "permissions": {
+    "allow": [
+      "Edit(/src/**)",
+      "Edit(/docs/**)"
+    ],
+    "ask": [
+      "Edit(/build.gradle.kts)",
+      "Edit(/settings.gradle.kts)",
+      "Edit(/gradle/**)",
+      "Edit(/gradle.properties)",
+      "Edit(/.github/**)",
+      "Edit(/CLAUDE.md)",
+      "Edit(/.claude/**)"
+    ]
+  }
+}
