@@ -14,7 +14,7 @@ import java.util.stream.Stream;
  * for readable posts) plus a remove per orphan, unless orphan removals are suppressed. Pure: never
  * embeds.
  */
-public record ReconcilePlan(List<IndexDecision> decisions, boolean withdrawalsSuppressed) {
+public record ReconcilePlan(List<IndexDecision> decisions, boolean orphanRemovalSuppressed) {
 
   public ReconcilePlan {
     decisions = List.copyOf(decisions);
@@ -28,7 +28,9 @@ public record ReconcilePlan(List<IndexDecision> decisions, boolean withdrawalsSu
   public static ReconcilePlan between(
       List<CatalogEntry> entries, VectorIndex snapshot, IndexRecipe recipe) {
     List<CatalogEntry> listed = listedOnce(entries);
-    boolean suppressed = listed.stream().anyMatch(CatalogEntry::hidesOrphans);
+    // Compile shim from the red step (review loop 2): the implementer derives suppression from
+    // CatalogEntry.orphanRemovalBlockers() and keeps the reasons (orphanRemovalSuppressedBy).
+    boolean suppressed = listed.stream().anyMatch(CatalogEntry.Unidentified.class::isInstance);
     Stream<IndexDecision> planned = listed.stream().flatMap(e -> e.decisions(snapshot, recipe));
     return new ReconcilePlan(
         Stream.concat(planned, orphanRemovals(listed, snapshot, suppressed)).toList(), suppressed);
@@ -61,5 +63,13 @@ public record ReconcilePlan(List<IndexDecision> decisions, boolean withdrawalsSu
         .filter(id -> !suppressed && !current.contains(id))
         .sorted(Comparator.comparing(PostId::external))
         .map(IndexDecision::remove);
+  }
+
+  /**
+   * The reasons of the unidentified catalog entries that suppressed orphan removal in this run, in
+   * catalog order; empty when orphan removal is allowed.
+   */
+  public List<String> orphanRemovalSuppressedBy() {
+    throw new UnsupportedOperationException("not implemented");
   }
 }

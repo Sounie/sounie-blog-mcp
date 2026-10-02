@@ -14,20 +14,20 @@ import nz.sounie.blogmcp.search.domain.PostId;
 public record ReconcileReport(
     Map<PostId, IndexOutcome> outcomes,
     Map<PostId, String> failureReasons,
-    boolean withdrawalsSuppressed) {
+    boolean orphanRemovalSuppressed) {
 
   public ReconcileReport {
     outcomes = Collections.unmodifiableMap(new LinkedHashMap<>(outcomes));
     failureReasons = Collections.unmodifiableMap(new LinkedHashMap<>(failureReasons));
   }
 
-  static ReconcileReport of(List<PostOutcome> results, boolean withdrawalsSuppressed) {
+  static ReconcileReport of(List<PostOutcome> results, boolean orphanRemovalSuppressed) {
     Map<PostId, IndexOutcome> outcomes = new LinkedHashMap<>();
     Map<PostId, String> reasons = new LinkedHashMap<>();
     results.forEach(result -> outcomes.put(result.postId(), result.outcome()));
     results.forEach(
         result -> result.failureReason().ifPresent(reason -> reasons.put(result.postId(), reason)));
-    return new ReconcileReport(outcomes, reasons, withdrawalsSuppressed);
+    return new ReconcileReport(outcomes, reasons, orphanRemovalSuppressed);
   }
 
   public int count(IndexOutcome outcome) {
@@ -40,5 +40,13 @@ public record ReconcileReport(
         .filter(entry -> entry.getValue() == IndexOutcome.FAILED)
         .map(Map.Entry::getKey)
         .toList();
+  }
+
+  /**
+   * Warning {@code ORPHAN_REMOVAL_SUPPRESSED}: the reasons of the unidentified catalog entries that
+   * stopped orphan removal in this run; empty when orphans were removed as usual.
+   */
+  public List<String> orphanRemovalSuppressedReasons() {
+    throw new UnsupportedOperationException("not implemented");
   }
 }

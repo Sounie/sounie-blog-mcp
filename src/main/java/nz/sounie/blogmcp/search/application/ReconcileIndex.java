@@ -37,7 +37,7 @@ public final class ReconcileIndex {
     ReconcilePlan plan =
         ReconcilePlan.between(catalog.currentPosts(), work.index(), work.indexer().recipe());
     List<PostOutcome> results = plan.decisions().stream().map(this::applyIsolated).toList();
-    return ReconcileReport.of(results, plan.withdrawalsSuppressed());
+    return ReconcileReport.of(results, plan.orphanRemovalSuppressed());
   }
 
   /** One post's failure (e.g. the embedder is unavailable) must not stop the others (AC-30). */

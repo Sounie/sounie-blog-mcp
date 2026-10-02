@@ -23,8 +23,11 @@ public sealed interface CatalogEntry {
   /** The index decisions this entry plans against the snapshot under the recipe. */
   Stream<IndexDecision> decisions(VectorIndex snapshot, IndexRecipe recipe);
 
-  /** Whether this entry could be any indexed post, so no orphan may be removed. */
-  boolean hidesOrphans();
+  /**
+   * Why this entry stops orphans being removed in this run: the reason of an {@link Unidentified}
+   * entry, which could be any indexed post; empty for the other variants.
+   */
+  Stream<String> orphanRemovalBlockers();
 
   /** This entry, or an {@link Unreadable} duplicate if its post ID is listed more than once. */
   default CatalogEntry listedOnce(Set<PostId> duplicated) {
@@ -52,8 +55,8 @@ public sealed interface CatalogEntry {
     }
 
     @Override
-    public boolean hidesOrphans() {
-      return false;
+    public Stream<String> orphanRemovalBlockers() {
+      throw new UnsupportedOperationException("not implemented");
     }
   }
 
@@ -75,8 +78,8 @@ public sealed interface CatalogEntry {
     }
 
     @Override
-    public boolean hidesOrphans() {
-      return false;
+    public Stream<String> orphanRemovalBlockers() {
+      throw new UnsupportedOperationException("not implemented");
     }
   }
 
@@ -97,8 +100,8 @@ public sealed interface CatalogEntry {
     }
 
     @Override
-    public boolean hidesOrphans() {
-      return true;
+    public Stream<String> orphanRemovalBlockers() {
+      throw new UnsupportedOperationException("not implemented");
     }
   }
 }

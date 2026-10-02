@@ -126,7 +126,7 @@ class ReconcilePlanTest {
     ReconcilePlan plan = ReconcilePlan.between(readable(kept), snapshot, R1);
 
     assertThat(plan.decisions()).contains(new IndexDecision.Remove(orphan.id()));
-    assertThat(plan.withdrawalsSuppressed()).isFalse();
+    assertThat(plan.orphanRemovalSuppressed()).isFalse();
   }
 
   @Test
@@ -174,12 +174,12 @@ class ReconcilePlanTest {
         .containsExactlyInAnyOrder(
             new IndexDecision.Unreadable(unreadable.id(), "bad URL"),
             new IndexDecision.Remove(orphan.id()));
-    assertThat(plan.withdrawalsSuppressed()).isFalse();
+    assertThat(plan.orphanRemovalSuppressed()).isFalse();
   }
 
   @Test
   @DisplayName("AC-SRCH-38: any unidentified entry suppresses every orphan removal")
-  void unidentified_entry_suppresses_withdrawals() {
+  void unidentified_entry_suppresses_orphan_removal_with_its_reason() {
     PostToIndex readable = aPost().id("sounie-wp:1").build();
     PostToIndex maybeOrphan = aPost().id("elegant:9").build();
     store(readable, R1);
@@ -194,7 +194,9 @@ class ReconcilePlanTest {
             R1);
 
     assertThat(plan.decisions()).containsExactly(new IndexDecision.Keep(readable.id()));
-    assertThat(plan.withdrawalsSuppressed()).isTrue();
+    assertThat(plan.orphanRemovalSuppressed()).isTrue();
+    assertThat(plan.orphanRemovalSuppressedBy())
+        .containsExactly("post ID 'elegant-9' is not <siteId>:<id>");
   }
 
   @Test
@@ -206,7 +208,8 @@ class ReconcilePlanTest {
         ReconcilePlan.between(List.of(new CatalogEntry.Unidentified("no ID")), snapshot, R1);
 
     assertThat(plan.decisions()).isEmpty();
-    assertThat(plan.withdrawalsSuppressed()).isTrue();
+    assertThat(plan.orphanRemovalSuppressed()).isTrue();
+    assertThat(plan.orphanRemovalSuppressedBy()).containsExactly("no ID");
   }
 
   @Test
@@ -243,5 +246,38 @@ class ReconcilePlanTest {
         .hasEntrySatisfying(
             dup.id(),
             decision -> assertThat(decision).isInstanceOf(IndexDecision.Unreadable.class));
+  }
+
+  @Test
+  @DisplayName("AC-SRCH-38: two unidentified entries suppress orphan removal with both reasons")
+  void unidentified_entries_suppress_orphan_removal_with_every_reason() {
+    store(aPost().id("elegant:9").build(), R1);
+
+    ReconcilePlan plan =
+        ReconcilePlan.between(
+            List.of(
+                new CatalogEntry.Unidentified("post ID 'not-an-id' is not <siteId>:<id>"),
+                new CatalogEntry.Readable(aPost().id("sounie-wp:1").build()),
+                new CatalogEntry.Unidentified("post ID is missing")),
+            snapshot,
+            R1);
+
+    assertThat(plan.orphanRemovalSuppressedBy())
+        .containsExactly("post ID 'not-an-id' is not <siteId>:<id>", "post ID is missing");
+    assertThat(plan.decisions()).noneMatch(IndexDecision.Remove.class::isInstance);
+  }
+
+  @Test
+  @DisplayName("AC-SRCH-38: with no unidentified entry there is no suppression reason")
+  void identified_catalog_gives_no_suppression_reasons() {
+    ReconcilePlan plan =
+        ReconcilePlan.between(
+            List.of(
+                new CatalogEntry.Readable(aPost().id("sounie-wp:1").build()),
+                new CatalogEntry.Unreadable(PostId.parse("sounie-wp:2"), "bad URL")),
+            snapshot,
+            R1);
+
+    assertThat(plan.orphanRemovalSuppressedBy()).isEmpty();
   }
 }

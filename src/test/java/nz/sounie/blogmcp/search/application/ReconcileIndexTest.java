@@ -190,25 +190,33 @@ class ReconcileIndexTest {
 
     assertThat(report.outcomes()).isEqualTo(Map.of(post.id(), IndexOutcome.FAILED));
     assertThat(report.failureReasons()).containsEntry(post.id(), "completeness is PARTIAL");
-    assertThat(report.withdrawalsSuppressed()).isFalse();
+    assertThat(report.orphanRemovalSuppressed()).isFalse();
     assertThat(search.index.find(post.id())).containsSame(before);
   }
 
   @Test
-  @DisplayName("AC-SRCH-38: an unidentified catalog entry suppresses withdrawals, reported")
-  void unidentified_entry_suppresses_withdrawals() {
+  @DisplayName(
+      "AC-SRCH-38: an unidentified entry suppresses orphan removal with its reason; others proceed")
+  void unidentified_entry_suppresses_orphan_removal_and_others_proceed() {
     PostToIndex listed = aPost().id("sounie-wp:1").build();
     PostToIndex unlisted = aPost().id("elegant:9").build();
+    PostToIndex fresh = aPost().id("sounie-wp:5").title("Fresh").build();
     alreadyIndexed(listed);
     alreadyIndexed(unlisted);
+    String reason = "post ID 'elegant-9' is not <siteId>:<sourcePostId>";
     search.catalog.holdingEntries(
         new CatalogEntry.Readable(listed),
-        new CatalogEntry.Unidentified("post ID 'elegant-9' is not <siteId>:<sourcePostId>"));
+        new CatalogEntry.Unidentified(reason),
+        new CatalogEntry.Readable(fresh));
 
     ReconcileReport report = search.reconcile.run();
 
-    assertThat(report.withdrawalsSuppressed()).isTrue();
+    assertThat(report.outcomes())
+        .isEqualTo(Map.of(listed.id(), IndexOutcome.UNCHANGED, fresh.id(), IndexOutcome.ADDED));
+    assertThat(report.orphanRemovalSuppressed()).isTrue();
+    assertThat(report.orphanRemovalSuppressedReasons()).containsExactly(reason);
     assertThat(report.count(IndexOutcome.REMOVED)).isZero();
-    assertThat(search.index.ids()).containsExactlyInAnyOrder(listed.id(), unlisted.id());
+    assertThat(search.index.ids())
+        .containsExactlyInAnyOrder(listed.id(), unlisted.id(), fresh.id());
   }
 }

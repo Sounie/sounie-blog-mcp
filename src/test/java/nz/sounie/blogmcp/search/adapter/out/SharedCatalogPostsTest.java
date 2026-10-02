@@ -115,4 +115,30 @@ class SharedCatalogPostsTest {
             CatalogEntry.Unreadable.class,
             entry -> assertThat(entry.id()).isEqualTo(PostId.parse("elegant:5")));
   }
+
+  @Test
+  @DisplayName("AC-SRCH-38: a null tag element makes the entry Unreadable without aborting")
+  void null_tag_is_unreadable() {
+    CatalogPostState nullTag =
+        new CatalogPostState(
+            "elegant:6",
+            "elegant",
+            "https://elegant.example/6",
+            "Six",
+            "Body",
+            "FULL",
+            new java.util.HashSet<>(java.util.Arrays.asList("Java", null)),
+            AT,
+            AT);
+    CatalogPostState valid = state("elegant:7", "elegant", "FULL");
+
+    var entries = new SharedCatalogPosts(new FakeCatalogPosts(nullTag, valid)).currentPosts();
+
+    assertThat(entries).hasSize(2);
+    assertThat(entries.getFirst())
+        .isInstanceOfSatisfying(
+            CatalogEntry.Unreadable.class,
+            entry -> assertThat(entry.id()).isEqualTo(PostId.parse("elegant:6")));
+    assertThat(entries.get(1)).isEqualTo(new CatalogEntry.Readable(translated(valid)));
+  }
 }

@@ -116,4 +116,24 @@ class PostToIndexTest {
   private static Set<String> castTags(Object tags) {
     return (Set<String>) tags;
   }
+
+  @Test
+  @DisplayName("AC-SRCH-38: a null element in the tags is malformed, not a NullPointerException")
+  void rejects_a_null_tag() {
+    Set<String> tags = new java.util.HashSet<>(java.util.Arrays.asList("Java", null));
+
+    assertThatThrownBy(
+            () ->
+                PostToIndex.of(
+                    "sounie-wp:1",
+                    "sounie-wp",
+                    "https://blog2.sounie.nz/1/",
+                    "Title",
+                    "Body text",
+                    "FULL",
+                    tags,
+                    PUBLISHED,
+                    UPDATED))
+        .isInstanceOf(MalformedCatalogPost.class);
+  }
 }
