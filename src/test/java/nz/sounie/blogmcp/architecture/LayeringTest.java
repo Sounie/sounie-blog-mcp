@@ -1,5 +1,6 @@
 package nz.sounie.blogmcp.architecture;
 
+import static com.tngtech.archunit.base.DescribedPredicate.alwaysTrue;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideOutsideOfPackage;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
@@ -49,9 +50,35 @@ class LayeringTest {
           .resideInAPackage("..adapter.out..")
           .allowEmptyShould(true);
 
+  // `app` is the composition root: it depends on every context by design, and nothing depends on
+  // it (see the rule below), so its outgoing dependencies cannot close a cycle between contexts.
   @ArchTest
   static final ArchRule bounded_contexts_are_free_of_cycles =
-      slices().matching("nz.sounie.blogmcp.(*)..").should().beFreeOfCycles().allowEmptyShould(true);
+      slices()
+          .matching("nz.sounie.blogmcp.(*)..")
+          .should()
+          .beFreeOfCycles()
+          .ignoreDependency(resideInAPackage("nz.sounie.blogmcp.app.."), alwaysTrue())
+          .allowEmptyShould(true);
+
+  @ArchTest
+  static final ArchRule nothing_depends_on_the_composition_root =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("nz.sounie.blogmcp.app..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("nz.sounie.blogmcp.app..")
+          .allowEmptyShould(true);
+
+  // Within each context, the domain sub-packages (e.g. catalog: site <- post <- sync) are acyclic.
+  @ArchTest
+  static final ArchRule domain_sub_packages_are_free_of_cycles =
+      slices()
+          .matching("nz.sounie.blogmcp.(*).domain.(*)..")
+          .should()
+          .beFreeOfCycles()
+          .allowEmptyShould(true);
 
   // ADR 0003: the published language in `shared` uses JDK types only and depends on no context.
   @ArchTest
