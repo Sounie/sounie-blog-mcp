@@ -4,7 +4,7 @@ import java.util.Objects;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
 
 /** A chunk's index and text, with its embedding. */
-record IndexedChunk(int index, String text, Embedding embedding) {
+public record IndexedChunk(int index, String text, Embedding embedding) {
 
   public IndexedChunk {
     Objects.requireNonNull(text, "text");

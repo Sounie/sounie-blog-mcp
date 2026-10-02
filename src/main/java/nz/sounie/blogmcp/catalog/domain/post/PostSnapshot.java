@@ -36,7 +36,7 @@ public record PostSnapshot(
   }
 
   /** The material part of the snapshot. */
-  public PostContent content() {
+  PostContent content() {
     return new PostContent(url, title, body, completeness, tags, publishedAt);
   }
 }

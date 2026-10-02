@@ -3,7 +3,6 @@ package nz.sounie.blogmcp.search.application;
 import java.util.Objects;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
 import nz.sounie.blogmcp.search.domain.index.VectorIndex;
-import nz.sounie.blogmcp.search.domain.query.QueryEmbedder;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.query.SearchFilters;
 import nz.sounie.blogmcp.search.domain.query.SearchQuery;

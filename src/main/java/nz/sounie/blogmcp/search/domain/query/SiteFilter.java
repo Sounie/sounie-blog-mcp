@@ -4,7 +4,7 @@ import java.util.Objects;
 import nz.sounie.blogmcp.search.domain.post.SiteId;
 
 /** Which sites a search covers. */
-sealed interface SiteFilter {
+public sealed interface SiteFilter {
 
   boolean includes(SiteId siteId);
 

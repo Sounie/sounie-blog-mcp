@@ -1,7 +1,7 @@
 package nz.sounie.blogmcp.search.domain.index;
 
 /** An indexed post that would break one of its invariants (identity or chunk indexes). */
-final class InvalidIndexedPost extends RuntimeException {
+public final class InvalidIndexedPost extends RuntimeException {
 
   private static final long serialVersionUID = 1L;
 

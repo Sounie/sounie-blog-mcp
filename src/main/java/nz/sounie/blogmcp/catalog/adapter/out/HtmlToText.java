@@ -1,7 +1,7 @@
 package nz.sounie.blogmcp.catalog.adapter.out;
 
 /** Port: text extraction from platform HTML. Implemented in an adapter. */
-interface HtmlToText {
+public interface HtmlToText {
 
   /**
    * Drops {@code script}/{@code style}, decodes entities, puts a paragraph break after block
