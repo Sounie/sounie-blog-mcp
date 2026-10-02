@@ -19,18 +19,18 @@ After slices 1 (catalog) and 2 (search), a review of the package hierarchy found
    - **Placements chosen to keep the graph acyclic:**
      - `PostToIndex`, `Completeness` and `PostMatch` live in `index`.
      - `InvalidPostReference` moved to the catalog domain with `WebAddress`, which throws it.
-   - **Visibility:** a type is public only if it's used outside its sub-package.
+   - **Visibility:** a type is public if it's used outside its sub-package, or if it appears in the public API of a public type: a parameter, return, field or thrown type. Otherwise it's package-private. ArchUnit's `public_api_exposes_only_public_types` enforces the second part. It was added after review found the first pass had hidden types such as `SiteFilter` that public signatures still exposed.
 2. **Ports are split by consumer when that breaks a cycle.** `search.domain`'s `Embedder` became two ports:
-   - `embedding.PassageEmbedder` (`modelId`, `embedPassages`), used by indexing;
-   - `query.QueryEmbedder` (`embedQuery`), used by search.
+   - `search.domain.embedding.PassageEmbedder` (`modelId`, `embedPassages`), used by indexing in the domain;
+   - `search.application.QueryEmbedder` (`embedQuery`), used only by the `SearchPosts` use case, so it lives in application under rule 3.
 
    `OnnxEmbedder` implements both, with behaviour unchanged.
 3. **Port placement: whoever uses it owns it.**
    - **Repositories** always live in the domain (DDD convention).
-   - **Other ports** live in the innermost layer that calls them. `BlogSource` and `SiteDirectory` moved to `catalog.application`; `PostCatalog` stays in `search.application`; `PassageEmbedder`, `QueryEmbedder`, `TokenCounter` and `VectorIndex` stay in the domain.
-   - **Adapter-only abstractions** live in the adapter package. `HtmlToText` moved to `catalog.adapter.out`, package-private.
+   - **Other ports** live in the innermost layer that calls them. `BlogSource` and `SiteDirectory` moved to `catalog.application`; `PostCatalog` stays in `search.application`, joined by `QueryEmbedder`; `PassageEmbedder`, `TokenCounter` and `VectorIndex` stay in the domain.
+   - **Adapter-only abstractions** live in the adapter package. `HtmlToText` moved to `catalog.adapter.out`. It's public there, because the sources' public constructors take it and the composition root supplies `JsoupHtmlToText`.
 4. **`WebAddress` moved to `catalog.domain.post`,** beside `CanonicalUrl`.
-5. **Composition root `nz.sounie.blogmcp.app`.** It holds `Main`, the wiring, the scheduler and the MCP server (`app.mcp`), all added in slice 3. ArchUnit's `nothing_depends_on_the_composition_root` enforces that nothing depends on it. The context-cycle rule ignores only `app`'s outgoing dependencies.
+5. **Composition root `nz.sounie.blogmcp.app`.** It holds `Main`, the wiring, the scheduler and the MCP server (`app.mcp`), all added in slice 3. ArchUnit's `nothing_depends_on_the_composition_root` enforces that nothing depends on it. The existing context-cycle rule is unchanged: nothing points into `app`, so `app` can never be part of a cycle.
 6. **`InProcessEventBus` stays in `shared.event` (owner decision).** Moving it to `app` would have required changing how `CatalogEventListener` subscribes. The bus is treated as part of the published language's in-process transport. It uses JDK types only.
 
 ## Consequences

@@ -337,13 +337,13 @@ None. No other context needs to know about indexing. Outcomes are returned as re
 | `text` | (nothing) | `WordSequence`, `WordCosts`, `ChunkingPolicy`, `Chunk`, `Passage`, `PassageComposition`, `TokenCounter` (port) |
 | `embedding` | `text` | `Embedding`, `Similarity`, `InvalidEmbedding`, `EmbedderUnavailable`, `PassageEmbedder` (port) |
 | `index` | `embedding`, `post`, `text` | `IndexedPost`, `IndexedChunk`, `PostIndexer`, `PostToIndex`, `Completeness`, `PostMatch`, `ChunkHit`, `ContentFingerprint`, `IndexRecipe`, `IndexChange`, `IndexDecision`, `IndexOutcome`, `IndexWork`, `InvalidIndexedPost`, `VectorIndex` (port) |
-| `query` | `index`, `embedding`, `post`, `text` | `SearchQuery`, `QueryText`, `QueryPassage`, `InvalidSearchQuery`, `ResultLimit`, `PublishedDateRange`, `SiteFilter`, `SearchFilters`, `SearchResults`, `QueryEmbedder` (port) |
+| `query` | `index`, `embedding`, `post`, `text` | `SearchQuery`, `QueryText`, `QueryPassage`, `InvalidSearchQuery`, `ResultLimit`, `PublishedDateRange`, `SiteFilter`, `SearchFilters`, `SearchResults` |
 | `reconcile` | `index`, `post` | `CatalogEntry`, `ReconcilePlan` |
 
 Nothing in the domain depends on `query`. `PostToIndex`, `Completeness` and `PostMatch` live in `index`,
 not in `post` or `query`, to keep this graph acyclic.
 Outside the domain:
-- `PostCatalog` (port), `ReconcileReport` and the use cases live in `search.application`;
+- `PostCatalog` and `QueryEmbedder` (ports used only by use cases), `ReconcileReport` and the use cases live in `search.application`;
 - `OnnxEmbedder`, `BgeTokenCounter`, `InMemoryVectorIndex` and `SharedCatalogPosts` live in `search.adapter.out`;
 - `CatalogEventListener` and `CatalogEventTranslation` live in `search.adapter.in`.
 
