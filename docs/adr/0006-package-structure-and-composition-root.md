@@ -15,7 +15,7 @@ After slices 1 (catalog) and 2 (search), a review of the package hierarchy found
 ## Decision
 1. **Domain sub-packages by concept, with acyclic dependencies.** ArchUnit's `domain_sub_packages_are_free_of_cycles` enforces this.
    - **`catalog.domain`:** `site` ← `post` ← `sync`.
-   - **`search.domain`:** `post` and `text` at the base; `embedding` → `text`; `index` → `embedding`, `post`, `text`; `query` → `index`, `embedding`, `post`, `text`; `reconcile` → `index`, `post`. Nothing in the domain depends on `query`.
+   - **`search.domain`:** `post` and `text` at the base; `embedding` → `text`; `index` → `embedding`, `post`, `text`; `query` → `index`, `post`, `text` (it reaches `embedding` only through `index`, since `QueryEmbedder` lives in application); `reconcile` → `index`, `post`. Nothing in the domain depends on `query`.
    - **Placements chosen to keep the graph acyclic:**
      - `PostToIndex`, `Completeness` and `PostMatch` live in `index`.
      - `InvalidPostReference` moved to the catalog domain with `WebAddress`, which throws it.

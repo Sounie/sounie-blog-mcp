@@ -55,7 +55,7 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Title line | The normalised title, cut to the longest whole-word prefix that fits in 64 tokens. | `PassageComposition` |
 | Passage composition | The rule that builds passages from a title and chunks. | `PassageComposition` |
 | Embed | Turn a passage or a query passage into an embedding using the local model. | `PassageEmbedder.embedPassages(...)`, `QueryEmbedder.embedQuery(QueryPassage)` |
-| Embedder | The local embedding model, seen through two ports split by consumer (ADR 0006): the **passage embedder** (`modelId()` and `embedPassages(List<Passage>)`, used by indexing) and the **query embedder** (`embedQuery(QueryPassage)`, used by search). The only production implementation of both is `OnnxEmbedder`, the only class that touches LangChain4j. | `PassageEmbedder` (`search.domain.embedding`), `QueryEmbedder` (`search.domain.query`) |
+| Embedder | The local embedding model, seen through two ports split by consumer (ADR 0006): the **passage embedder** (`modelId()` and `embedPassages(List<Passage>)`, used by indexing) and the **query embedder** (`embedQuery(QueryPassage)`, used by search). The only production implementation of both is `OnnxEmbedder`, the only class that touches LangChain4j. | `PassageEmbedder` (`search.domain.embedding`), `QueryEmbedder` (`search.application`) |
 | Embedding | A vector of exactly 384 finite floats, normalised to unit length when it is created. The model already uses CLS pooling with L2 normalisation, so in practice this is a defensive no-op. | `Embedding` |
 | Similarity | The cosine similarity of two embeddings. Because embeddings are unit length, this is their dot product. Its range is [-1, 1], and higher means more related. | `Similarity` |
 | Index recipe | The identity of the method used to build an index entry: model ID, chunking policy parameters and passage composition version, e.g. `bge-small-en-v1.5-q/w300-t400-o50-oc100-c64/tt64-p1` (model ID; target words, body tokens, overlap words, overlap token cap, maximum word characters; title tokens and composition version). Changing any part makes every entry stale. | `IndexRecipe` |
@@ -337,7 +337,7 @@ None. No other context needs to know about indexing. Outcomes are returned as re
 | `text` | (nothing) | `WordSequence`, `WordCosts`, `ChunkingPolicy`, `Chunk`, `Passage`, `PassageComposition`, `TokenCounter` (port) |
 | `embedding` | `text` | `Embedding`, `Similarity`, `InvalidEmbedding`, `EmbedderUnavailable`, `PassageEmbedder` (port) |
 | `index` | `embedding`, `post`, `text` | `IndexedPost`, `IndexedChunk`, `PostIndexer`, `PostToIndex`, `Completeness`, `PostMatch`, `ChunkHit`, `ContentFingerprint`, `IndexRecipe`, `IndexChange`, `IndexDecision`, `IndexOutcome`, `IndexWork`, `InvalidIndexedPost`, `VectorIndex` (port) |
-| `query` | `index`, `embedding`, `post`, `text` | `SearchQuery`, `QueryText`, `QueryPassage`, `InvalidSearchQuery`, `ResultLimit`, `PublishedDateRange`, `SiteFilter`, `SearchFilters`, `SearchResults` |
+| `query` | `index`, `post`, `text` | `SearchQuery`, `QueryText`, `QueryPassage`, `InvalidSearchQuery`, `ResultLimit`, `PublishedDateRange`, `SiteFilter`, `SearchFilters`, `SearchResults` |
 | `reconcile` | `index`, `post` | `CatalogEntry`, `ReconcilePlan` |
 
 Nothing in the domain depends on `query`. `PostToIndex`, `Completeness` and `PostMatch` live in `index`,

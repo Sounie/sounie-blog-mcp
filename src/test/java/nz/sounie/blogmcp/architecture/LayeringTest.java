@@ -215,6 +215,10 @@ class LayeringTest {
   //   catch them by type (e.g. InvalidSearchQuery) even though they are never declared;
   // - a hidden type that the API exposes is itself checked as if it were public, so types it
   //   would expose next (e.g. ChunkHit via IndexedChunk.hitFor) are reported too.
+  // The "constructs a Throwable" check is a heuristic. It is deliberately strict: an exception
+  // constructed and caught entirely inside a public class is still flagged. It is also blind to an
+  // exception constructed in a package-private helper and propagated. On a false positive, make the
+  // exception public or move its construction; never weaken this rule.
   @ArchTest
   static final ArchRule public_api_exposes_only_public_types =
       classes()
