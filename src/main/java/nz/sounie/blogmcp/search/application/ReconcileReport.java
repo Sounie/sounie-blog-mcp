@@ -9,25 +9,31 @@ import nz.sounie.blogmcp.search.domain.PostId;
 
 /**
  * The outcome of a reconcile, per post, in the order the plan applied them; why each failed post
- * failed; and whether orphan removals were withheld because a catalog entry was unidentified.
+ * failed; and why orphan removal was suppressed, if an unidentified catalog entry stopped it.
  */
 public record ReconcileReport(
     Map<PostId, IndexOutcome> outcomes,
     Map<PostId, String> failureReasons,
-    boolean orphanRemovalSuppressed) {
+    List<String> orphanRemovalSuppressedReasons) {
 
+  /**
+   * @param orphanRemovalSuppressedReasons warning {@code ORPHAN_REMOVAL_SUPPRESSED}: the reasons of
+   *     the unidentified catalog entries that stopped orphan removal in this run; empty when
+   *     orphans were removed as usual
+   */
   public ReconcileReport {
     outcomes = Collections.unmodifiableMap(new LinkedHashMap<>(outcomes));
     failureReasons = Collections.unmodifiableMap(new LinkedHashMap<>(failureReasons));
+    orphanRemovalSuppressedReasons = List.copyOf(orphanRemovalSuppressedReasons);
   }
 
-  static ReconcileReport of(List<PostOutcome> results, boolean orphanRemovalSuppressed) {
+  static ReconcileReport of(List<PostOutcome> results, List<String> orphanRemovalSuppressedBy) {
     Map<PostId, IndexOutcome> outcomes = new LinkedHashMap<>();
     Map<PostId, String> reasons = new LinkedHashMap<>();
     results.forEach(result -> outcomes.put(result.postId(), result.outcome()));
     results.forEach(
         result -> result.failureReason().ifPresent(reason -> reasons.put(result.postId(), reason)));
-    return new ReconcileReport(outcomes, reasons, orphanRemovalSuppressed);
+    return new ReconcileReport(outcomes, reasons, orphanRemovalSuppressedBy);
   }
 
   public int count(IndexOutcome outcome) {
@@ -42,11 +48,8 @@ public record ReconcileReport(
         .toList();
   }
 
-  /**
-   * Warning {@code ORPHAN_REMOVAL_SUPPRESSED}: the reasons of the unidentified catalog entries that
-   * stopped orphan removal in this run; empty when orphans were removed as usual.
-   */
-  public List<String> orphanRemovalSuppressedReasons() {
-    throw new UnsupportedOperationException("not implemented");
+  /** Whether any unidentified catalog entry stopped orphans being removed in this run. */
+  public boolean orphanRemovalSuppressed() {
+    return !orphanRemovalSuppressedReasons.isEmpty();
   }
 }

@@ -49,7 +49,7 @@ public record PostToIndex(
             new SiteId(siteId),
             present(canonicalUrl, "canonical URL"),
             present(title, "title"),
-            present(tags, "tags"),
+            presentTags(tags),
             present(publishedAt, "published at"),
             present(updatedAt, "updated at")),
         title,
@@ -58,6 +58,12 @@ public record PostToIndex(
 
   private static <T> T present(T value, String field) {
     return MalformedCatalogPost.requirePresent(value, field);
+  }
+
+  /** The tags, each present: a null set or a null tag is malformed, not a NullPointerException. */
+  private static Set<String> presentTags(Set<String> tags) {
+    present(tags, "tags").forEach(tag -> present(tag, "tag"));
+    return tags;
   }
 
   /** The content fingerprint of this post's title and body under the given recipe. */

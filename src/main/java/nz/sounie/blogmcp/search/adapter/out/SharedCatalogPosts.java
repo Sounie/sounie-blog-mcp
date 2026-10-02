@@ -15,7 +15,9 @@ import nz.sounie.blogmcp.shared.query.CatalogPosts;
  *
  * <p>Every state becomes a {@link CatalogEntry}; none is ever dropped (AC-SRCH-38). A malformed
  * state is {@code Unreadable} when its post ID can still be read, and {@code Unidentified} when it
- * cannot. The reconcile report carries the reasons.
+ * cannot; both carry the reason. The reconcile report lists an unreadable post as {@code FAILED}
+ * with its reason, and gives the reasons of unidentified entries as the reasons orphan removal was
+ * suppressed.
  */
 public final class SharedCatalogPosts implements PostCatalog {
 

@@ -14,10 +14,21 @@ import java.util.stream.Stream;
  * for readable posts) plus a remove per orphan, unless orphan removals are suppressed. Pure: never
  * embeds.
  */
-public record ReconcilePlan(List<IndexDecision> decisions, boolean orphanRemovalSuppressed) {
+public record ReconcilePlan(List<IndexDecision> decisions, List<String> orphanRemovalSuppressedBy) {
 
+  /**
+   * @param orphanRemovalSuppressedBy the reasons of the unidentified catalog entries that
+   *     suppressed orphan removal in this run, in catalog order; empty when orphan removal is
+   *     allowed
+   */
   public ReconcilePlan {
     decisions = List.copyOf(decisions);
+    orphanRemovalSuppressedBy = List.copyOf(orphanRemovalSuppressedBy);
+  }
+
+  /** Whether any unidentified catalog entry stopped orphans being removed in this run. */
+  public boolean orphanRemovalSuppressed() {
+    return !orphanRemovalSuppressedBy.isEmpty();
   }
 
   /**
@@ -28,12 +39,11 @@ public record ReconcilePlan(List<IndexDecision> decisions, boolean orphanRemoval
   public static ReconcilePlan between(
       List<CatalogEntry> entries, VectorIndex snapshot, IndexRecipe recipe) {
     List<CatalogEntry> listed = listedOnce(entries);
-    // Compile shim from the red step (review loop 2): the implementer derives suppression from
-    // CatalogEntry.orphanRemovalBlockers() and keeps the reasons (orphanRemovalSuppressedBy).
-    boolean suppressed = listed.stream().anyMatch(CatalogEntry.Unidentified.class::isInstance);
+    List<String> blockers = entries.stream().flatMap(CatalogEntry::orphanRemovalBlockers).toList();
     Stream<IndexDecision> planned = listed.stream().flatMap(e -> e.decisions(snapshot, recipe));
-    return new ReconcilePlan(
-        Stream.concat(planned, orphanRemovals(listed, snapshot, suppressed)).toList(), suppressed);
+    Stream<IndexDecision> removals =
+        blockers.isEmpty() ? orphanRemovals(listed, snapshot) : Stream.empty();
+    return new ReconcilePlan(Stream.concat(planned, removals).toList(), blockers);
   }
 
   /** Every entry once: a post ID listed more than once becomes one unreadable duplicate. */
@@ -51,25 +61,17 @@ public record ReconcilePlan(List<IndexDecision> decisions, boolean orphanRemoval
     return entries.stream().map(entry -> entry.listedOnce(duplicated)).distinct().toList();
   }
 
-  /** A remove per indexed post that no entry names, unless removals are suppressed. */
+  /** A remove per indexed post that no entry names. */
   private static Stream<IndexDecision> orphanRemovals(
-      List<CatalogEntry> listed, VectorIndex snapshot, boolean suppressed) {
+      List<CatalogEntry> listed, VectorIndex snapshot) {
     Set<PostId> current =
         listed.stream()
             .map(CatalogEntry::knownId)
             .flatMap(Optional::stream)
             .collect(Collectors.toSet());
     return snapshot.ids().stream()
-        .filter(id -> !suppressed && !current.contains(id))
+        .filter(id -> !current.contains(id))
         .sorted(Comparator.comparing(PostId::external))
         .map(IndexDecision::remove);
-  }
-
-  /**
-   * The reasons of the unidentified catalog entries that suppressed orphan removal in this run, in
-   * catalog order; empty when orphan removal is allowed.
-   */
-  public List<String> orphanRemovalSuppressedBy() {
-    throw new UnsupportedOperationException("not implemented");
   }
 }

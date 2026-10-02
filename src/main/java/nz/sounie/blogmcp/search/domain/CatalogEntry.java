@@ -56,7 +56,7 @@ public sealed interface CatalogEntry {
 
     @Override
     public Stream<String> orphanRemovalBlockers() {
-      throw new UnsupportedOperationException("not implemented");
+      return Stream.empty();
     }
   }
 
@@ -79,7 +79,7 @@ public sealed interface CatalogEntry {
 
     @Override
     public Stream<String> orphanRemovalBlockers() {
-      throw new UnsupportedOperationException("not implemented");
+      return Stream.empty();
     }
   }
 
@@ -101,7 +101,7 @@ public sealed interface CatalogEntry {
 
     @Override
     public Stream<String> orphanRemovalBlockers() {
-      throw new UnsupportedOperationException("not implemented");
+      return Stream.of(reason);
     }
   }
 }
