@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import nz.sounie.blogmcp.catalog.domain.SiteId;
+import nz.sounie.blogmcp.catalog.domain.site.SiteId;
 
 /** Outcome of one sync of one site. */
 public record SyncReport(

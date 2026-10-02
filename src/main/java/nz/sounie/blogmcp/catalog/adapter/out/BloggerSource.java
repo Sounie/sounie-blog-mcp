@@ -10,12 +10,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import nz.sounie.blogmcp.catalog.domain.BlogSource;
-import nz.sounie.blogmcp.catalog.domain.ChangeOrder;
 import nz.sounie.blogmcp.catalog.domain.HtmlToText;
-import nz.sounie.blogmcp.catalog.domain.PageCursor;
-import nz.sounie.blogmcp.catalog.domain.Site;
-import nz.sounie.blogmcp.catalog.domain.SourcePage;
-import nz.sounie.blogmcp.catalog.domain.SourceUnavailable;
+import nz.sounie.blogmcp.catalog.domain.site.Site;
+import nz.sounie.blogmcp.catalog.domain.sync.ChangeOrder;
+import nz.sounie.blogmcp.catalog.domain.sync.PageCursor;
+import nz.sounie.blogmcp.catalog.domain.sync.SourcePage;
+import nz.sounie.blogmcp.catalog.domain.sync.SourceUnavailable;
 import tools.jackson.databind.JsonNode;
 
 /**

@@ -4,13 +4,13 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import nz.sounie.blogmcp.catalog.domain.PostRepository;
-import nz.sounie.blogmcp.catalog.domain.Site;
 import nz.sounie.blogmcp.catalog.domain.SiteDirectory;
-import nz.sounie.blogmcp.catalog.domain.SiteId;
-import nz.sounie.blogmcp.catalog.domain.SitesConfiguration;
-import nz.sounie.blogmcp.catalog.domain.SyncCheckpointRepository;
-import nz.sounie.blogmcp.catalog.domain.WithdrawalReason;
+import nz.sounie.blogmcp.catalog.domain.post.PostRepository;
+import nz.sounie.blogmcp.catalog.domain.post.WithdrawalReason;
+import nz.sounie.blogmcp.catalog.domain.site.Site;
+import nz.sounie.blogmcp.catalog.domain.site.SiteId;
+import nz.sounie.blogmcp.catalog.domain.site.SitesConfiguration;
+import nz.sounie.blogmcp.catalog.domain.sync.SyncCheckpointRepository;
 import nz.sounie.blogmcp.shared.event.IntegrationEventPublisher;
 
 /**

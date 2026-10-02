@@ -2,9 +2,9 @@ package nz.sounie.blogmcp.catalog.application;
 
 import java.time.Instant;
 import java.util.List;
-import nz.sounie.blogmcp.catalog.domain.BodyCompleteness;
-import nz.sounie.blogmcp.catalog.domain.Post;
-import nz.sounie.blogmcp.catalog.domain.Tag;
+import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
+import nz.sounie.blogmcp.catalog.domain.post.Post;
+import nz.sounie.blogmcp.catalog.domain.post.Tag;
 
 /** Read model of one post, as returned by {@link GetPost}. */
 public record PostView(

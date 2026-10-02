@@ -2,8 +2,8 @@ package nz.sounie.blogmcp.catalog.application;
 
 import java.util.HashSet;
 import java.util.Set;
-import nz.sounie.blogmcp.catalog.domain.SourceEntry;
-import nz.sounie.blogmcp.catalog.domain.SourcePostId;
+import nz.sounie.blogmcp.catalog.domain.post.SourcePostId;
+import nz.sounie.blogmcp.catalog.domain.sync.SourceEntry;
 
 /** What one sync saw listed by the source, and what that allows a reconcile to withdraw. */
 final class Listing {

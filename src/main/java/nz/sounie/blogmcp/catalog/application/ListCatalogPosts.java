@@ -3,9 +3,9 @@ package nz.sounie.blogmcp.catalog.application;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
-import nz.sounie.blogmcp.catalog.domain.Post;
-import nz.sounie.blogmcp.catalog.domain.PostRepository;
-import nz.sounie.blogmcp.catalog.domain.Tag;
+import nz.sounie.blogmcp.catalog.domain.post.Post;
+import nz.sounie.blogmcp.catalog.domain.post.PostRepository;
+import nz.sounie.blogmcp.catalog.domain.post.Tag;
 import nz.sounie.blogmcp.shared.query.CatalogPostState;
 import nz.sounie.blogmcp.shared.query.CatalogPosts;
 

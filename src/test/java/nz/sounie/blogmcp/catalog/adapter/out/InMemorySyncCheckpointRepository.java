@@ -5,9 +5,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import nz.sounie.blogmcp.catalog.domain.SiteId;
-import nz.sounie.blogmcp.catalog.domain.SyncCheckpoint;
-import nz.sounie.blogmcp.catalog.domain.SyncCheckpointRepository;
+import nz.sounie.blogmcp.catalog.domain.site.SiteId;
+import nz.sounie.blogmcp.catalog.domain.sync.SyncCheckpoint;
+import nz.sounie.blogmcp.catalog.domain.sync.SyncCheckpointRepository;
 
 /**
  * In-memory fake of {@link SyncCheckpointRepository}. Stores copies and records every save, so

@@ -6,7 +6,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import nz.sounie.blogmcp.catalog.domain.CanonicalUrl;
+import nz.sounie.blogmcp.catalog.domain.post.CanonicalUrl;
 
 /** An absolute http(s) URL given by a caller of {@link GetPost}, parsed once. */
 record WebAddress(URI uri) {

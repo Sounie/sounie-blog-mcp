@@ -6,11 +6,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
-import nz.sounie.blogmcp.catalog.domain.CanonicalUrl;
-import nz.sounie.blogmcp.catalog.domain.Post;
-import nz.sounie.blogmcp.catalog.domain.PostId;
-import nz.sounie.blogmcp.catalog.domain.PostRepository;
-import nz.sounie.blogmcp.catalog.domain.SiteId;
+import nz.sounie.blogmcp.catalog.domain.post.CanonicalUrl;
+import nz.sounie.blogmcp.catalog.domain.post.Post;
+import nz.sounie.blogmcp.catalog.domain.post.PostId;
+import nz.sounie.blogmcp.catalog.domain.post.PostRepository;
+import nz.sounie.blogmcp.catalog.domain.site.SiteId;
 
 /**
  * In-memory fake of {@link PostRepository}. Stores and returns copies, so unsaved changes to a

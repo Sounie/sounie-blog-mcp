@@ -2,6 +2,11 @@ package nz.sounie.blogmcp.catalog.domain;
 
 import java.time.Instant;
 import java.util.Optional;
+import nz.sounie.blogmcp.catalog.domain.site.Site;
+import nz.sounie.blogmcp.catalog.domain.sync.ChangeOrder;
+import nz.sounie.blogmcp.catalog.domain.sync.PageCursor;
+import nz.sounie.blogmcp.catalog.domain.sync.SourcePage;
+import nz.sounie.blogmcp.catalog.domain.sync.SourceUnavailable;
 
 /**
  * Port: pages through the source entries of a site.
