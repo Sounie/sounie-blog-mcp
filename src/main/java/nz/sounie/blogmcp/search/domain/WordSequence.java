@@ -17,7 +17,12 @@ public record WordSequence(List<String> words) {
    * Unicode {@code White_Space} (including the no-break space) plus the separators U+001C..U+001F
    * that {@link Character#isWhitespace} also counts, so no word is ever blank to the model library.
    */
-  private static final Pattern WHITESPACE = Pattern.compile("[\\p{IsWhite_Space}\\x{1C}-\\x{1F}]+");
+  private static final String WHITE_SPACE = "[\\p{IsWhite_Space}\\x{1C}-\\x{1F}]+";
+
+  private static final Pattern WHITESPACE = Pattern.compile(WHITE_SPACE);
+
+  private static final Pattern SURROUNDING_WHITE_SPACE =
+      Pattern.compile("^" + WHITE_SPACE + "|" + WHITE_SPACE + "$");
 
   public WordSequence {
     words = List.copyOf(words);
@@ -37,6 +42,11 @@ public record WordSequence(List<String> words) {
         .mapToObj(
             start ->
                 new String(codePoints, start, Math.min(MAX_WORD_CHARS, codePoints.length - start)));
+  }
+
+  /** The text without leading or trailing white space, by the same rule that separates words. */
+  static String strip(String text) {
+    return SURROUNDING_WHITE_SPACE.matcher(text).replaceAll("");
   }
 
   /** The words joined by single spaces. */

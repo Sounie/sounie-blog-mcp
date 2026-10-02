@@ -1,10 +1,8 @@
 package nz.sounie.blogmcp.search.application;
 
-import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 import nz.sounie.blogmcp.search.domain.IndexDecision;
-import nz.sounie.blogmcp.search.domain.IndexOutcome;
 import nz.sounie.blogmcp.search.domain.IndexWork;
 import nz.sounie.blogmcp.search.domain.PostIndexer;
 import nz.sounie.blogmcp.search.domain.ReconcilePlan;
@@ -31,28 +29,23 @@ public final class ReconcileIndex {
   }
 
   public ReconcileReport run() {
-    return lock.locked(
-        () ->
-            new ReconcileReport(
-                plan().decisions().stream()
-                    .collect(
-                        Collectors.toMap(
-                            IndexDecision::postId,
-                            this::applyIsolated,
-                            (first, second) -> second,
-                            LinkedHashMap::new))));
+    return lock.locked(this::reconcile);
   }
 
-  private ReconcilePlan plan() {
-    return ReconcilePlan.between(catalog.currentPosts(), work.index(), work.indexer().recipe());
+  /** Read the catalog's entries, plan, then apply each decision in turn. */
+  private ReconcileReport reconcile() {
+    ReconcilePlan plan =
+        ReconcilePlan.between(catalog.currentPosts(), work.index(), work.indexer().recipe());
+    List<PostOutcome> results = plan.decisions().stream().map(this::applyIsolated).toList();
+    return ReconcileReport.of(results, plan.withdrawalsSuppressed());
   }
 
   /** One post's failure (e.g. the embedder is unavailable) must not stop the others (AC-30). */
-  private IndexOutcome applyIsolated(IndexDecision decision) {
+  private PostOutcome applyIsolated(IndexDecision decision) {
     try {
-      return decision.apply(work);
+      return PostOutcome.applied(decision, decision.apply(work));
     } catch (RuntimeException e) {
-      return IndexOutcome.FAILED;
+      return PostOutcome.failed(decision, e);
     }
   }
 }

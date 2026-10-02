@@ -28,9 +28,9 @@ public record PostToIndex(
   /**
    * Translates a published-language payload. Called by both anti-corruption adapters.
    *
-   * @throws MalformedCatalogPost if the post ID is not {@code <siteId>:<sourcePostId>}, the site ID
-   *     differs from the post ID's site part, or the completeness is neither {@code FULL} nor
-   *     {@code SUMMARY}
+   * @throws MalformedCatalogPost if any argument is null, the post ID is not {@code
+   *     <siteId>:<sourcePostId>}, the site ID differs from the post ID's site part, or the
+   *     completeness is neither {@code FULL} nor {@code SUMMARY}
    */
   public static PostToIndex of(
       String postId,
@@ -45,9 +45,19 @@ public record PostToIndex(
     return new PostToIndex(
         PostId.parse(postId),
         Completeness.parse(completeness),
-        new PostMetadata(new SiteId(siteId), canonicalUrl, title, tags, publishedAt, updatedAt),
+        new PostMetadata(
+            new SiteId(siteId),
+            present(canonicalUrl, "canonical URL"),
+            present(title, "title"),
+            present(tags, "tags"),
+            present(publishedAt, "published at"),
+            present(updatedAt, "updated at")),
         title,
-        body);
+        present(body, "body"));
+  }
+
+  private static <T> T present(T value, String field) {
+    return MalformedCatalogPost.requirePresent(value, field);
   }
 
   /** The content fingerprint of this post's title and body under the given recipe. */

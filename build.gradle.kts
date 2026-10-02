@@ -125,4 +125,7 @@ pitest {
     timestampedReports = false
     outputFormats = setOf("HTML", "XML")
     failWhenNoMutations = false
+    // The real-model adapter tests (@Tag("model")) exercise adapter.out, not the domain under
+    // mutation; excluding them keeps PIT independent of the 34 MB model and the native caches.
+    excludedGroups = setOf("model")
 }

@@ -41,13 +41,33 @@ public final class PostIndexer {
    */
   public IndexedPost index(PostToIndex post) {
     List<Chunk> chunks = chunksOf(post);
-    List<Embedding> embeddings =
-        embedder.embedPassages(composition.compose(post.title(), chunks, tokens));
+    List<Embedding> embeddings = embeddingsFor(post, chunks);
     List<IndexedChunk> indexed =
         IntStream.range(0, chunks.size())
             .mapToObj(i -> new IndexedChunk(i, chunks.get(i).text(), embeddings.get(i)))
             .toList();
     return IndexedPost.restore(post.id(), post.metadata(), fingerprintOf(post), indexed);
+  }
+
+  /**
+   * One embedding per chunk, in chunk order.
+   *
+   * @throws EmbedderUnavailable if the embedder fails or breaks its contract of one embedding per
+   *     passage
+   */
+  private List<Embedding> embeddingsFor(PostToIndex post, List<Chunk> chunks) {
+    List<Embedding> embeddings =
+        embedder.embedPassages(composition.compose(post.title(), chunks, tokens));
+    if (embeddings.size() != chunks.size()) {
+      throw new EmbedderUnavailable(
+          "The embedder returned "
+              + embeddings.size()
+              + " embeddings for "
+              + chunks.size()
+              + " passages of "
+              + post.id().external());
+    }
+    return embeddings;
   }
 
   /** A post whose title and body are both blank has no chunks (search.md 3.4, rule 4). */

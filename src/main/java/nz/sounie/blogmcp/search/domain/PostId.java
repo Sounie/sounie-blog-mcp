@@ -25,10 +25,10 @@ public record PostId(SiteId siteId, String sourcePostId) {
   /**
    * Parses the external form.
    *
-   * @throws MalformedCatalogPost if the text is not {@code <siteId>:<sourcePostId>}
+   * @throws MalformedCatalogPost if the text is missing or not {@code <siteId>:<sourcePostId>}
    */
   public static PostId parse(String external) {
-    Matcher parts = EXTERNAL_FORM.matcher(external);
+    Matcher parts = EXTERNAL_FORM.matcher(MalformedCatalogPost.requirePresent(external, "post ID"));
     if (!parts.matches()) {
       throw new MalformedCatalogPost("Not a post ID (<siteId>:<sourcePostId>): '" + external + "'");
     }

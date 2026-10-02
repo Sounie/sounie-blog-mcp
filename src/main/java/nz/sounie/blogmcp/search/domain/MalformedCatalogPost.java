@@ -8,4 +8,16 @@ public final class MalformedCatalogPost extends RuntimeException {
   public MalformedCatalogPost(String message) {
     super(message);
   }
+
+  /**
+   * The value of a published-language field that must be present.
+   *
+   * @throws MalformedCatalogPost if it is null
+   */
+  public static <T> T requirePresent(T value, String field) {
+    if (value == null) {
+      throw new MalformedCatalogPost("The " + field + " is missing");
+    }
+    return value;
+  }
 }

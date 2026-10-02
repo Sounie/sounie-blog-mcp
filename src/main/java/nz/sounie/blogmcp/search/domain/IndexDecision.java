@@ -10,6 +10,11 @@ public sealed interface IndexDecision {
 
   IndexOutcome apply(IndexWork work);
 
+  /** Why this decision fails without being applied; empty for every decision that can succeed. */
+  default Optional<String> failureReason() {
+    return Optional.empty();
+  }
+
   /**
    * The single entry point for upserts, used by events and reconciles. Delegates to the post's
    * {@link Completeness}.
@@ -105,9 +110,19 @@ public sealed interface IndexDecision {
    * with the reason.
    */
   record Unreadable(PostId postId, String reason) implements IndexDecision {
+    public Unreadable {
+      Objects.requireNonNull(postId, "postId");
+      Objects.requireNonNull(reason, "reason");
+    }
+
     @Override
     public IndexOutcome apply(IndexWork work) {
-      throw new UnsupportedOperationException("not implemented");
+      return IndexOutcome.FAILED;
+    }
+
+    @Override
+    public Optional<String> failureReason() {
+      return Optional.of(reason);
     }
   }
 

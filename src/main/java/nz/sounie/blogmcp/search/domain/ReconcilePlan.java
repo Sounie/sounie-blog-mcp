@@ -2,15 +2,19 @@ package nz.sounie.blogmcp.search.domain;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * One index decision per catalog post (through {@link IndexDecision#forPost}) plus a remove per
- * orphan. Pure: never embeds.
+ * One index decision per catalog entry with a known post ID (through {@link IndexDecision#forPost}
+ * for readable posts) plus a remove per orphan, unless orphan removals are suppressed. Pure: never
+ * embeds.
  */
-public record ReconcilePlan(List<IndexDecision> decisions) {
+public record ReconcilePlan(List<IndexDecision> decisions, boolean withdrawalsSuppressed) {
 
   public ReconcilePlan {
     decisions = List.copyOf(decisions);
@@ -23,33 +27,39 @@ public record ReconcilePlan(List<IndexDecision> decisions) {
    */
   public static ReconcilePlan between(
       List<CatalogEntry> entries, VectorIndex snapshot, IndexRecipe recipe) {
-    // Compile shim from the red step (fix loop 1): reads only Readable entries, as before.
-    // The implementer replaces this with the AC-SRCH-38 rules above.
-    List<PostToIndex> catalog =
-        entries.stream()
-            .filter(CatalogEntry.Readable.class::isInstance)
-            .map(entry -> ((CatalogEntry.Readable) entry).post())
-            .toList();
-    Set<PostId> current = catalog.stream().map(PostToIndex::id).collect(Collectors.toSet());
-    Stream<IndexDecision> upserts =
-        catalog.stream()
-            .map(
-                post ->
-                    IndexDecision.forPost(
-                        snapshot.find(post.id()), post, post.fingerprintUnder(recipe)));
-    Stream<IndexDecision> orphans =
-        snapshot.ids().stream()
-            .filter(id -> !current.contains(id))
-            .sorted(Comparator.comparing(PostId::external))
-            .map(IndexDecision::remove);
-    return new ReconcilePlan(Stream.concat(upserts, orphans).toList());
+    List<CatalogEntry> listed = listedOnce(entries);
+    boolean suppressed = listed.stream().anyMatch(CatalogEntry::hidesOrphans);
+    Stream<IndexDecision> planned = listed.stream().flatMap(e -> e.decisions(snapshot, recipe));
+    return new ReconcilePlan(
+        Stream.concat(planned, orphanRemovals(listed, snapshot, suppressed)).toList(), suppressed);
   }
 
-  /**
-   * Whether orphan removals were withheld because some catalog entry could not be identified
-   * (AC-SRCH-38).
-   */
-  public boolean withdrawalsSuppressed() {
-    throw new UnsupportedOperationException("not implemented");
+  /** Every entry once: a post ID listed more than once becomes one unreadable duplicate. */
+  private static List<CatalogEntry> listedOnce(List<CatalogEntry> entries) {
+    Set<PostId> duplicated =
+        entries.stream()
+            .map(CatalogEntry::knownId)
+            .flatMap(Optional::stream)
+            .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()))
+            .entrySet()
+            .stream()
+            .filter(count -> count.getValue() > 1)
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toSet());
+    return entries.stream().map(entry -> entry.listedOnce(duplicated)).distinct().toList();
+  }
+
+  /** A remove per indexed post that no entry names, unless removals are suppressed. */
+  private static Stream<IndexDecision> orphanRemovals(
+      List<CatalogEntry> listed, VectorIndex snapshot, boolean suppressed) {
+    Set<PostId> current =
+        listed.stream()
+            .map(CatalogEntry::knownId)
+            .flatMap(Optional::stream)
+            .collect(Collectors.toSet());
+    return snapshot.ids().stream()
+        .filter(id -> !suppressed && !current.contains(id))
+        .sorted(Comparator.comparing(PostId::external))
+        .map(IndexDecision::remove);
   }
 }
