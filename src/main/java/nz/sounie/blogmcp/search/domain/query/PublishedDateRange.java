@@ -3,7 +3,6 @@ package nz.sounie.blogmcp.search.domain.query;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import nz.sounie.blogmcp.search.domain.text.InvalidSearchQuery;
 
 /**
  * Optional inclusive {@code from} and {@code to} calendar dates in the blog time zone {@link

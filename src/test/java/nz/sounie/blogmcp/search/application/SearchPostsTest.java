@@ -18,8 +18,8 @@ import nz.sounie.blogmcp.search.domain.index.PostMatch;
 import nz.sounie.blogmcp.search.domain.index.PostToIndex;
 import nz.sounie.blogmcp.search.domain.post.PostId;
 import nz.sounie.blogmcp.search.domain.query.PublishedDateRange;
+import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.query.SearchResults;
-import nz.sounie.blogmcp.search.domain.text.QueryPassage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

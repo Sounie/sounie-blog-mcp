@@ -1,4 +1,4 @@
-package nz.sounie.blogmcp.search.domain.text;
+package nz.sounie.blogmcp.search.domain.query;
 
 import java.util.Objects;
 

@@ -1,21 +1,21 @@
 package nz.sounie.blogmcp.search.application;
 
 import java.util.Objects;
-import nz.sounie.blogmcp.search.domain.embedding.Embedder;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
 import nz.sounie.blogmcp.search.domain.index.VectorIndex;
+import nz.sounie.blogmcp.search.domain.query.QueryEmbedder;
+import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.query.SearchFilters;
 import nz.sounie.blogmcp.search.domain.query.SearchQuery;
 import nz.sounie.blogmcp.search.domain.query.SearchResults;
-import nz.sounie.blogmcp.search.domain.text.QueryPassage;
 
 /** Answers a search query. Does not take the index write lock. */
 public final class SearchPosts {
 
   private final VectorIndex index;
-  private final Embedder embedder;
+  private final QueryEmbedder embedder;
 
-  public SearchPosts(VectorIndex index, Embedder embedder) {
+  public SearchPosts(VectorIndex index, QueryEmbedder embedder) {
     this.index = Objects.requireNonNull(index, "index");
     this.embedder = Objects.requireNonNull(embedder, "embedder");
   }

@@ -3,9 +3,9 @@ package nz.sounie.blogmcp.search.domain.index;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.IntStream;
-import nz.sounie.blogmcp.search.domain.embedding.Embedder;
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
+import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
 import nz.sounie.blogmcp.search.domain.text.Chunk;
 import nz.sounie.blogmcp.search.domain.text.ChunkingPolicy;
 import nz.sounie.blogmcp.search.domain.text.PassageComposition;
@@ -14,20 +14,20 @@ import nz.sounie.blogmcp.search.domain.text.WordSequence;
 
 /**
  * Domain service that creates {@link IndexedPost}s: word sequence, chunking, passage composition,
- * then one {@link Embedder#embedPassages} call for all of the post's passages.
+ * then one {@link PassageEmbedder#embedPassages} call for all of the post's passages.
  */
 public final class PostIndexer {
 
   private final ChunkingPolicy chunking;
   private final PassageComposition composition;
   private final TokenCounter tokens;
-  private final Embedder embedder;
+  private final PassageEmbedder embedder;
 
   public PostIndexer(
       ChunkingPolicy chunking,
       PassageComposition composition,
       TokenCounter tokens,
-      Embedder embedder) {
+      PassageEmbedder embedder) {
     this.chunking = Objects.requireNonNull(chunking, "chunking");
     this.composition = Objects.requireNonNull(composition, "composition");
     this.tokens = Objects.requireNonNull(tokens, "tokens");

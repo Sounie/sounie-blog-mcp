@@ -45,7 +45,7 @@ public record WordSequence(List<String> words) {
   }
 
   /** The text without leading or trailing white space, by the same rule that separates words. */
-  static String strip(String text) {
+  public static String strip(String text) {
     return SURROUNDING_WHITE_SPACE.matcher(text).replaceAll("");
   }
 

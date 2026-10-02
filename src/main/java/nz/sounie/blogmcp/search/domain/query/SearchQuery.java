@@ -1,7 +1,6 @@
 package nz.sounie.blogmcp.search.domain.query;
 
 import java.util.Objects;
-import nz.sounie.blogmcp.search.domain.text.QueryText;
 
 /** Query text, site filter, published-date range and result limit. Valid only as a whole. */
 public record SearchQuery(

@@ -1,9 +1,9 @@
-package nz.sounie.blogmcp.search.domain.text;
+package nz.sounie.blogmcp.search.domain.query;
 
 import java.util.Objects;
 
 /** A search query that is not valid as a whole. */
-public final class InvalidSearchQuery extends RuntimeException {
+final class InvalidSearchQuery extends RuntimeException {
 
   private static final long serialVersionUID = 1L;
 

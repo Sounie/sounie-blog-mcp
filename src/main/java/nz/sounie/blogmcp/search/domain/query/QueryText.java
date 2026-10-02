@@ -1,4 +1,6 @@
-package nz.sounie.blogmcp.search.domain.text;
+package nz.sounie.blogmcp.search.domain.query;
+
+import nz.sounie.blogmcp.search.domain.text.WordSequence;
 
 /**
  * The trimmed query text: not blank, at most {@link #MAX_CHARS} characters.

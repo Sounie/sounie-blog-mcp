@@ -1,7 +1,6 @@
 package nz.sounie.blogmcp.search.domain.query;
 
 import nz.sounie.blogmcp.search.domain.post.SiteId;
-import nz.sounie.blogmcp.search.domain.text.QueryText;
 
 /** Test data builder for {@link SearchQuery}. Defaults: any site, any date, the default limit. */
 public final class SearchQueryBuilder {

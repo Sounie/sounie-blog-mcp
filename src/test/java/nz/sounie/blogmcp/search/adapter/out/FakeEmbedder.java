@@ -6,19 +6,20 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Predicate;
-import nz.sounie.blogmcp.search.domain.embedding.Embedder;
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
+import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
+import nz.sounie.blogmcp.search.domain.query.QueryEmbedder;
+import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.text.Passage;
-import nz.sounie.blogmcp.search.domain.text.QueryPassage;
 
 /**
- * Deterministic fake of our {@link Embedder} port. By default each text becomes a bag-of-words
- * vector: every lower-cased word is hashed into one of 384 dimensions, and the result is
- * normalised. Tests can assign exact vectors to passage texts or queries, make it fail, and inspect
- * every call.
+ * Deterministic fake of our {@link PassageEmbedder} and {@link QueryEmbedder} ports. By default
+ * each text becomes a bag-of-words vector: every lower-cased word is hashed into one of 384
+ * dimensions, and the result is normalised. Tests can assign exact vectors to passage texts or
+ * queries, make it fail, and inspect every call.
  */
-public final class FakeEmbedder implements Embedder {
+public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
 
   private final String modelId;
   private final List<List<Passage>> passageCalls = new CopyOnWriteArrayList<>();

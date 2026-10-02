@@ -1,4 +1,4 @@
-package nz.sounie.blogmcp.search.domain.text;
+package nz.sounie.blogmcp.search.domain.query;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
