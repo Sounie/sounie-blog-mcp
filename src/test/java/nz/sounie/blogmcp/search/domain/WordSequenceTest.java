@@ -74,4 +74,10 @@ class WordSequenceTest {
   void a_word_of_65_characters_becomes_two_pieces() {
     assertThat(WordSequence.of("y".repeat(65)).words()).containsExactly("y".repeat(64), "y");
   }
+
+  @Test
+  @DisplayName("S5: the information separators U+001C..U+001F separate words")
+  void information_separators_separate_words() {
+    assertThat(WordSequence.of("a\u001Fb\u001Cc").words()).containsExactly("a", "b", "c");
+  }
 }

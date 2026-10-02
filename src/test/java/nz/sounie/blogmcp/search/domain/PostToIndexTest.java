@@ -79,4 +79,41 @@ class PostToIndexTest {
     assertThatThrownBy(() -> of("sounie-wp:1", "sounie-wp", completeness))
         .isInstanceOf(MalformedCatalogPost.class);
   }
+
+  @ParameterizedTest(name = "argument {0} is null")
+  @org.junit.jupiter.params.provider.ValueSource(ints = {0, 1, 2, 3, 4, 5, 6, 7, 8})
+  @DisplayName("AC-SRCH-38: a null field is malformed, not a NullPointerException")
+  void rejects_a_null_argument(int nullArgument) {
+    Object[] args = {
+      "sounie-wp:1",
+      "sounie-wp",
+      "https://blog2.sounie.nz/1/",
+      "Title",
+      "Body text",
+      "FULL",
+      Set.of("Java"),
+      PUBLISHED,
+      UPDATED
+    };
+    args[nullArgument] = null;
+
+    assertThatThrownBy(
+            () ->
+                PostToIndex.of(
+                    (String) args[0],
+                    (String) args[1],
+                    (String) args[2],
+                    (String) args[3],
+                    (String) args[4],
+                    (String) args[5],
+                    castTags(args[6]),
+                    (Instant) args[7],
+                    (Instant) args[8]))
+        .isInstanceOf(MalformedCatalogPost.class);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Set<String> castTags(Object tags) {
+    return (Set<String>) tags;
+  }
 }

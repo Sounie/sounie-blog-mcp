@@ -46,4 +46,20 @@ class QueryTextTest {
   void trims_surrounding_whitespace() {
     assertThat(new QueryText("  records in java \n").value()).isEqualTo("records in java");
   }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"\u00A0\u00A0", "\u2003\u3000", "\u202F", "\u001F\u001C", " \u00A0\t"})
+  @DisplayName("S5: a query of only Unicode white space (as WordSequence defines it) is BLANK")
+  void rejects_unicode_white_space_as_blank(String text) {
+    assertThatThrownBy(() -> new QueryText(text))
+        .isInstanceOfSatisfying(
+            InvalidSearchQuery.class,
+            e -> assertThat(e.reason()).isEqualTo(InvalidSearchQuery.Reason.BLANK));
+  }
+
+  @Test
+  @DisplayName("S5: no-break spaces around the query are trimmed")
+  void trims_no_break_spaces() {
+    assertThat(new QueryText("\u00A0records in java\u2003").value()).isEqualTo("records in java");
+  }
 }

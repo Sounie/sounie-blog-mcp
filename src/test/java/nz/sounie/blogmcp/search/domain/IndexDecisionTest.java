@@ -137,4 +137,24 @@ class IndexDecisionTest {
     assertThat(new IndexDecision.Remove(post.id()).apply(work))
         .isEqualTo(IndexOutcome.ALREADY_ABSENT);
   }
+
+  @Test
+  @DisplayName("AC-SRCH-38: Unreadable is FAILED and leaves an existing entry alone")
+  void unreadable_fails_and_keeps_the_entry() {
+    index.save(existing);
+
+    IndexOutcome outcome = new IndexDecision.Unreadable(post.id(), "title is missing").apply(work);
+
+    assertThat(outcome).isEqualTo(IndexOutcome.FAILED);
+    assertThat(index.find(post.id())).containsSame(existing);
+    assertThat(embedder.passageCallCount()).isZero();
+  }
+
+  @Test
+  @DisplayName("AC-SRCH-38: Unreadable with no entry is FAILED and adds nothing")
+  void unreadable_without_entry_adds_nothing() {
+    assertThat(new IndexDecision.Unreadable(post.id(), "bad URL").apply(work))
+        .isEqualTo(IndexOutcome.FAILED);
+    assertThat(index.ids()).isEmpty();
+  }
 }

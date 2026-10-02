@@ -26,6 +26,7 @@ public final class FakeEmbedder implements Embedder {
   private final Map<String, Embedding> assignedPassages = new ConcurrentHashMap<>();
   private volatile Embedding assignedQuery;
   private volatile Predicate<List<Passage>> failWhen = passages -> false;
+  private volatile int countAdjustment;
 
   public FakeEmbedder() {
     this("fake-model");
@@ -46,9 +47,11 @@ public final class FakeEmbedder implements Embedder {
     if (failWhen.test(passages)) {
       throw new EmbedderUnavailable("fake embedder failure");
     }
-    return passages.stream()
-        .map(p -> assignedPassages.getOrDefault(p.text(), bagOfWords(p.text())))
-        .toList();
+    List<Embedding> embeddings =
+        passages.stream()
+            .map(p -> assignedPassages.getOrDefault(p.text(), bagOfWords(p.text())))
+            .toList();
+    return withAdjustedCount(embeddings);
   }
 
   @Override
@@ -64,6 +67,27 @@ public final class FakeEmbedder implements Embedder {
   public FakeEmbedder assign(String passageText, Embedding embedding) {
     assignedPassages.put(passageText, embedding);
     return this;
+  }
+
+  /**
+   * Breaks the port's contract: returns this many embeddings more (positive) or fewer (negative)
+   * than passages.
+   */
+  public FakeEmbedder returningWrongCount(int adjustment) {
+    this.countAdjustment = adjustment;
+    return this;
+  }
+
+  private List<Embedding> withAdjustedCount(List<Embedding> embeddings) {
+    int adjustment = countAdjustment;
+    if (adjustment < 0) {
+      return embeddings.subList(0, Math.max(0, embeddings.size() + adjustment));
+    }
+    List<Embedding> padded = new java.util.ArrayList<>(embeddings);
+    for (int i = 0; i < adjustment; i++) {
+      padded.add(bagOfWords("extra " + i));
+    }
+    return List.copyOf(padded);
   }
 
   /** Returns this vector for every query. */

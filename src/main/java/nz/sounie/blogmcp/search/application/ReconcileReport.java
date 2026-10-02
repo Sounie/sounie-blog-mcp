@@ -25,4 +25,14 @@ public record ReconcileReport(Map<PostId, IndexOutcome> outcomes) {
         .map(Map.Entry::getKey)
         .toList();
   }
+
+  /** Why each {@code FAILED} post failed, by post ID. */
+  public Map<PostId, String> failureReasons() {
+    throw new UnsupportedOperationException("not implemented");
+  }
+
+  /** Whether orphan removals were withheld because a catalog entry was unidentified. */
+  public boolean withdrawalsSuppressed() {
+    throw new UnsupportedOperationException("not implemented");
+  }
 }

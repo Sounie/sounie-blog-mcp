@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
 import nz.sounie.blogmcp.search.application.PostCatalog;
+import nz.sounie.blogmcp.search.domain.CatalogEntry;
 import nz.sounie.blogmcp.search.domain.MalformedCatalogPost;
 import nz.sounie.blogmcp.search.domain.PostToIndex;
 import nz.sounie.blogmcp.shared.query.CatalogPostState;
@@ -33,8 +34,13 @@ public final class SharedCatalogPosts implements PostCatalog {
   }
 
   @Override
-  public List<PostToIndex> currentPosts() {
-    return catalog.currentPosts().stream().flatMap(this::translated).toList();
+  public List<CatalogEntry> currentPosts() {
+    // Compile shim from the red step (fix loop 1): still skips malformed states. The implementer
+    // maps them to CatalogEntry.Unreadable / Unidentified (AC-SRCH-38).
+    return catalog.currentPosts().stream()
+        .flatMap(this::translated)
+        .<CatalogEntry>map(CatalogEntry.Readable::new)
+        .toList();
   }
 
   private Stream<PostToIndex> translated(CatalogPostState state) {

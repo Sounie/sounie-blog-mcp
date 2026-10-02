@@ -99,4 +99,22 @@ class PostIndexerTest {
 
     assertThat(indexed.chunks()).isEqualTo(List.of());
   }
+
+  @Test
+  @DisplayName("S3: too few embeddings for the chunks is EmbedderUnavailable")
+  void too_few_embeddings_is_embedder_unavailable() {
+    embedder.returningWrongCount(-1);
+
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> indexer.index(post))
+        .isInstanceOf(EmbedderUnavailable.class);
+  }
+
+  @Test
+  @DisplayName("S3: too many embeddings for the chunks is EmbedderUnavailable")
+  void too_many_embeddings_is_embedder_unavailable() {
+    embedder.returningWrongCount(1);
+
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> indexer.index(post))
+        .isInstanceOf(EmbedderUnavailable.class);
+  }
 }

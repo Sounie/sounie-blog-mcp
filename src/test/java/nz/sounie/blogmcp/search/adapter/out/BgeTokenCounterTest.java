@@ -98,7 +98,8 @@ class BgeTokenCounterTest {
           "e^(iπ)+1=0",
           "naïve",
           "café",
-          "日本語のテキスト");
+          "日本語のテキスト",
+          "대한민국의프로그래머들이자바레코드와패턴매칭을사용하여불변데이터를표현하는방법에대한긴설명");
 
   private static String pathologicalWords(int count, Random random) {
     List<String> words = new ArrayList<>();
@@ -116,5 +117,13 @@ class BgeTokenCounterTest {
       text.append(alphabet.charAt(random.nextInt(alphabet.length())));
     }
     return text.toString();
+  }
+
+  @Test
+  @DisplayName("S11: the AC-SRCH-8 oracle does not truncate at 512 tokens")
+  void oracle_does_not_truncate() {
+    String text = "word ".repeat(700);
+
+    assertThat(RealModel.contentTokens(text)).isGreaterThan(512).isEqualTo(700);
   }
 }

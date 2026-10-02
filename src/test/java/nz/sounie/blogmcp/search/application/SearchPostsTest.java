@@ -92,14 +92,15 @@ class SearchPostsTest {
   @Test
   @DisplayName("AC-SRCH-25: the same index and query always give the same order")
   void same_query_same_order() {
+    // Wiring only: the tie-break permutations live in SearchResultsTest.
     search.embedder.answerQueriesWith(Vectors.query());
-    Instant at = Instant.parse("2024-01-01T00:00:00Z");
-    store(aPost().id("sounie-wp:3").publishedAt(at).build(), 0.8);
-    store(aPost().id("elegant:9").publishedAt(at).build(), 0.8);
+    store(aPost().id("sounie-wp:3").build(), 0.7);
+    store(aPost().id("elegant:9").build(), 0.8);
+    store(aPost().id("sounie-wp:1").build(), 0.6);
 
     List<String> first = ids(search.searchPosts.search(aQuery("records").build()));
 
-    assertThat(first).containsExactly("elegant:9", "sounie-wp:3");
+    assertThat(first).containsExactly("elegant:9", "sounie-wp:3", "sounie-wp:1");
     assertThat(ids(search.searchPosts.search(aQuery("records").build()))).isEqualTo(first);
   }
 

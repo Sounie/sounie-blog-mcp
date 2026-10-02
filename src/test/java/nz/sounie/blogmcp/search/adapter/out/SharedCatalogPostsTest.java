@@ -2,26 +2,34 @@ package nz.sounie.blogmcp.search.adapter.out;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Set;
+import nz.sounie.blogmcp.search.domain.CatalogEntry;
+import nz.sounie.blogmcp.search.domain.PostId;
 import nz.sounie.blogmcp.search.domain.PostToIndex;
 import nz.sounie.blogmcp.shared.query.CatalogPostState;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Wiring only: which {@link CatalogEntry} variant each state becomes. The field rules themselves
+ * are tested on {@code PostToIndex}, {@code PostId}, {@code SiteId} and {@code Completeness}.
+ */
 class SharedCatalogPostsTest {
 
   private static final Instant AT = Instant.parse("2024-04-01T00:00:00Z");
 
   private static CatalogPostState state(String postId, String siteId, String completeness) {
+    return state(postId, siteId, "Title " + postId, completeness);
+  }
+
+  private static CatalogPostState state(
+      String postId, String siteId, String title, String completeness) {
     return new CatalogPostState(
         postId,
         siteId,
         "https://" + siteId + ".example/" + postId,
-        "Title " + postId,
+        title,
         "Body",
         completeness,
         Set.of("Java"),
@@ -29,55 +37,82 @@ class SharedCatalogPostsTest {
         AT);
   }
 
-  @Test
-  @DisplayName("AC-SRCH-31, AC-SRCH-36: every state is translated in order, summary-only included")
-  void translates_every_state_with_post_to_index_of() {
-    CatalogPostState full = state("elegant:7", "elegant", "FULL");
-    CatalogPostState summary = state("sounie-wp:2", "sounie-wp", "SUMMARY");
-
-    var posts = new SharedCatalogPosts(new FakeCatalogPosts(full, summary)).currentPosts();
-
-    assertThat(posts)
-        .containsExactly(
-            PostToIndex.of(
-                full.postId(),
-                full.siteId(),
-                full.canonicalUrl(),
-                full.title(),
-                full.body(),
-                full.completeness(),
-                full.tags(),
-                full.publishedAt(),
-                full.updatedAt()),
-            PostToIndex.of(
-                summary.postId(),
-                summary.siteId(),
-                summary.canonicalUrl(),
-                summary.title(),
-                summary.body(),
-                summary.completeness(),
-                summary.tags(),
-                summary.publishedAt(),
-                summary.updatedAt()));
+  private static PostToIndex translated(CatalogPostState s) {
+    return PostToIndex.of(
+        s.postId(),
+        s.siteId(),
+        s.canonicalUrl(),
+        s.title(),
+        s.body(),
+        s.completeness(),
+        s.tags(),
+        s.publishedAt(),
+        s.updatedAt());
   }
 
   @Test
-  void an_empty_catalog_gives_no_posts() {
+  @DisplayName("AC-SRCH-31, AC-SRCH-36: readable states are translated in order, summary included")
+  void translates_every_readable_state() {
+    CatalogPostState full = state("elegant:7", "elegant", "FULL");
+    CatalogPostState summary = state("sounie-wp:2", "sounie-wp", "SUMMARY");
+
+    var entries = new SharedCatalogPosts(new FakeCatalogPosts(full, summary)).currentPosts();
+
+    assertThat(entries)
+        .containsExactly(
+            new CatalogEntry.Readable(translated(full)),
+            new CatalogEntry.Readable(translated(summary)));
+  }
+
+  @Test
+  void an_empty_catalog_gives_no_entries() {
     assertThat(new SharedCatalogPosts(new FakeCatalogPosts()).currentPosts()).isEmpty();
   }
 
   @Test
-  @DisplayName("A malformed state is logged and skipped; the other posts are still translated")
-  void skips_and_logs_a_malformed_state() {
-    CatalogPostState malformed = state("sounie-wp:3", "elegant", "FULL");
+  @DisplayName("AC-SRCH-38: a malformed field with a readable post ID is Unreadable")
+  void malformed_field_with_readable_id_is_unreadable() {
+    CatalogPostState malformed = state("sounie-wp:3", "sounie-wp", "PARTIAL");
     CatalogPostState valid = state("sounie-wp:4", "sounie-wp", "FULL");
-    ByteArrayOutputStream errors = new ByteArrayOutputStream();
-    var posts =
-        new SharedCatalogPosts(
-                new FakeCatalogPosts(malformed, valid),
-                new PrintStream(errors, true, StandardCharsets.UTF_8))
-            .currentPosts();
-    assertThat(posts).extracting(post -> post.id().external()).containsExactly("sounie-wp:4");
-    assertThat(errors.toString(StandardCharsets.UTF_8)).contains("sounie-wp:3");
+
+    var entries = new SharedCatalogPosts(new FakeCatalogPosts(malformed, valid)).currentPosts();
+
+    assertThat(entries).hasSize(2);
+    assertThat(entries.getFirst())
+        .isInstanceOfSatisfying(
+            CatalogEntry.Unreadable.class,
+            entry -> {
+              assertThat(entry.id()).isEqualTo(PostId.parse("sounie-wp:3"));
+              assertThat(entry.reason()).isNotBlank();
+            });
+    assertThat(entries.get(1)).isEqualTo(new CatalogEntry.Readable(translated(valid)));
+  }
+
+  @Test
+  @DisplayName("AC-SRCH-38: a state whose post ID cannot be read is Unidentified")
+  void unreadable_post_id_is_unidentified() {
+    CatalogPostState noId = state("sounie-wp-3", "sounie-wp", "FULL");
+
+    var entries = new SharedCatalogPosts(new FakeCatalogPosts(noId)).currentPosts();
+
+    assertThat(entries)
+        .singleElement()
+        .isInstanceOfSatisfying(
+            CatalogEntry.Unidentified.class,
+            entry -> assertThat(entry.reason()).contains("sounie-wp-3"));
+  }
+
+  @Test
+  @DisplayName("AC-SRCH-38: a null field with a readable post ID is Unreadable, not an NPE")
+  void null_field_is_unreadable() {
+    CatalogPostState nullTitle = state("elegant:5", "elegant", null, "FULL");
+
+    var entries = new SharedCatalogPosts(new FakeCatalogPosts(nullTitle)).currentPosts();
+
+    assertThat(entries)
+        .singleElement()
+        .isInstanceOfSatisfying(
+            CatalogEntry.Unreadable.class,
+            entry -> assertThat(entry.id()).isEqualTo(PostId.parse("elegant:5")));
   }
 }

@@ -100,6 +100,17 @@ public sealed interface IndexDecision {
     }
   }
 
+  /**
+   * A catalog post search cannot read (AC-SRCH-38): leave any entry alone and report {@code FAILED}
+   * with the reason.
+   */
+  record Unreadable(PostId postId, String reason) implements IndexDecision {
+    @Override
+    public IndexOutcome apply(IndexWork work) {
+      throw new UnsupportedOperationException("not implemented");
+    }
+  }
+
   /** Withdrawn, or an orphan. */
   record Remove(PostId postId) implements IndexDecision {
     @Override

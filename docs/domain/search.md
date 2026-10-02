@@ -64,14 +64,15 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Indexed chunk | A chunk's index and text together with its embedding. | `IndexedChunk` |
 | Vector index | Port holding every indexed post. In this slice it has an in-memory implementation only, and file persistence is slice 3. | `VectorIndex` (domain port), `InMemoryVectorIndex` (adapter.out) |
 | Index change | What an integration event asks of the index: **upsert** a post (for both a publish and a revise) or **remove** a post (for a withdraw). | `IndexChange` (sealed: `Upsert`, `Remove`) |
-| Index decision | What must happen to one post's entry: **add** (not indexed yet), **re-embed** (the fingerprint differs), **refresh metadata** (same fingerprint, different metadata), **keep** (nothing differs), **exclude** (a summary-only post) or **remove** (withdrawn, or an orphan). It is produced by one entry point, `IndexDecision.forPost(...)`, for both events and reconciles. | `IndexDecision` (sealed: `Add`, `ReEmbed`, `RefreshMetadata`, `Keep`, `Exclude`, `Remove`) |
-| Index outcome | The result of applying one index decision: `ADDED`, `RE_EMBEDDED`, `METADATA_REFRESHED`, `UNCHANGED`, `REMOVED` (an entry was deleted, whether by `Remove` or `Exclude`), `ALREADY_ABSENT` (a `Remove` with no entry), `EXCLUDED` (an `Exclude` with no entry) or `FAILED`. | `IndexOutcome` |
+| Index decision | What must happen to one post's entry: **add** (not indexed yet), **re-embed** (the fingerprint differs), **refresh metadata** (same fingerprint, different metadata), **keep** (nothing differs), **exclude** (a summary-only post), **remove** (withdrawn, or an orphan) or **unreadable** (a malformed catalog post whose ID is known: leave its entry untouched and report it as failed). Readable posts go through one entry point, `IndexDecision.forPost(...)`, for both events and reconciles. | `IndexDecision` (sealed: `Add`, `ReEmbed`, `RefreshMetadata`, `Keep`, `Exclude`, `Remove`, `Unreadable`) |
+| Index outcome | The result of applying one index decision: `ADDED`, `RE_EMBEDDED`, `METADATA_REFRESHED`, `UNCHANGED`, `REMOVED` (an entry was deleted, whether by `Remove` or `Exclude`), `ALREADY_ABSENT` (a `Remove` with no entry), `EXCLUDED` (an `Exclude` with no entry) or `FAILED` (embedding failed, or the decision was `Unreadable`). | `IndexOutcome` |
 | Index a post | Apply one index change: decide, then (if needed) chunk, compose, embed and save the whole entry. | `IndexPost` use case |
-| Post catalog | Search's port for reading the catalog's current posts as posts to index. It is implemented over the shared query contract `CatalogPosts`. | `PostCatalog` (application port), `SharedCatalogPosts` (adapter.out) |
+| Post catalog | Search's port for reading the catalog's current posts as **catalog entries**. It is implemented over the shared query contract `CatalogPosts`. | `PostCatalog` (application port), `SharedCatalogPosts` (adapter.out) |
+| Catalog entry | One item of the catalog's current posts as search reads it during a reconcile. It is one of three variants:<br>• **readable**: it translates to a post to index;<br>• **unreadable**: the post ID parses, but something else is malformed (including a null field), carrying the post ID and a reason;<br>• **unidentified**: the post ID itself cannot be read, carrying a reason.<br>A malformed state is never silently dropped (review B1). | `CatalogEntry` (sealed: `Readable(PostToIndex)`, `Unreadable(PostId, reason)`, `Unidentified(reason)`) |
 | Reconcile (the index) | Compare the catalog's current posts with the vector index, then add the missing ones, re-embed the stale ones, refresh changed metadata, exclude summary-only ones and remove orphans. A **rebuild** is a reconcile against an empty index, so there is no separate code path. | `ReconcileIndex` use case, `ReconcilePlan` |
-| Orphan | An indexed post whose post ID is not among the catalog's current posts. | `ReconcilePlan` |
+| Orphan | An indexed post whose post ID is not among the catalog's current posts. The post IDs of **readable and unreadable** entries both count as current, so a malformed catalog post is never an orphan. Orphans are removed only when the run has **no unidentified** entry. Otherwise orphan removal is suppressed for that run, because any orphan might be the unidentified post. | `ReconcilePlan` |
 | Stale entry | An indexed post whose content fingerprint differs from the one computed for the catalog's current state (because of a content change or a recipe change). | `IndexDecision.ReEmbed` |
-| Reconcile report | Counts by index outcome, plus the post IDs that failed. | `ReconcileReport` |
+| Reconcile report | Counts by index outcome, plus the post IDs that failed. Each failed post carries its **reason**: the embedder error, or the malformation of an unreadable entry. The report also says whether **orphan removal was suppressed** (warning `ORPHAN_REMOVAL_SUPPRESSED`, with the reasons of the unidentified entries), mirroring catalog AC-CAT-23. | `ReconcileReport` |
 | Search query | Query text, a site filter, a published-date range and a result limit. Valid only as a whole. | `SearchQuery` |
 | Query text | The trimmed text of the query. It must not be blank and is at most 1,000 characters. | `QueryText` |
 | Site filter | `AnySite` or `OnlySite(SiteId)`. | `SiteFilter` (sealed) |
@@ -120,7 +121,8 @@ once for all of the post's passages, and then constructs the aggregate. The embe
 **before** anything in the index changes ("embed before mutate").
 
 Invariants:
-1. **Identity**: the post ID is fixed. The site ID in the metadata equals the site part of the post ID.2. **Chunks**: the chunk indexes are exactly `0..n-1`, in body order. A post has zero chunks
+1. **Identity**: the post ID is fixed. The site ID in the metadata equals the site part of the post ID.
+2. **Chunks**: the chunk indexes are exactly `0..n-1`, in body order. A post has zero chunks
    **only** when both its normalised title and its normalised body are empty. Such a post is still recorded,
    so that reconciles do not keep re-adding it, but it never matches a query.
 3. **Embeddings**: one per chunk, each 384-dimensional and unit length, all made under the same index
@@ -162,7 +164,7 @@ millisecond of arithmetic. No approximate-nearest-neighbour structure is needed 
 | Query instruction prefix (queries only) | `QueryPassage.of(QueryText)` | It is a domain value, so the asymmetry is testable without the model (AC-SRCH-32). `Embedder` has separate `embedQuery(QueryPassage)` and `embedPassages(List<Passage>)` methods, so there is no flag parameter, and a passage can never get the prefix by type. The prefix is not part of `IndexRecipe`, because it never affects stored passages. |
 | Upsert vs remove per event kind | `CatalogEventTranslation` (adapter.in) maps each event type to an `IndexChange` variant; `IndexChange.applyTo(IndexWork)` is polymorphic | Publish and revise **both** become `Upsert`, so duplicate or missed deliveries heal themselves. The pattern switch has one delegating arm per event type. |
 | Add / re-embed / refresh / keep / exclude / remove | `IndexDecision` (sealed), produced by the single entry point `IndexDecision.forPost` (for upserts) or `IndexDecision.remove(PostId)` (for withdrawals and orphans). Each variant has `apply(IndexWork)` returning an `IndexOutcome`. | The same type is used by `IndexPost` and `ReconcileIndex`. |
-| Reconcile plan (missing, stale, metadata, summary-only, orphan) | `ReconcilePlan.between(List<PostToIndex> catalog, VectorIndex snapshot, IndexRecipe)` | It produces a list of `IndexDecision`s by calling `IndexDecision.forPost` for each catalog post, plus `remove` for each orphan. It is pure and tested without an embedder. A summary-only catalog post is *not* an orphan: it is excluded. |
+| Reconcile plan (missing, stale, metadata, summary-only, malformed, orphan) | `ReconcilePlan.between(List<CatalogEntry> catalog, VectorIndex snapshot, IndexRecipe)` | It produces a list of `IndexDecision`s and an orphan-removal verdict. Each variant contributes through its own method (polymorphism on `CatalogEntry`, not an if-chain):<br>• `Readable` goes through `IndexDecision.forPost`;<br>• `Unreadable` gives `IndexDecision.Unreadable(PostId)`, which never touches the index and reports `FAILED` with the reason. Its ID counts as current;<br>• `Unidentified` contributes no decision, but suppresses all orphan removals in the run.<br>A summary-only or malformed catalog post is *not* an orphan. The plan is pure and tested without an embedder. |
 | Blank or overlong query | `QueryText` | It throws `InvalidSearchQuery` with reason `BLANK` or `TOO_LONG`. |
 | Limit clamping and default | `ResultLimit.of(int)`, `ResultLimit.defaultLimit()` | There are no Optional parameters; the MCP adapter picks the factory. |
 | Date-range validity and inclusion | `PublishedDateRange` (factories `unbounded()`, `from(d)`, `to(d)`, `between(a, b)`; `includes(Instant)`; constant `ZONE = Pacific/Auckland`) | It throws `InvalidSearchQuery` with reason `FROM_AFTER_TO`. `includes` converts the instant to a `Pacific/Auckland` calendar date and compares inclusively. The zone is fixed, never passed in, so DST is handled by `java.time` rules. |
@@ -199,10 +201,13 @@ Why these numbers:
   1 (the newline adds no WordPiece token, but is counted conservatively) = **465 content tokens ≤ 510**
   (467 ≤ 512 with `[CLS]`/`[SEP]`). That leaves a margin of 45 tokens for any non-additivity in the tokenizer.
 - **50 words of overlap (about 17%)** is two or three sentences. The 100-token cap stops a code-heavy overlap
-  from eating the next chunk's budget. With overlap ≤ 100 tokens and a word ≤ 64 tokens, every chunk
-  can always add a new word, so chunking always terminates.
-- **64-character pieces**: a piece costs at most 64 tokens (WordPiece produces at most one token
-  per character), so a single "word" can never overflow a budget on its own.
+  from eating the next chunk's budget. With overlap ≤ 100 tokens and any single (split) word far below
+  the remaining 300 tokens, every chunk can always add a new word, so chunking always terminates.
+- **64-character pieces**: the budgets are enforced by exact counting with the model's tokenizer
+  (`BgeTokenCounter`), not by a characters-per-token bound. A "one token per character" bound would not
+  hold anyway: the tokenizer's NFD normalisation can expand one Hangul syllable into 2–3 jamo. The
+  64-character pieces keep any single word far below the 400-token body budget, so a single word can
+  never fill a chunk on its own. AC-SRCH-8's input includes a Hangul fragment for this reason.
 - Expected volume: 229 posts, mostly 300–1,500 words, gives roughly 700–1,500 chunks.
 
 How "one partition" is ensured:
@@ -276,13 +281,24 @@ None. No other context needs to know about indexing. Outcomes are returned as re
   `PostRepository`), in this slice (owner decision, Q1).
 - **Contract check (completeness)**: the existing `CatalogPostPublished` and `CatalogPostRevised` already carry
   `completeness` as a `String` (`FULL` or `SUMMARY`), so no event change is needed. `CatalogPostWithdrawn`
-  does not need it. `CatalogPostState` is new and includes it, as part of AC-SRCH-31. Search reads it only through `SharedCatalogPosts` (`search.adapter.out`), which
-  implements search's own port `PostCatalog` and translates each state with `PostToIndex.of(...)`.
+  does not need it. `CatalogPostState` is new and includes it, as part of AC-SRCH-31.
+- **Reading the contract**: search reads it only through `SharedCatalogPosts` (`search.adapter.out`), which
+  implements search's own port `PostCatalog`. It translates **every** state into a `CatalogEntry` and
+  **never drops one**:
+  - `Readable(PostToIndex.of(...))` when the state is valid;
+  - `Unreadable(PostId, reason)` when the post ID parses but another field is malformed or null;
+  - `Unidentified(reason)` when the post ID cannot be read.
 - **Staleness detection**: search does not trust timestamps or `changed` sets. For each catalog post, it computes
   the content fingerprint under the **current** index recipe and compares it with the stored one. It also compares
-  the post metadata by equality. Post IDs present in the index but absent from the catalog are orphans.
-- **Plan**: `ReconcilePlan.between(...)` gives one `IndexDecision` per catalog post (through
-  `IndexDecision.forPost`, so summary-only posts become `Exclude`), plus a `Remove` per orphan. `ReconcileIndex` applies them **one post at a time** (one aggregate per transaction). A
+  the post metadata by equality. Post IDs present in the index but absent from the catalog (as readable or
+  unreadable entries) are orphans.
+- **Plan**: `ReconcilePlan.between(...)` gives one `IndexDecision` per catalog entry with a known ID:
+  - a readable entry goes through `IndexDecision.forPost`, so summary-only posts become `Exclude`;
+  - an unreadable entry becomes `IndexDecision.Unreadable`, which leaves any existing entry untouched and
+    is reported as `FAILED` with its reason.
+
+  It plans a `Remove` per orphan **only if no catalog entry is unidentified**. Otherwise no orphan is
+  removed in that run, and the report carries `ORPHAN_REMOVAL_SUPPRESSED` (the same precaution as catalog AC-CAT-23). `ReconcileIndex` applies them **one post at a time** (one aggregate per transaction). A
   failure (for example, the embedder is unavailable) is recorded as `FAILED` for that post, and the remaining posts still go ahead.
 - **When it runs** (wired in slice 3): once at startup (with the in-memory index, this is the full
   rebuild), and after each scheduled catalog `SyncAllSites` has finished, sequentially in the same scheduler job.
@@ -295,7 +311,8 @@ None. No other context needs to know about indexing. Outcomes are returned as re
 - **catalog to search (customer/supplier, published language)**: catalog is the supplier through two
   contracts in `shared`: the integration events (push) and the `CatalogPosts` query (pull, for
   reconciles). Search translates both at its boundary (anti-corruption layer: `CatalogEventTranslation`
-  and `SharedCatalogPosts`) into `PostToIndex`. Neither `search.domain` nor `search.application` sees
+  and `SharedCatalogPosts`) into `PostToIndex`. The pull side wraps each post in a `CatalogEntry`, so
+  malformed states stay visible. Neither `search.domain` nor `search.application` sees
   `shared` types.
 - **search to LangChain4j / ONNX Runtime / DJL (conformist, wrapped)**: two classes in `search.adapter.out`:
   - `OnnxEmbedder` implements `Embedder`. It is the only class that imports `dev.langchain4j..`, which
@@ -316,8 +333,10 @@ None. No other context needs to know about indexing. Outcomes are returned as re
   by `SearchFilters`, then `bestMatch` for each post, then `SearchResults.rank(limit)`.
   A `PostMatch` carries the post ID, site ID, canonical URL, title, tags, published at, updated at, score and
   snippet. It has **no completeness**, because every indexed post is `FULL`.
-- `ReconcileIndex.run()` returns a `ReconcileReport`.
-- Port `PostCatalog`: `List<PostToIndex> currentPosts()`.
+- `ReconcileIndex.run()` returns a `ReconcileReport`, with per-post outcomes, failure reasons and the
+  orphan-removal-suppressed flag. It reads as a straight line: read the entries, plan, then apply each decision.
+- Port `PostCatalog`: `List<CatalogEntry> currentPosts()`. A malformed state becomes an `Unreadable` or
+  `Unidentified` entry, never a silent omission.
 
 ## 8. Acceptance criteria
 
@@ -370,7 +389,7 @@ And given a title longer than 64 tokens, the title line is its longest whole-wor
 And given a blank title, the passage is the chunk text alone.
 
 **AC-SRCH-8: Every passage fits in one model partition (adapter test, real tokenizer).**
-Given a pathological body of 3,000 "words" mixing Java code, long identifiers, punctuation runs, URLs and a 2,000-character string with no whitespace, and a 120-word title,
+Given a pathological body of 3,000 "words" mixing Java code, long identifiers, punctuation runs, URLs, a 2,000-character string with no whitespace, and a run of Hangul syllables with no whitespace (which NFD normalisation expands into jamo, so it costs more than one token per character), and a 120-word title,
 When it is chunked and composed with the real `BgeTokenCounter` as `TokenCounter`,
 Then every passage, encoded as a whole by the model's tokenizer (`bge-small-en-v1.5-q-tokenizer.json` through DJL), has at most 465 content tokens. That is within LangChain4j's single-partition limit of 510, so no passage is split and averaged.
 (The test JVM must point DJL's cache at a writable directory; see ADR 0005.)
@@ -544,12 +563,23 @@ And when the same revision is delivered again, the outcome is `EXCLUDED` and not
 **AC-SRCH-36: A reconcile excludes summary-only posts.**
 Given a catalog holding S1 (`SUMMARY`, not indexed), S2 (`SUMMARY`, but indexed from an earlier `FULL` version) and F1 (`FULL`, not indexed),
 When `ReconcileIndex` runs,
-Then S1 is `EXCLUDED` and is **not** added, S2 is `REMOVED`, and F1 is `ADDED`. The embedder is called only for F1. The report counts excluded and removed posts separately from orphans (S1 and S2 are in the catalog, so they are not orphans), and running the reconcile again gives `EXCLUDED` for S1 and S2 and `UNCHANGED` for F1.
+Then S1 is `EXCLUDED` and is **not** added, S2 is `REMOVED`, and F1 is `ADDED`. The embedder is called only for F1. The report gives each post's outcome. S2's `Exclude` removed an existing entry, so it is reported as `REMOVED`, the same outcome an orphan removal reports. No orphan `Remove` is planned for S1 or S2, because they are in the catalog. Running the reconcile again gives `EXCLUDED` for S1 and S2 and `UNCHANGED` for F1.
 
 **AC-SRCH-37: `Completeness` alone decides indexability.**
 Given any combination of existing entry (absent, same fingerprint, or different fingerprint) and post to index,
 When `IndexDecision.forPost` is called,
 Then for completeness `SUMMARY` the result is always `Exclude`, and for `FULL` it is exactly what the normal decision gives (`Add`, `ReEmbed`, `RefreshMetadata` or `Keep`). This is tested once on `Completeness`, and `IndexPost` and `ReconcilePlan` both reach it only through `IndexDecision.forPost`.
+
+### Malformed catalog posts during a reconcile (review B1)
+
+**AC-SRCH-38: A malformed catalog post never causes an index removal.**
+Given `sounie-wp:4` indexed, and a catalog whose `CatalogPostState` for `sounie-wp:4` is malformed but has a readable post ID (e.g. completeness `PARTIAL`, or a null body),
+When `ReconcileIndex` runs,
+Then `SharedCatalogPosts` returns `Unreadable(sounie-wp:4, reason)`, the plan's decision is `IndexDecision.Unreadable`, the existing entry for `sounie-wp:4` is unchanged, the embedder is not called for it, and the report lists `sounie-wp:4` as `FAILED` with the reason. `sounie-wp:4` is **not** treated as an orphan.
+And given a catalog that also contains a state whose post ID cannot be read (e.g. `not-an-id`, or a null post ID), and an index holding an orphan O (absent from the catalog),
+When `ReconcileIndex` runs,
+Then the `Unidentified` entry produces no decision, O is **not** removed in that run, the report carries `ORPHAN_REMOVAL_SUPPRESSED` with the unidentified entry's reason, and the other readable posts are still added, re-embedded, refreshed or excluded as usual.
+And when a later reconcile has no unidentified entry, O is `REMOVED`.
 
 ## 9. Decisions
 
@@ -562,6 +592,9 @@ Model decisions (approved with the model by the owner on 2026-10-02):
 - Publish and revise are both upserts. Indexing is idempotent.
 - `IndexPost` embeds before it changes the index, so a failure keeps the old entry. The listener swallows and logs failures.
 - Queries get the BGE query instruction and passages do not (lead decision, 2026-10-02; AC-SRCH-32).
+- A malformed catalog post never causes an index removal during a reconcile (lead decision, review loop 1, B1; AC-SRCH-38):
+  - one with a readable ID is `IndexDecision.Unreadable`: its entry is kept and it is reported `FAILED` with its reason;
+  - one with an unreadable ID suppresses every orphan removal in that run (`ORPHAN_REMOVAL_SUPPRESSED`).
 - Every passage fits in one model partition (at most 465 of 510 content tokens), counted with the model's exact tokenizer (AC-SRCH-8).
 - `OnnxEmbedder` serialises model access with one lock (section 4.1).
 

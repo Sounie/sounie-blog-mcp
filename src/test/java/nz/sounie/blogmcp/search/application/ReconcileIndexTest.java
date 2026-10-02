@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Map;
 import nz.sounie.blogmcp.search.adapter.out.FakeEmbedder;
+import nz.sounie.blogmcp.search.domain.CatalogEntry;
 import nz.sounie.blogmcp.search.domain.IndexOutcome;
 import nz.sounie.blogmcp.search.domain.Passage;
 import nz.sounie.blogmcp.search.domain.PostId;
@@ -121,6 +122,10 @@ class ReconcileIndexTest {
                 second.id(), IndexOutcome.FAILED,
                 third.id(), IndexOutcome.ADDED));
     assertThat(report.failed()).containsExactly(second.id());
+    assertThat(report.failureReasons())
+        .containsOnlyKeys(second.id())
+        .hasEntrySatisfying(
+            second.id(), reason -> assertThat(reason).contains("fake embedder failure"));
     assertThat(search.index.ids()).containsExactlyInAnyOrder(first.id(), third.id());
   }
 
@@ -169,5 +174,41 @@ class ReconcileIndexTest {
                 s1.id(), IndexOutcome.EXCLUDED,
                 s2.id(), IndexOutcome.EXCLUDED,
                 f1.id(), IndexOutcome.UNCHANGED));
+  }
+
+  @Test
+  @DisplayName(
+      "AC-SRCH-38: an indexed post whose catalog state is malformed stays, reported FAILED")
+  void malformed_catalog_state_keeps_the_indexed_post() {
+    PostToIndex post = aPost().id("sounie-wp:1").title("Kept").build();
+    alreadyIndexed(post);
+    var before = search.index.find(post.id()).orElseThrow();
+    search.catalog.holdingEntries(
+        new CatalogEntry.Unreadable(post.id(), "completeness is PARTIAL"));
+
+    ReconcileReport report = search.reconcile.run();
+
+    assertThat(report.outcomes()).isEqualTo(Map.of(post.id(), IndexOutcome.FAILED));
+    assertThat(report.failureReasons()).containsEntry(post.id(), "completeness is PARTIAL");
+    assertThat(report.withdrawalsSuppressed()).isFalse();
+    assertThat(search.index.find(post.id())).containsSame(before);
+  }
+
+  @Test
+  @DisplayName("AC-SRCH-38: an unidentified catalog entry suppresses withdrawals, reported")
+  void unidentified_entry_suppresses_withdrawals() {
+    PostToIndex listed = aPost().id("sounie-wp:1").build();
+    PostToIndex unlisted = aPost().id("elegant:9").build();
+    alreadyIndexed(listed);
+    alreadyIndexed(unlisted);
+    search.catalog.holdingEntries(
+        new CatalogEntry.Readable(listed),
+        new CatalogEntry.Unidentified("post ID 'elegant-9' is not <siteId>:<sourcePostId>"));
+
+    ReconcileReport report = search.reconcile.run();
+
+    assertThat(report.withdrawalsSuppressed()).isTrue();
+    assertThat(report.count(IndexOutcome.REMOVED)).isZero();
+    assertThat(search.index.ids()).containsExactlyInAnyOrder(listed.id(), unlisted.id());
   }
 }
