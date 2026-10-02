@@ -1,13 +1,13 @@
 package nz.sounie.blogmcp.search.adapter.out;
 
-import static nz.sounie.blogmcp.search.domain.IndexedPosts.fingerprint;
-import static nz.sounie.blogmcp.search.domain.IndexedPosts.indexed;
-import static nz.sounie.blogmcp.search.domain.PostToIndexBuilder.aPost;
+import static nz.sounie.blogmcp.search.domain.index.IndexedPosts.fingerprint;
+import static nz.sounie.blogmcp.search.domain.index.IndexedPosts.indexed;
+import static nz.sounie.blogmcp.search.domain.index.PostToIndexBuilder.aPost;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import nz.sounie.blogmcp.search.domain.IndexedPost;
-import nz.sounie.blogmcp.search.domain.PostToIndex;
-import nz.sounie.blogmcp.search.domain.Vectors;
+import nz.sounie.blogmcp.search.domain.embedding.Vectors;
+import nz.sounie.blogmcp.search.domain.index.IndexedPost;
+import nz.sounie.blogmcp.search.domain.index.PostToIndex;
 import org.junit.jupiter.api.Test;
 
 class InMemoryVectorIndexTest {

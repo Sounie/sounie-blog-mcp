@@ -1,8 +1,8 @@
 package nz.sounie.blogmcp.catalog.adapter.out;
 
-import static nz.sounie.blogmcp.catalog.domain.SitesConfigurationViolation.Kind.BASE_URL_NOT_ABSOLUTE_HTTPS;
-import static nz.sounie.blogmcp.catalog.domain.SitesConfigurationViolation.Kind.DUPLICATE_SITE_ID;
-import static nz.sounie.blogmcp.catalog.domain.SitesConfigurationViolation.Kind.UNSUPPORTED_PLATFORM;
+import static nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationViolation.Kind.BASE_URL_NOT_ABSOLUTE_HTTPS;
+import static nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationViolation.Kind.DUPLICATE_SITE_ID;
+import static nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationViolation.Kind.UNSUPPORTED_PLATFORM;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
@@ -11,11 +11,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
-import nz.sounie.blogmcp.catalog.domain.InvalidSitesConfiguration;
-import nz.sounie.blogmcp.catalog.domain.SitesConfiguration;
-import nz.sounie.blogmcp.catalog.domain.SitesConfigurationMissing;
-import nz.sounie.blogmcp.catalog.domain.SitesConfigurationViolation;
-import nz.sounie.blogmcp.catalog.domain.TestSites;
+import nz.sounie.blogmcp.catalog.domain.site.InvalidSitesConfiguration;
+import nz.sounie.blogmcp.catalog.domain.site.SitesConfiguration;
+import nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationMissing;
+import nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationViolation;
+import nz.sounie.blogmcp.catalog.domain.site.TestSites;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

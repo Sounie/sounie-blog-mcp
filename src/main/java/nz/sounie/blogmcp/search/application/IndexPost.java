@@ -1,11 +1,11 @@
 package nz.sounie.blogmcp.search.application;
 
 import java.util.Objects;
-import nz.sounie.blogmcp.search.domain.IndexChange;
-import nz.sounie.blogmcp.search.domain.IndexOutcome;
-import nz.sounie.blogmcp.search.domain.IndexWork;
-import nz.sounie.blogmcp.search.domain.PostIndexer;
-import nz.sounie.blogmcp.search.domain.VectorIndex;
+import nz.sounie.blogmcp.search.domain.index.IndexChange;
+import nz.sounie.blogmcp.search.domain.index.IndexOutcome;
+import nz.sounie.blogmcp.search.domain.index.IndexWork;
+import nz.sounie.blogmcp.search.domain.index.PostIndexer;
+import nz.sounie.blogmcp.search.domain.index.VectorIndex;
 
 /** Applies one index change: decide, then apply the decision. */
 public final class IndexPost {
@@ -19,8 +19,8 @@ public final class IndexPost {
   }
 
   /**
-   * @throws nz.sounie.blogmcp.search.domain.EmbedderUnavailable if embedding fails; the index is
-   *     unchanged
+   * @throws nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable if embedding fails; the
+   *     index is unchanged
    */
   public IndexOutcome apply(IndexChange change) {
     return lock.locked(() -> change.applyTo(work));

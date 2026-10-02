@@ -1,7 +1,6 @@
 package nz.sounie.blogmcp.catalog.adapter.out;
 
 import java.util.Map;
-import nz.sounie.blogmcp.catalog.domain.HtmlToText;
 
 /** How a platform encodes a title: literal text, or markup to be turned into plain text. */
 enum TitleFormat {

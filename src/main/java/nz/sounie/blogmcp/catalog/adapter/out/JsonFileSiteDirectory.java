@@ -5,10 +5,10 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import nz.sounie.blogmcp.catalog.domain.SiteDefinition;
-import nz.sounie.blogmcp.catalog.domain.SiteDirectory;
-import nz.sounie.blogmcp.catalog.domain.SitesConfiguration;
-import nz.sounie.blogmcp.catalog.domain.SitesConfigurationMissing;
+import nz.sounie.blogmcp.catalog.application.SiteDirectory;
+import nz.sounie.blogmcp.catalog.domain.site.SiteDefinition;
+import nz.sounie.blogmcp.catalog.domain.site.SitesConfiguration;
+import nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationMissing;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -39,9 +39,9 @@ public final class JsonFileSiteDirectory implements SiteDirectory {
   }
 
   /**
-   * @throws nz.sounie.blogmcp.catalog.domain.SitesConfigurationMissing naming the path, if the file
-   *     does not exist
-   * @throws nz.sounie.blogmcp.catalog.domain.InvalidSitesConfiguration if any rule is broken
+   * @throws nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationMissing naming the path, if the
+   *     file does not exist
+   * @throws nz.sounie.blogmcp.catalog.domain.site.InvalidSitesConfiguration if any rule is broken
    */
   @Override
   public SitesConfiguration load() {

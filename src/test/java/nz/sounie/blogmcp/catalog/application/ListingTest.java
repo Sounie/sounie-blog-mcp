@@ -1,12 +1,12 @@
 package nz.sounie.blogmcp.catalog.application;
 
-import static nz.sounie.blogmcp.catalog.domain.PostSnapshotBuilder.aSnapshot;
+import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.aSnapshot;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import java.util.Optional;
-import nz.sounie.blogmcp.catalog.domain.SourceEntry;
-import nz.sounie.blogmcp.catalog.domain.SourcePostId;
+import nz.sounie.blogmcp.catalog.domain.post.SourcePostId;
+import nz.sounie.blogmcp.catalog.domain.sync.SourceEntry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

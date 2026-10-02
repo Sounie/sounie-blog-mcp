@@ -2,7 +2,7 @@ package nz.sounie.blogmcp.catalog.application;
 
 import java.util.Objects;
 import java.util.Optional;
-import nz.sounie.blogmcp.catalog.domain.SourcePostId;
+import nz.sounie.blogmcp.catalog.domain.post.SourcePostId;
 
 /** Something worth noting in a sync report that is not a skipped entry. */
 public record SyncWarning(Kind kind, Optional<SourcePostId> sourcePostId, String detail) {

@@ -4,13 +4,11 @@ import java.time.Clock;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import nz.sounie.blogmcp.catalog.domain.BlogSource;
-import nz.sounie.blogmcp.catalog.domain.Platform;
-import nz.sounie.blogmcp.catalog.domain.PostRepository;
-import nz.sounie.blogmcp.catalog.domain.Site;
-import nz.sounie.blogmcp.catalog.domain.SiteDirectory;
-import nz.sounie.blogmcp.catalog.domain.SiteId;
-import nz.sounie.blogmcp.catalog.domain.SyncCheckpointRepository;
+import nz.sounie.blogmcp.catalog.domain.post.PostRepository;
+import nz.sounie.blogmcp.catalog.domain.site.Platform;
+import nz.sounie.blogmcp.catalog.domain.site.Site;
+import nz.sounie.blogmcp.catalog.domain.site.SiteId;
+import nz.sounie.blogmcp.catalog.domain.sync.SyncCheckpointRepository;
 import nz.sounie.blogmcp.shared.event.IntegrationEventPublisher;
 
 /**

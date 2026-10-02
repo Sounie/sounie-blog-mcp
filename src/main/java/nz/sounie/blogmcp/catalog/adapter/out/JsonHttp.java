@@ -11,7 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.stream.Collectors;
-import nz.sounie.blogmcp.catalog.domain.SourceUnavailable;
+import nz.sounie.blogmcp.catalog.domain.sync.SourceUnavailable;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;

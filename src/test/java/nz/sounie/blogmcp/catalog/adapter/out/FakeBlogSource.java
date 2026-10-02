@@ -9,14 +9,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import nz.sounie.blogmcp.catalog.domain.BlogSource;
-import nz.sounie.blogmcp.catalog.domain.ChangeOrder;
-import nz.sounie.blogmcp.catalog.domain.PageCursor;
-import nz.sounie.blogmcp.catalog.domain.Site;
-import nz.sounie.blogmcp.catalog.domain.SiteId;
-import nz.sounie.blogmcp.catalog.domain.SourceEntry;
-import nz.sounie.blogmcp.catalog.domain.SourcePage;
-import nz.sounie.blogmcp.catalog.domain.SourceUnavailable;
+import nz.sounie.blogmcp.catalog.application.BlogSource;
+import nz.sounie.blogmcp.catalog.domain.site.Site;
+import nz.sounie.blogmcp.catalog.domain.site.SiteId;
+import nz.sounie.blogmcp.catalog.domain.sync.ChangeOrder;
+import nz.sounie.blogmcp.catalog.domain.sync.PageCursor;
+import nz.sounie.blogmcp.catalog.domain.sync.SourceEntry;
+import nz.sounie.blogmcp.catalog.domain.sync.SourcePage;
+import nz.sounie.blogmcp.catalog.domain.sync.SourceUnavailable;
 
 /**
  * Scriptable fake {@link BlogSource}. Each site is given a list of steps; the cursor is the 1-based

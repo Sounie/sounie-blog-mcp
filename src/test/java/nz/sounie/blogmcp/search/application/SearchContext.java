@@ -4,10 +4,10 @@ import nz.sounie.blogmcp.search.adapter.out.FakeEmbedder;
 import nz.sounie.blogmcp.search.adapter.out.FakePostCatalog;
 import nz.sounie.blogmcp.search.adapter.out.FakeTokenCounter;
 import nz.sounie.blogmcp.search.adapter.out.InMemoryVectorIndex;
-import nz.sounie.blogmcp.search.domain.ChunkingPolicy;
-import nz.sounie.blogmcp.search.domain.PassageComposition;
-import nz.sounie.blogmcp.search.domain.PostIndexer;
-import nz.sounie.blogmcp.search.domain.VectorIndex;
+import nz.sounie.blogmcp.search.domain.index.PostIndexer;
+import nz.sounie.blogmcp.search.domain.index.VectorIndex;
+import nz.sounie.blogmcp.search.domain.text.ChunkingPolicy;
+import nz.sounie.blogmcp.search.domain.text.PassageComposition;
 
 /**
  * The search use cases wired as in production, over the real in-memory index and fakes of our own

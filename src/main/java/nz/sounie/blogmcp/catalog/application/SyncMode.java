@@ -2,8 +2,8 @@ package nz.sounie.blogmcp.catalog.application;
 
 import java.time.Instant;
 import java.util.Optional;
-import nz.sounie.blogmcp.catalog.domain.OverlapMargin;
-import nz.sounie.blogmcp.catalog.domain.SyncCheckpoint;
+import nz.sounie.blogmcp.catalog.domain.sync.OverlapMargin;
+import nz.sounie.blogmcp.catalog.domain.sync.SyncCheckpoint;
 
 /** Whether a sync starts from the checkpoint or is a full reconcile. */
 public enum SyncMode {

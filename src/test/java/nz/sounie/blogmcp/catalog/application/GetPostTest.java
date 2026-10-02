@@ -1,13 +1,14 @@
 package nz.sounie.blogmcp.catalog.application;
 
-import static nz.sounie.blogmcp.catalog.domain.PostSnapshotBuilder.aSnapshot;
+import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.aSnapshot;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.List;
 import nz.sounie.blogmcp.catalog.adapter.out.InMemoryPostRepository;
-import nz.sounie.blogmcp.catalog.domain.BodyCompleteness;
+import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
+import nz.sounie.blogmcp.catalog.domain.post.InvalidPostReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

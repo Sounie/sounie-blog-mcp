@@ -6,10 +6,23 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
+import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaCodeUnit;
+import com.tngtech.archunit.core.domain.JavaField;
+import com.tngtech.archunit.core.domain.JavaMember;
+import com.tngtech.archunit.core.domain.JavaModifier;
+import com.tngtech.archunit.core.domain.JavaType;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
+import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
+import java.util.HashSet;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Stream;
 
 @AnalyzeClasses(
     packages = "nz.sounie.blogmcp",
@@ -52,6 +65,25 @@ class LayeringTest {
   @ArchTest
   static final ArchRule bounded_contexts_are_free_of_cycles =
       slices().matching("nz.sounie.blogmcp.(*)..").should().beFreeOfCycles().allowEmptyShould(true);
+
+  @ArchTest
+  static final ArchRule nothing_depends_on_the_composition_root =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("nz.sounie.blogmcp.app..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("nz.sounie.blogmcp.app..")
+          .allowEmptyShould(true);
+
+  // Within each context, the domain sub-packages (e.g. catalog: site <- post <- sync) are acyclic.
+  @ArchTest
+  static final ArchRule domain_sub_packages_are_free_of_cycles =
+      slices()
+          .matching("nz.sounie.blogmcp.(*).domain.(*)..")
+          .should()
+          .beFreeOfCycles()
+          .allowEmptyShould(true);
 
   // ADR 0003: the published language in `shared` uses JDK types only and depends on no context.
   @ArchTest
@@ -174,4 +206,115 @@ class LayeringTest {
           .dependOnClassesThat()
           .resideInAPackage("nz.sounie.blogmcp.shared..")
           .allowEmptyShould(true);
+
+  // A public member of an accessible class must not mention a type that callers outside its
+  // package cannot name: parameters, return types, fields (record components via their
+  // accessors), declared exceptions and type arguments such as List<IndexedChunk>. Two
+  // practical extensions:
+  // - unchecked exceptions the class throws (constructs) count as exposed, because callers must
+  //   catch them by type (e.g. InvalidSearchQuery) even though they are never declared;
+  // - a hidden type that the API exposes is itself checked as if it were public, so types it
+  //   would expose next (e.g. ChunkHit via IndexedChunk.hitFor) are reported too.
+  // The "constructs a Throwable" check is a heuristic. It is deliberately strict: an exception
+  // constructed and caught entirely inside a public class is still flagged. It is also blind to an
+  // exception constructed in a package-private helper and propagated. On a false positive, make the
+  // exception public or move its construction; never weaken this rule.
+  @ArchTest
+  static final ArchRule public_api_exposes_only_public_types =
+      classes()
+          .that()
+          .resideInAPackage("nz.sounie.blogmcp..")
+          .and()
+          .arePublic()
+          .should(exposeOnlyPublicTypes())
+          .allowEmptyShould(true);
+
+  private static ArchCondition<JavaClass> exposeOnlyPublicTypes() {
+    return new ArchCondition<>("expose only public types in their public API") {
+      @Override
+      public void check(JavaClass owner, ConditionEvents events) {
+        if (isAccessible(owner)) {
+          checkApi(owner, "", events, new HashSet<>(Set.of(owner)));
+        }
+      }
+    };
+  }
+
+  private static void checkApi(
+      JavaClass type, String via, ConditionEvents events, Set<JavaClass> visited) {
+    type.getMembers().stream()
+        .filter(member -> member.getModifiers().contains(JavaModifier.PUBLIC))
+        .filter(member -> !member.getModifiers().contains(JavaModifier.SYNTHETIC))
+        .forEach(
+            member ->
+                exposedTypes(member)
+                    .filter(exposed -> !isAccessible(exposed) && !exposed.equals(type))
+                    .distinct()
+                    .forEach(
+                        hidden -> {
+                          events.add(
+                              SimpleConditionEvent.violated(
+                                  member,
+                                  via
+                                      + member.getFullName()
+                                      + " exposes non-public type "
+                                      + hidden.getName()));
+                          if (visited.add(hidden)) {
+                            checkApi(
+                                hidden,
+                                via + "(via " + hidden.getSimpleName() + ") ",
+                                events,
+                                visited);
+                          }
+                        }));
+    thrownExceptions(type)
+        .filter(exception -> !isAccessible(exception))
+        .distinct()
+        .forEach(
+            hidden ->
+                events.add(
+                    SimpleConditionEvent.violated(
+                        type,
+                        via
+                            + type.getName()
+                            + " throws non-public exception "
+                            + hidden.getName())));
+  }
+
+  private static Stream<JavaClass> exposedTypes(JavaMember member) {
+    Stream<JavaType> signature =
+        switch (member) {
+          case JavaField field -> Stream.of(field.getType());
+          case JavaCodeUnit unit ->
+              Stream.concat(
+                  Stream.of(unit.getReturnType()),
+                  unit.getParameters().stream().map(p -> p.getType()));
+          default -> Stream.empty();
+        };
+    Stream<JavaClass> declared =
+        member instanceof JavaCodeUnit unit
+            ? unit.getThrowsClause().getTypes().stream()
+            : Stream.empty();
+    return Stream.concat(signature.flatMap(t -> t.getAllInvolvedRawTypes().stream()), declared)
+        .map(LayeringTest::baseComponent);
+  }
+
+  /** Exceptions the class constructs, in any of its code units (they may escape its API). */
+  private static Stream<JavaClass> thrownExceptions(JavaClass type) {
+    return type.getCodeUnits().stream()
+        .flatMap(unit -> unit.getConstructorCallsFromSelf().stream())
+        .map(call -> call.getTargetOwner())
+        .filter(target -> target.isAssignableTo(Throwable.class));
+  }
+
+  private static JavaClass baseComponent(JavaClass type) {
+    return type.isArray() ? type.getBaseComponentType() : type;
+  }
+
+  /** Public, and nested only inside public classes. */
+  private static boolean isAccessible(JavaClass type) {
+    Optional<JavaClass> enclosing = type.getEnclosingClass();
+    return type.getModifiers().contains(JavaModifier.PUBLIC)
+        && enclosing.map(LayeringTest::isAccessible).orElse(true);
+  }
 }

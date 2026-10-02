@@ -1,9 +1,9 @@
 package nz.sounie.blogmcp.catalog.application;
 
-import nz.sounie.blogmcp.catalog.domain.Post;
-import nz.sounie.blogmcp.catalog.domain.PostRepository;
-import nz.sounie.blogmcp.catalog.domain.PostWithdrawn;
-import nz.sounie.blogmcp.catalog.domain.WithdrawalReason;
+import nz.sounie.blogmcp.catalog.domain.post.Post;
+import nz.sounie.blogmcp.catalog.domain.post.PostRepository;
+import nz.sounie.blogmcp.catalog.domain.post.PostWithdrawn;
+import nz.sounie.blogmcp.catalog.domain.post.WithdrawalReason;
 import nz.sounie.blogmcp.shared.event.IntegrationEventPublisher;
 
 /** Withdraws one post: raises the event, deletes the post, then publishes the event. */

@@ -25,6 +25,15 @@ nz.sounie.blogmcp.<context>.adapter.out   repository and gateway implementations
 ```
 Dependencies point inward: `adapter → application → domain`. ArchUnit (`src/test/java/nz/sounie/blogmcp/architecture/LayeringTest.java`) enforces this. Do not weaken those rules to make a build pass.
 
+More structure rules (ADR 0006):
+- **Domain sub-packages by concept.** Each `domain` is split into concept sub-packages (e.g. `catalog.domain.{site, post, sync}`, `search.domain.{post, text, embedding, index, query, reconcile}`). Dependencies between sub-packages point one way and must be free of cycles; ArchUnit enforces this. A type is `public` if it's used outside its sub-package **or** appears in the public API of a public type (a parameter, return, field or thrown type); otherwise it's package-private. ArchUnit's `public_api_exposes_only_public_types` enforces the second part. Place a new type in the sub-package that owns its concept. If that would create a cycle, split the port by consumer rather than merging packages.
+- **Ports: whoever uses it owns it.**
+  - Repositories always live in the domain.
+  - Any other port lives in the innermost layer that uses it: in `domain` if domain code calls it, in `application` if only use cases do (e.g. `BlogSource`, `SiteDirectory`, `PostCatalog`, `QueryEmbedder`).
+  - An abstraction used only by adapters lives in that adapter package (e.g. `HtmlToText`). It's package-private unless an adapter's public constructor takes it, so the composition root can supply it.
+- **`shared`** is the published language between contexts, with JDK types only: `shared.event` (events, plus the in-process bus that carries them) and `shared.query` (pull contracts).
+- **`nz.sounie.blogmcp.app`** is the composition root: `Main`, wiring, the scheduler and the MCP server (`app.mcp`). It may depend on every context, and nothing may depend on it.
+
 ## Domain modelling rules
 - Use the ubiquitous language from `docs/domain/<context>.md` in class, method and test names. Update the glossary when a term changes.
 - Value objects are `record`s that validate in the compact constructor and are immutable.

@@ -6,11 +6,12 @@ import dev.langchain4j.model.embedding.onnx.bgesmallenv15q.BgeSmallEnV15Quantize
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
-import nz.sounie.blogmcp.search.domain.Embedder;
-import nz.sounie.blogmcp.search.domain.EmbedderUnavailable;
-import nz.sounie.blogmcp.search.domain.Embedding;
-import nz.sounie.blogmcp.search.domain.Passage;
-import nz.sounie.blogmcp.search.domain.QueryPassage;
+import nz.sounie.blogmcp.search.application.QueryEmbedder;
+import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
+import nz.sounie.blogmcp.search.domain.embedding.Embedding;
+import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
+import nz.sounie.blogmcp.search.domain.query.QueryPassage;
+import nz.sounie.blogmcp.search.domain.text.Passage;
 
 /**
  * The local BGE-small-en-v1.5 (quantised) model through LangChain4j. The only class that touches
@@ -19,7 +20,7 @@ import nz.sounie.blogmcp.search.domain.QueryPassage;
  * <p>The model is one per process (it is about 34 MB and its ONNX session is shared), so the lock
  * is too. LangChain4j's own parallelism within one {@code embedAll} call is left alone (ADR 0005).
  */
-public final class OnnxEmbedder implements Embedder {
+public final class OnnxEmbedder implements PassageEmbedder, QueryEmbedder {
 
   public static final String MODEL_ID = "bge-small-en-v1.5-q";
 

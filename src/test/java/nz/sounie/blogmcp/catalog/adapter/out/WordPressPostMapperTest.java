@@ -1,17 +1,17 @@
 package nz.sounie.blogmcp.catalog.adapter.out;
 
-import static nz.sounie.blogmcp.catalog.domain.TestSites.SOUNIE_WP;
+import static nz.sounie.blogmcp.catalog.domain.site.TestSites.SOUNIE_WP;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
-import nz.sounie.blogmcp.catalog.domain.BodyCompleteness;
-import nz.sounie.blogmcp.catalog.domain.PostSnapshot;
-import nz.sounie.blogmcp.catalog.domain.SourceEntry;
-import nz.sounie.blogmcp.catalog.domain.SourcePostId;
-import nz.sounie.blogmcp.catalog.domain.Tag;
+import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
+import nz.sounie.blogmcp.catalog.domain.post.PostSnapshot;
+import nz.sounie.blogmcp.catalog.domain.post.SourcePostId;
+import nz.sounie.blogmcp.catalog.domain.post.Tag;
+import nz.sounie.blogmcp.catalog.domain.sync.SourceEntry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

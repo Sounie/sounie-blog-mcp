@@ -54,8 +54,8 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Passage | The exact text sent to the model for one chunk: the **title line**, a newline, and then the chunk text. If the title is blank, the passage is the chunk text alone. | `Passage` |
 | Title line | The normalised title, cut to the longest whole-word prefix that fits in 64 tokens. | `PassageComposition` |
 | Passage composition | The rule that builds passages from a title and chunks. | `PassageComposition` |
-| Embed | Turn a passage or a query passage into an embedding using the local model. | `Embedder.embedPassages(...)`, `Embedder.embedQuery(QueryPassage)` |
-| Embedder | Port for the local embedding model. Its only production implementation is `OnnxEmbedder`, the only class that touches LangChain4j. | `Embedder` (domain port) |
+| Embed | Turn a passage or a query passage into an embedding using the local model. | `PassageEmbedder.embedPassages(...)`, `QueryEmbedder.embedQuery(QueryPassage)` |
+| Embedder | The local embedding model, seen through two ports split by consumer (ADR 0006): the **passage embedder** (`modelId()` and `embedPassages(List<Passage>)`, used by indexing) and the **query embedder** (`embedQuery(QueryPassage)`, used by search). The only production implementation of both is `OnnxEmbedder`, the only class that touches LangChain4j. | `PassageEmbedder` (`search.domain.embedding`), `QueryEmbedder` (`search.application`) |
 | Embedding | A vector of exactly 384 finite floats, normalised to unit length when it is created. The model already uses CLS pooling with L2 normalisation, so in practice this is a defensive no-op. | `Embedding` |
 | Similarity | The cosine similarity of two embeddings. Because embeddings are unit length, this is their dot product. Its range is [-1, 1], and higher means more related. | `Similarity` |
 | Index recipe | The identity of the method used to build an index entry: model ID, chunking policy parameters and passage composition version, e.g. `bge-small-en-v1.5-q/w300-t400-o50-oc100-c64/tt64-p1` (model ID; target words, body tokens, overlap words, overlap token cap, maximum word characters; title tokens and composition version). Changing any part makes every entry stale. | `IndexRecipe` |
@@ -116,7 +116,7 @@ Behaviour:
   has no chunks.
 
 Created only by the domain service `PostIndexer.index(PostToIndex)`. This service builds the
-`WordSequence`, applies the `ChunkingPolicy`, composes the passages, calls `Embedder.embedPassages`
+`WordSequence`, applies the `ChunkingPolicy`, composes the passages, calls `PassageEmbedder.embedPassages`
 once for all of the post's passages, and then constructs the aggregate. The embedder is called
 **before** anything in the index changes ("embed before mutate").
 
@@ -159,9 +159,9 @@ millisecond of arithmetic. No approximate-nearest-neighbour structure is needed 
 | Passage = title line + newline + chunk text; title cut to 64 tokens; blank title omitted | `PassageComposition` | |
 | Whether a post may be indexed at all | `Completeness.decide(...)` (`FULL` delegates to the normal decision; `SUMMARY` always gives `Exclude`) | Owner decision, Q7. It is reached only through `IndexDecision.forPost`, so events and reconciles share it. |
 | What changes re-embedding | `ContentFingerprint.of(IndexRecipe, title, WordSequence)` | Tags, URL and dates are excluded. Completeness is decided before the fingerprint matters. |
-| Recipe identity | `IndexRecipe` | Derived from the `ChunkingPolicy` parameters, the composition version and `Embedder.modelId()`. |
+| Recipe identity | `IndexRecipe` | Derived from the `ChunkingPolicy` parameters, the composition version and `PassageEmbedder.modelId()`. |
 | Dimension check, finiteness, non-zero norm, normalisation, cosine | `Embedding` | It throws `InvalidEmbedding`. |
-| Query instruction prefix (queries only) | `QueryPassage.of(QueryText)` | It is a domain value, so the asymmetry is testable without the model (AC-SRCH-32). `Embedder` has separate `embedQuery(QueryPassage)` and `embedPassages(List<Passage>)` methods, so there is no flag parameter, and a passage can never get the prefix by type. The prefix is not part of `IndexRecipe`, because it never affects stored passages. |
+| Query instruction prefix (queries only) | `QueryPassage.of(QueryText)` | It is a domain value, so the asymmetry is testable without the model (AC-SRCH-32). Queries and passages go through separate ports, `QueryEmbedder.embedQuery(QueryPassage)` and `PassageEmbedder.embedPassages(List<Passage>)`, so there is no flag parameter, and a passage can never get the prefix by type. The prefix is not part of `IndexRecipe`, because it never affects stored passages. |
 | Upsert vs remove per event kind | `CatalogEventTranslation` (adapter.in) maps each event type to an `IndexChange` variant; `IndexChange.applyTo(IndexWork)` is polymorphic | Publish and revise **both** become `Upsert`, so duplicate or missed deliveries heal themselves. The pattern switch has one delegating arm per event type. |
 | Add / re-embed / refresh / keep / exclude / remove | `IndexDecision` (sealed), produced by the single entry point `IndexDecision.forPost` (for upserts) or `IndexDecision.remove(PostId)` (for withdrawals and orphans). Each variant has `apply(IndexWork)` returning an `IndexOutcome`. | The same type is used by `IndexPost` and `ReconcileIndex`. |
 | Reconcile plan (missing, stale, metadata, summary-only, malformed, orphan) | `ReconcilePlan.between(List<CatalogEntry> catalog, VectorIndex snapshot, IndexRecipe)` | It produces a list of `IndexDecision`s and an orphan-removal verdict. Each variant contributes through its own method (polymorphism on `CatalogEntry`, not an if-chain):<br>• `Readable` goes through `IndexDecision.forPost`;<br>• `Unreadable` gives `IndexDecision.Unreadable(PostId)`, which never touches the index and reports `FAILED` with the reason. Its ID counts as current;<br>• `Unidentified` contributes no decision, but suppresses all orphan removals in the run.<br>A post ID listed more than once in the catalog becomes **one** `IndexDecision.Unreadable` whose reason mentions "duplicate". Its existing entry stays, it is reported `FAILED`, and the other posts are still planned: a duplicate never aborts the reconcile. A summary-only or malformed catalog post is *not* an orphan. The plan is pure and tested without an embedder. |
@@ -315,7 +315,7 @@ None. No other context needs to know about indexing. Outcomes are returned as re
   malformed states stay visible. Neither `search.domain` nor `search.application` sees
   `shared` types.
 - **search to LangChain4j / ONNX Runtime / DJL (conformist, wrapped)**: two classes in `search.adapter.out`:
-  - `OnnxEmbedder` implements `Embedder`. It is the only class that imports `dev.langchain4j..`, which
+  - `OnnxEmbedder` implements both `PassageEmbedder` and `QueryEmbedder`. It is the only class that imports `dev.langchain4j..`, which
     also brings Jackson 2 in transitively (our code stays on Jackson 3; ArchUnit `no_jackson_2`).
   - `BgeTokenCounter` implements `TokenCounter`. It imports only `ai.djl.huggingface.tokenizers..`, and
     reads the tokenizer file as a classpath resource.
@@ -325,6 +325,27 @@ None. No other context needs to know about indexing. Outcomes are returned as re
 - **search to mcp (slice 3)**: the `search_posts` tool calls `SearchPosts` and maps its arguments with
   `SearchQuery`'s factories (`ResultLimit.defaultLimit()` when `limit` is absent,
   `PublishedDateRange.unbounded()` when both dates are absent, and so on).
+
+### 6.1 Domain sub-packages (ADR 0006)
+
+`search.domain` is split by concept into sub-packages with acyclic dependencies. ArchUnit's
+`domain_sub_packages_are_free_of_cycles` enforces this.
+
+| Sub-package | Depends on | Types |
+|---|---|---|
+| `post` | (nothing) | `PostId`, `SiteId`, `PostMetadata`, `MalformedCatalogPost` |
+| `text` | (nothing) | `WordSequence`, `WordCosts`, `ChunkingPolicy`, `Chunk`, `Passage`, `PassageComposition`, `TokenCounter` (port) |
+| `embedding` | `text` | `Embedding`, `Similarity`, `InvalidEmbedding`, `EmbedderUnavailable`, `PassageEmbedder` (port) |
+| `index` | `embedding`, `post`, `text` | `IndexedPost`, `IndexedChunk`, `PostIndexer`, `PostToIndex`, `Completeness`, `PostMatch`, `ChunkHit`, `ContentFingerprint`, `IndexRecipe`, `IndexChange`, `IndexDecision`, `IndexOutcome`, `IndexWork`, `InvalidIndexedPost`, `VectorIndex` (port) |
+| `query` | `index`, `post`, `text` | `SearchQuery`, `QueryText`, `QueryPassage`, `InvalidSearchQuery`, `ResultLimit`, `PublishedDateRange`, `SiteFilter`, `SearchFilters`, `SearchResults` |
+| `reconcile` | `index`, `post` | `CatalogEntry`, `ReconcilePlan` |
+
+Nothing in the domain depends on `query`. `PostToIndex`, `Completeness` and `PostMatch` live in `index`,
+not in `post` or `query`, to keep this graph acyclic.
+Outside the domain:
+- `PostCatalog` and `QueryEmbedder` (ports used only by use cases), `ReconcileReport` and the use cases live in `search.application`;
+- `OnnxEmbedder`, `BgeTokenCounter`, `InMemoryVectorIndex` and `SharedCatalogPosts` live in `search.adapter.out`;
+- `CatalogEventListener` and `CatalogEventTranslation` live in `search.adapter.in`.
 
 ## 7. Application use cases (`search.application`)
 
@@ -341,7 +362,7 @@ None. No other context needs to know about indexing. Outcomes are returned as re
 ## 8. Acceptance criteria
 
 Unless an AC says otherwise, chunking ACs use a fake `TokenCounter` that costs **1 token per word**, and
-index and search ACs use a deterministic fake `Embedder` (in `src/test`) whose vectors are
+index and search ACs use a deterministic fake embedder (`FakeEmbedder` in `src/test`, implementing both `PassageEmbedder` and `QueryEmbedder`) whose vectors are
 chosen by the test. Posts are `FULL` unless an AC says `SUMMARY`.
 
 ### Chunking and passages
@@ -410,8 +431,8 @@ Then all embeddings have dimension 384 and unit length, and the related passage'
 **AC-SRCH-32: Only queries carry the query instruction.**
 Given the query text `records in java`,
 When a `SearchQuery` is searched,
-Then the `Embedder` receives exactly `Represent this sentence for searching relevant passages: records in java` as its query passage.
-And when a post is indexed, no passage given to `Embedder.embedPassages` starts with the instruction.
+Then the `QueryEmbedder` receives exactly `Represent this sentence for searching relevant passages: records in java` as its query passage.
+And when a post is indexed, no passage given to `PassageEmbedder.embedPassages` starts with the instruction.
 And changing the instruction does not change any `IndexRecipe` or `ContentFingerprint`.
 
 ### Index maintenance

@@ -1,9 +1,9 @@
 package nz.sounie.blogmcp.catalog.adapter.out;
 
 import java.util.List;
-import nz.sounie.blogmcp.catalog.domain.SiteDefinition;
-import nz.sounie.blogmcp.catalog.domain.SiteDirectory;
-import nz.sounie.blogmcp.catalog.domain.SitesConfiguration;
+import nz.sounie.blogmcp.catalog.application.SiteDirectory;
+import nz.sounie.blogmcp.catalog.domain.site.SiteDefinition;
+import nz.sounie.blogmcp.catalog.domain.site.SitesConfiguration;
 
 /** Fake {@link SiteDirectory}: validates fixed definitions on each load, or always fails. */
 public final class FixedSiteDirectory implements SiteDirectory {

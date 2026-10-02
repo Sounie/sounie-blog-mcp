@@ -1,7 +1,7 @@
 package nz.sounie.blogmcp.search.adapter.out;
 
 import java.util.function.ToIntFunction;
-import nz.sounie.blogmcp.search.domain.TokenCounter;
+import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 
 /** Deterministic fake of our {@link TokenCounter} port. */
 public final class FakeTokenCounter implements TokenCounter {

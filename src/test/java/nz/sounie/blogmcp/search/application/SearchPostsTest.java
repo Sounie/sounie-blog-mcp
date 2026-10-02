@@ -1,10 +1,10 @@
 package nz.sounie.blogmcp.search.application;
 
-import static nz.sounie.blogmcp.search.domain.IndexedPosts.chunkText;
-import static nz.sounie.blogmcp.search.domain.IndexedPosts.fingerprint;
-import static nz.sounie.blogmcp.search.domain.IndexedPosts.indexed;
-import static nz.sounie.blogmcp.search.domain.PostToIndexBuilder.aPost;
-import static nz.sounie.blogmcp.search.domain.SearchQueryBuilder.aQuery;
+import static nz.sounie.blogmcp.search.domain.index.IndexedPosts.chunkText;
+import static nz.sounie.blogmcp.search.domain.index.IndexedPosts.fingerprint;
+import static nz.sounie.blogmcp.search.domain.index.IndexedPosts.indexed;
+import static nz.sounie.blogmcp.search.domain.index.PostToIndexBuilder.aPost;
+import static nz.sounie.blogmcp.search.domain.query.SearchQueryBuilder.aQuery;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
@@ -12,14 +12,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.IntStream;
-import nz.sounie.blogmcp.search.domain.IndexChange;
-import nz.sounie.blogmcp.search.domain.PostId;
-import nz.sounie.blogmcp.search.domain.PostMatch;
-import nz.sounie.blogmcp.search.domain.PostToIndex;
-import nz.sounie.blogmcp.search.domain.PublishedDateRange;
-import nz.sounie.blogmcp.search.domain.QueryPassage;
-import nz.sounie.blogmcp.search.domain.SearchResults;
-import nz.sounie.blogmcp.search.domain.Vectors;
+import nz.sounie.blogmcp.search.domain.embedding.Vectors;
+import nz.sounie.blogmcp.search.domain.index.IndexChange;
+import nz.sounie.blogmcp.search.domain.index.PostMatch;
+import nz.sounie.blogmcp.search.domain.index.PostToIndex;
+import nz.sounie.blogmcp.search.domain.post.PostId;
+import nz.sounie.blogmcp.search.domain.query.PublishedDateRange;
+import nz.sounie.blogmcp.search.domain.query.QueryPassage;
+import nz.sounie.blogmcp.search.domain.query.SearchResults;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -38,7 +38,7 @@ class SearchPostsTest {
             fingerprint('a'),
             IntStream.range(0, chunkScores.length)
                 .mapToObj(i -> Vectors.atSimilarity(chunkScores[i], i + 1))
-                .toArray(nz.sounie.blogmcp.search.domain.Embedding[]::new)));
+                .toArray(nz.sounie.blogmcp.search.domain.embedding.Embedding[]::new)));
   }
 
   @Test

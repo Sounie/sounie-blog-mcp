@@ -1,12 +1,12 @@
 package nz.sounie.blogmcp.catalog.application;
 
-import static nz.sounie.blogmcp.catalog.domain.TestSites.SOUNIE_WP_ID;
+import static nz.sounie.blogmcp.catalog.domain.site.TestSites.SOUNIE_WP_ID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
-import nz.sounie.blogmcp.catalog.domain.SyncCheckpoint;
+import nz.sounie.blogmcp.catalog.domain.sync.SyncCheckpoint;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
