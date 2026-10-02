@@ -4,7 +4,6 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import nz.sounie.blogmcp.catalog.domain.SiteDirectory;
 import nz.sounie.blogmcp.catalog.domain.post.PostRepository;
 import nz.sounie.blogmcp.catalog.domain.post.WithdrawalReason;
 import nz.sounie.blogmcp.catalog.domain.site.Site;

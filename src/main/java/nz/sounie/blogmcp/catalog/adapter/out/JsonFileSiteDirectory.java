@@ -5,7 +5,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import nz.sounie.blogmcp.catalog.domain.SiteDirectory;
+import nz.sounie.blogmcp.catalog.application.SiteDirectory;
 import nz.sounie.blogmcp.catalog.domain.site.SiteDefinition;
 import nz.sounie.blogmcp.catalog.domain.site.SitesConfiguration;
 import nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationMissing;

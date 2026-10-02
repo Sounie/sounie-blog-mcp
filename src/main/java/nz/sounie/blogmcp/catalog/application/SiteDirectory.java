@@ -1,4 +1,4 @@
-package nz.sounie.blogmcp.catalog.domain;
+package nz.sounie.blogmcp.catalog.application;
 
 import nz.sounie.blogmcp.catalog.domain.site.InvalidSitesConfiguration;
 import nz.sounie.blogmcp.catalog.domain.site.SitesConfiguration;

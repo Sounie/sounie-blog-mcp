@@ -26,7 +26,6 @@ import nz.sounie.blogmcp.catalog.adapter.out.FixedSiteDirectory;
 import nz.sounie.blogmcp.catalog.adapter.out.InMemoryPostRepository;
 import nz.sounie.blogmcp.catalog.adapter.out.InMemorySyncCheckpointRepository;
 import nz.sounie.blogmcp.catalog.adapter.out.RecordingEventPublisher;
-import nz.sounie.blogmcp.catalog.domain.SiteDirectory;
 import nz.sounie.blogmcp.catalog.domain.post.PostId;
 import nz.sounie.blogmcp.catalog.domain.post.SourcePostId;
 import nz.sounie.blogmcp.catalog.domain.site.InvalidSitesConfiguration;

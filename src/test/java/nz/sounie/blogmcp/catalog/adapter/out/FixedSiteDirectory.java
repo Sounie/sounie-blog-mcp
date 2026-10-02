@@ -1,7 +1,7 @@
 package nz.sounie.blogmcp.catalog.adapter.out;
 
 import java.util.List;
-import nz.sounie.blogmcp.catalog.domain.SiteDirectory;
+import nz.sounie.blogmcp.catalog.application.SiteDirectory;
 import nz.sounie.blogmcp.catalog.domain.site.SiteDefinition;
 import nz.sounie.blogmcp.catalog.domain.site.SitesConfiguration;
 

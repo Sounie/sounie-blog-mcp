@@ -1,8 +1,10 @@
 package nz.sounie.blogmcp.catalog.application;
 
 import java.util.Optional;
+import nz.sounie.blogmcp.catalog.domain.post.InvalidPostReference;
 import nz.sounie.blogmcp.catalog.domain.post.PostId;
 import nz.sounie.blogmcp.catalog.domain.post.PostRepository;
+import nz.sounie.blogmcp.catalog.domain.post.WebAddress;
 
 /** Looks up one post by post ID or by URL. */
 public final class GetPost {

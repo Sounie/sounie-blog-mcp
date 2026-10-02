@@ -1,4 +1,4 @@
-package nz.sounie.blogmcp.catalog.application;
+package nz.sounie.blogmcp.catalog.domain.post;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

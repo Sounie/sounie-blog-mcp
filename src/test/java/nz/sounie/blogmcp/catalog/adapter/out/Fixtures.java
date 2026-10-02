@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import nz.sounie.blogmcp.catalog.domain.BlogSource;
+import nz.sounie.blogmcp.catalog.application.BlogSource;
 import nz.sounie.blogmcp.catalog.domain.site.Site;
 import nz.sounie.blogmcp.catalog.domain.sync.PageCursor;
 import nz.sounie.blogmcp.catalog.domain.sync.SourceEntry;

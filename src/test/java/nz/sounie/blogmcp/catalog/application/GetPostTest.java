@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.List;
 import nz.sounie.blogmcp.catalog.adapter.out.InMemoryPostRepository;
 import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
+import nz.sounie.blogmcp.catalog.domain.post.InvalidPostReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

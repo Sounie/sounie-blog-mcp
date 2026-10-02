@@ -1,4 +1,4 @@
-package nz.sounie.blogmcp.catalog.domain;
+package nz.sounie.blogmcp.catalog.application;
 
 import java.time.Instant;
 import java.util.Optional;

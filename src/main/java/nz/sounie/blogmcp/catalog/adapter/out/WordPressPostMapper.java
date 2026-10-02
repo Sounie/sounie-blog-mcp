@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import nz.sounie.blogmcp.catalog.domain.HtmlToText;
 import nz.sounie.blogmcp.catalog.domain.post.Body;
 import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
 import nz.sounie.blogmcp.catalog.domain.post.CanonicalUrl;

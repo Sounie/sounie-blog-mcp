@@ -5,7 +5,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import nz.sounie.blogmcp.catalog.domain.BlogSource;
 import nz.sounie.blogmcp.catalog.domain.post.CanonicalUrlNotOnSite;
 import nz.sounie.blogmcp.catalog.domain.post.Post;
 import nz.sounie.blogmcp.catalog.domain.post.PostId;
