@@ -7,7 +7,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-/** An absolute http(s) URL given by a caller of {@link GetPost}, parsed once. */
+/**
+ * An absolute http(s) URL given as a post reference (e.g. to the GetPost use case), parsed once.
+ */
 public record WebAddress(URI uri) {
 
   private static final Set<String> WEB_SCHEMES = Set.of("http", "https");
