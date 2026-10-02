@@ -16,6 +16,7 @@ repositories { mavenCentral() }
 dependencies {
     implementation(libs.jackson.databind)
     implementation(libs.jsoup)
+    implementation(libs.langchain4j.embeddings.bge.small.en.v15.q)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
@@ -32,6 +33,12 @@ tasks.withType<JavaCompile>().configureEach {
 tasks.test {
     useJUnitPlatform()
     finalizedBy(tasks.jacocoTestReport)
+    // ADR 0005: DJL extracts its native tokenizer library to ~/.djl.ai by default, which the sandbox
+    // cannot write. DJL 0.36.0 reads DJL_CACHE_DIR as an environment variable or system property.
+    val djlCache = layout.buildDirectory.dir("djl-cache")
+    systemProperty("DJL_CACHE_DIR", djlCache.get().asFile.absolutePath)
+    // DJL loads its tokenizer library through JNA, which calls a restricted JDK method.
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
 // Complexity budget (ADR 0004): keeps execution paths per method small, so each type needs few
@@ -118,4 +125,7 @@ pitest {
     timestampedReports = false
     outputFormats = setOf("HTML", "XML")
     failWhenNoMutations = false
+    // The real-model adapter tests (@Tag("model")) exercise adapter.out, not the domain under
+    // mutation; excluding them keeps PIT independent of the 34 MB model and the native caches.
+    excludedGroups = setOf("model")
 }
