@@ -2,11 +2,11 @@ package nz.sounie.blogmcp.search.application;
 
 import java.util.List;
 import java.util.Objects;
-import nz.sounie.blogmcp.search.domain.IndexDecision;
-import nz.sounie.blogmcp.search.domain.IndexWork;
-import nz.sounie.blogmcp.search.domain.PostIndexer;
-import nz.sounie.blogmcp.search.domain.ReconcilePlan;
-import nz.sounie.blogmcp.search.domain.VectorIndex;
+import nz.sounie.blogmcp.search.domain.index.IndexDecision;
+import nz.sounie.blogmcp.search.domain.index.IndexWork;
+import nz.sounie.blogmcp.search.domain.index.PostIndexer;
+import nz.sounie.blogmcp.search.domain.index.VectorIndex;
+import nz.sounie.blogmcp.search.domain.reconcile.ReconcilePlan;
 
 /**
  * Compares the catalog's current posts with the index and applies the plan one post at a time. A

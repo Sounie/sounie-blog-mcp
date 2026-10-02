@@ -1,13 +1,13 @@
 package nz.sounie.blogmcp.search.application;
 
 import java.util.Objects;
-import nz.sounie.blogmcp.search.domain.Embedder;
-import nz.sounie.blogmcp.search.domain.Embedding;
-import nz.sounie.blogmcp.search.domain.QueryPassage;
-import nz.sounie.blogmcp.search.domain.SearchFilters;
-import nz.sounie.blogmcp.search.domain.SearchQuery;
-import nz.sounie.blogmcp.search.domain.SearchResults;
-import nz.sounie.blogmcp.search.domain.VectorIndex;
+import nz.sounie.blogmcp.search.domain.embedding.Embedder;
+import nz.sounie.blogmcp.search.domain.embedding.Embedding;
+import nz.sounie.blogmcp.search.domain.index.VectorIndex;
+import nz.sounie.blogmcp.search.domain.query.SearchFilters;
+import nz.sounie.blogmcp.search.domain.query.SearchQuery;
+import nz.sounie.blogmcp.search.domain.query.SearchResults;
+import nz.sounie.blogmcp.search.domain.text.QueryPassage;
 
 /** Answers a search query. Does not take the index write lock. */
 public final class SearchPosts {

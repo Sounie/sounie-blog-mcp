@@ -6,9 +6,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
-import nz.sounie.blogmcp.search.domain.IndexedPost;
-import nz.sounie.blogmcp.search.domain.PostId;
-import nz.sounie.blogmcp.search.domain.VectorIndex;
+import nz.sounie.blogmcp.search.domain.index.IndexedPost;
+import nz.sounie.blogmcp.search.domain.index.VectorIndex;
+import nz.sounie.blogmcp.search.domain.post.PostId;
 
 /**
  * The vector index in memory, keyed by post ID. Each entry is an immutable {@link IndexedPost}

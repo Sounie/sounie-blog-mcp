@@ -2,9 +2,9 @@ package nz.sounie.blogmcp.search.application;
 
 import java.util.Objects;
 import java.util.Optional;
-import nz.sounie.blogmcp.search.domain.IndexDecision;
-import nz.sounie.blogmcp.search.domain.IndexOutcome;
-import nz.sounie.blogmcp.search.domain.PostId;
+import nz.sounie.blogmcp.search.domain.index.IndexDecision;
+import nz.sounie.blogmcp.search.domain.index.IndexOutcome;
+import nz.sounie.blogmcp.search.domain.post.PostId;
 
 /** What applying one decision of a reconcile did to one post, with the reason if it failed. */
 record PostOutcome(PostId postId, IndexOutcome outcome, Optional<String> failureReason) {

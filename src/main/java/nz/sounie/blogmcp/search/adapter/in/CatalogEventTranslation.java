@@ -1,8 +1,8 @@
 package nz.sounie.blogmcp.search.adapter.in;
 
-import nz.sounie.blogmcp.search.domain.IndexChange;
-import nz.sounie.blogmcp.search.domain.PostId;
-import nz.sounie.blogmcp.search.domain.PostToIndex;
+import nz.sounie.blogmcp.search.domain.index.IndexChange;
+import nz.sounie.blogmcp.search.domain.index.PostToIndex;
+import nz.sounie.blogmcp.search.domain.post.PostId;
 import nz.sounie.blogmcp.shared.event.CatalogPostPublished;
 import nz.sounie.blogmcp.shared.event.CatalogPostRevised;
 import nz.sounie.blogmcp.shared.event.CatalogPostWithdrawn;
@@ -17,7 +17,7 @@ public final class CatalogEventTranslation {
   private CatalogEventTranslation() {}
 
   /**
-   * @throws nz.sounie.blogmcp.search.domain.MalformedCatalogPost for an invalid payload
+   * @throws nz.sounie.blogmcp.search.domain.post.MalformedCatalogPost for an invalid payload
    */
   public static IndexChange toChange(IntegrationEvent event) {
     return switch (event) {

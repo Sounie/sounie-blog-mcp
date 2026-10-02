@@ -6,11 +6,11 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Predicate;
-import nz.sounie.blogmcp.search.domain.Embedder;
-import nz.sounie.blogmcp.search.domain.EmbedderUnavailable;
-import nz.sounie.blogmcp.search.domain.Embedding;
-import nz.sounie.blogmcp.search.domain.Passage;
-import nz.sounie.blogmcp.search.domain.QueryPassage;
+import nz.sounie.blogmcp.search.domain.embedding.Embedder;
+import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
+import nz.sounie.blogmcp.search.domain.embedding.Embedding;
+import nz.sounie.blogmcp.search.domain.text.Passage;
+import nz.sounie.blogmcp.search.domain.text.QueryPassage;
 
 /**
  * Deterministic fake of our {@link Embedder} port. By default each text becomes a bag-of-words

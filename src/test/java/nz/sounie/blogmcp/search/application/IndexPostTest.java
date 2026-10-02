@@ -1,24 +1,24 @@
 package nz.sounie.blogmcp.search.application;
 
-import static nz.sounie.blogmcp.search.domain.PostToIndexBuilder.aPost;
-import static nz.sounie.blogmcp.search.domain.SearchQueryBuilder.aQuery;
+import static nz.sounie.blogmcp.search.domain.index.PostToIndexBuilder.aPost;
+import static nz.sounie.blogmcp.search.domain.query.SearchQueryBuilder.aQuery;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.stream.Stream;
-import nz.sounie.blogmcp.search.domain.EmbedderUnavailable;
-import nz.sounie.blogmcp.search.domain.IndexChange;
-import nz.sounie.blogmcp.search.domain.IndexOutcome;
-import nz.sounie.blogmcp.search.domain.IndexedPost;
-import nz.sounie.blogmcp.search.domain.Passage;
-import nz.sounie.blogmcp.search.domain.PostId;
-import nz.sounie.blogmcp.search.domain.PostMatch;
-import nz.sounie.blogmcp.search.domain.PostToIndex;
-import nz.sounie.blogmcp.search.domain.PostToIndexBuilder;
-import nz.sounie.blogmcp.search.domain.PublishedDateRange;
-import nz.sounie.blogmcp.search.domain.SearchQuery;
+import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
+import nz.sounie.blogmcp.search.domain.index.IndexChange;
+import nz.sounie.blogmcp.search.domain.index.IndexOutcome;
+import nz.sounie.blogmcp.search.domain.index.IndexedPost;
+import nz.sounie.blogmcp.search.domain.index.PostMatch;
+import nz.sounie.blogmcp.search.domain.index.PostToIndex;
+import nz.sounie.blogmcp.search.domain.index.PostToIndexBuilder;
+import nz.sounie.blogmcp.search.domain.post.PostId;
+import nz.sounie.blogmcp.search.domain.query.PublishedDateRange;
+import nz.sounie.blogmcp.search.domain.query.SearchQuery;
+import nz.sounie.blogmcp.search.domain.text.Passage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

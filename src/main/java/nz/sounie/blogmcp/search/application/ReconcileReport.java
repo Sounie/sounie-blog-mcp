@@ -4,8 +4,8 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import nz.sounie.blogmcp.search.domain.IndexOutcome;
-import nz.sounie.blogmcp.search.domain.PostId;
+import nz.sounie.blogmcp.search.domain.index.IndexOutcome;
+import nz.sounie.blogmcp.search.domain.post.PostId;
 
 /**
  * The outcome of a reconcile, per post, in the order the plan applied them; why each failed post

@@ -6,11 +6,11 @@ import dev.langchain4j.model.embedding.onnx.bgesmallenv15q.BgeSmallEnV15Quantize
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
-import nz.sounie.blogmcp.search.domain.Embedder;
-import nz.sounie.blogmcp.search.domain.EmbedderUnavailable;
-import nz.sounie.blogmcp.search.domain.Embedding;
-import nz.sounie.blogmcp.search.domain.Passage;
-import nz.sounie.blogmcp.search.domain.QueryPassage;
+import nz.sounie.blogmcp.search.domain.embedding.Embedder;
+import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
+import nz.sounie.blogmcp.search.domain.embedding.Embedding;
+import nz.sounie.blogmcp.search.domain.text.Passage;
+import nz.sounie.blogmcp.search.domain.text.QueryPassage;
 
 /**
  * The local BGE-small-en-v1.5 (quantised) model through LangChain4j. The only class that touches

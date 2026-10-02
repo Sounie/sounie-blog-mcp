@@ -3,8 +3,8 @@ package nz.sounie.blogmcp.search.adapter.out;
 import java.util.Arrays;
 import java.util.List;
 import nz.sounie.blogmcp.search.application.PostCatalog;
-import nz.sounie.blogmcp.search.domain.CatalogEntry;
-import nz.sounie.blogmcp.search.domain.PostToIndex;
+import nz.sounie.blogmcp.search.domain.index.PostToIndex;
+import nz.sounie.blogmcp.search.domain.reconcile.CatalogEntry;
 
 /** Fake of our {@link PostCatalog} port: the catalog's current entries, set by the test. */
 public final class FakePostCatalog implements PostCatalog {

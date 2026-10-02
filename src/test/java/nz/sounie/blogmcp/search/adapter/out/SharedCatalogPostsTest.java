@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import java.util.Set;
-import nz.sounie.blogmcp.search.domain.CatalogEntry;
-import nz.sounie.blogmcp.search.domain.PostId;
-import nz.sounie.blogmcp.search.domain.PostToIndex;
+import nz.sounie.blogmcp.search.domain.index.PostToIndex;
+import nz.sounie.blogmcp.search.domain.post.PostId;
+import nz.sounie.blogmcp.search.domain.reconcile.CatalogEntry;
 import nz.sounie.blogmcp.shared.query.CatalogPostState;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

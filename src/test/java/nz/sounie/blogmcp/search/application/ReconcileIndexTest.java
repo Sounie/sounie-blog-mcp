@@ -1,15 +1,15 @@
 package nz.sounie.blogmcp.search.application;
 
-import static nz.sounie.blogmcp.search.domain.PostToIndexBuilder.aPost;
+import static nz.sounie.blogmcp.search.domain.index.PostToIndexBuilder.aPost;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Map;
 import nz.sounie.blogmcp.search.adapter.out.FakeEmbedder;
-import nz.sounie.blogmcp.search.domain.CatalogEntry;
-import nz.sounie.blogmcp.search.domain.IndexOutcome;
-import nz.sounie.blogmcp.search.domain.Passage;
-import nz.sounie.blogmcp.search.domain.PostId;
-import nz.sounie.blogmcp.search.domain.PostToIndex;
+import nz.sounie.blogmcp.search.domain.index.IndexOutcome;
+import nz.sounie.blogmcp.search.domain.index.PostToIndex;
+import nz.sounie.blogmcp.search.domain.post.PostId;
+import nz.sounie.blogmcp.search.domain.reconcile.CatalogEntry;
+import nz.sounie.blogmcp.search.domain.text.Passage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

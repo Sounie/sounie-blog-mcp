@@ -3,10 +3,10 @@ package nz.sounie.blogmcp.search.adapter.out;
 import java.util.List;
 import java.util.Objects;
 import nz.sounie.blogmcp.search.application.PostCatalog;
-import nz.sounie.blogmcp.search.domain.CatalogEntry;
-import nz.sounie.blogmcp.search.domain.MalformedCatalogPost;
-import nz.sounie.blogmcp.search.domain.PostId;
-import nz.sounie.blogmcp.search.domain.PostToIndex;
+import nz.sounie.blogmcp.search.domain.index.PostToIndex;
+import nz.sounie.blogmcp.search.domain.post.MalformedCatalogPost;
+import nz.sounie.blogmcp.search.domain.post.PostId;
+import nz.sounie.blogmcp.search.domain.reconcile.CatalogEntry;
 import nz.sounie.blogmcp.shared.query.CatalogPostState;
 import nz.sounie.blogmcp.shared.query.CatalogPosts;
 

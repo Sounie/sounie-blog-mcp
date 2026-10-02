@@ -5,7 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.Map;
-import nz.sounie.blogmcp.search.domain.TokenCounter;
+import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 
 /**
  * Counts tokens with the model's own tokenizer ({@code bge-small-en-v1.5-q-tokenizer.json}, bundled
