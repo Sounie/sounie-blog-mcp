@@ -1,0 +1,118 @@
+name: Dependabot verification metadata
+
+# ADR 0008: Dependabot doesn't update gradle/verification-metadata.xml, so its PRs would fail CI.
+# Two jobs keep "runs dependency code" and "holds a write token" apart:
+# - regenerate runs Gradle (and so new dependency and plugin code) with a read-only token. It fails,
+#   pushing nothing, if a checksum that was already verified changed: that red check is the alarm.
+# - commit runs no Gradle. It re-checks the file with the guard from the base branch, pushes it to
+#   the PR branch and dispatches CI, since a push made with GITHUB_TOKEN starts no pull_request runs.
+on:
+  pull_request:
+    paths:
+      - gradle/libs.versions.toml
+
+permissions: {}
+
+jobs:
+  regenerate:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      # v5, not v6: v6 requires accepting Gradle's Terms of Use (see ci.yml).
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Keep the current metadata
+        run: cp gradle/verification-metadata.xml "$RUNNER_TEMP/old.xml"
+      # The same tasks as scripts/update-verification-metadata, so every configuration is resolved.
+      - name: Regenerate verification metadata
+        run: >-
+          ./gradlew --write-verification-metadata sha256 --refresh-dependencies
+          check pitest shadowJar jarTest
+      - name: Guard checksums that were already verified
+        run: scripts/verification-checksum-guard "$RUNNER_TEMP/old.xml" gradle/verification-metadata.xml
+      - name: Detect a change
+        id: diff
+        run: |
+          if git diff --quiet -- gradle/verification-metadata.xml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.diff.outputs.changed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: verification-metadata
+          path: gradle/verification-metadata.xml
+          if-no-files-found: error
+          retention-days: 1
+
+  commit:
+    needs: regenerate
+    if: needs.regenerate.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    env:
+      HEAD_REF: ${{ github.head_ref }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_REF: ${{ github.base_ref }}
+      METADATA: gradle/verification-metadata.xml
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: verification-metadata
+          path: ${{ runner.temp }}/artifact
+      - name: Validate the regenerated metadata
+        id: validate
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]]; then
+            echo "::notice::$HEAD_REF has moved on since regenerate ran; the run for the new head handles it"
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          regenerated="$RUNNER_TEMP/artifact/verification-metadata.xml"
+          if [[ "$(find "$RUNNER_TEMP/artifact" -mindepth 1)" != "$regenerated" || ! -f "$regenerated" ]]; then
+            echo "::error::The artifact must be exactly one file, verification-metadata.xml"
+            exit 1
+          fi
+          python3 - "$regenerated" <<'EOF'
+          import sys
+          import xml.etree.ElementTree as ElementTree
+          root = ElementTree.parse(sys.argv[1]).getroot()
+          if root.tag != "{https://schema.gradle.org/dependency-verification}verification-metadata":
+              sys.exit(f"::error::Unexpected root element {root.tag}")
+          EOF
+          # The guard from the base branch, so the PR can't bring a weaker one.
+          git fetch --no-tags --depth=1 origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          git show "origin/$BASE_REF:scripts/verification-checksum-guard" > "$RUNNER_TEMP/guard"
+          chmod +x "$RUNNER_TEMP/guard"
+          "$RUNNER_TEMP/guard" "$METADATA" "$regenerated"
+          cp "$regenerated" "$METADATA"
+      - name: Commit and push
+        if: steps.validate.outputs.stale != 'true'
+        run: |
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898299+github-actions[bot]@users.noreply.github.com' \
+            commit -m "build(deps): update dependency verification metadata" -- "$METADATA"
+          git push origin "HEAD:refs/heads/$HEAD_REF"
+      - name: Run CI on the new commit
+        if: steps.validate.outputs.stale != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
