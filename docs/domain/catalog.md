@@ -29,7 +29,8 @@ It is **not** responsible for:
 | Site ID | Owner-chosen, stable, lower-case slug that identifies a site (`[a-z0-9-]{1,40}`, e.g. `sounie-wp`). It is part of every post ID, so renaming it re-identifies every post of that site. | `SiteId` |
 | Platform | The blogging software behind a site: `WORDPRESS` or `BLOGGER`. In the sites configuration, platform names match case-insensitively (`wordpress`, `WordPress` and `WORDPRESS` are all accepted). | `Platform` |
 | Base URL | Absolute `https` URL of the site (scheme, host and optionally a path, but no query or fragment). Its host is the **site host**. | `Site.baseUrl()` |
-| Sites configuration | The validated set of all sites. It is valid only as a whole (see invariants). | `SitesConfiguration` |
+| Sites configuration | The validated set of all sites, plus the sync interval (slice 3b, owner decision 2026-10-03). It is valid only as a whole (see invariants). It is read from `sites.json`; the file keeps that name. | `SitesConfiguration` |
+| Sync interval | (slice 3b, proposed in `docs/domain/app.md` 3.8) How long the app waits between the end of one sync-and-reconcile run and the start of the next. It is set by `"syncEveryHours"` in `sites.json`: a whole number, at least 1, default **24** when omitted. It is consumed only by the `app` scheduler. The daily reconcile rule is unchanged, so with 24 hours each run is in practice a reconcile. | `SyncInterval`, `SyncIntervalSetting` (sealed: `Omitted`, `WholeHours`, `Unparseable`), both in `catalog.domain.site` |
 | Post | One published blog post as the catalog knows it. It is the aggregate root. | `Post` |
 | Source post ID | The platform's own identifier for a post, as a string. WordPress: the numeric `id`. Blogger: the digits after `.post-` in `id.$t`. Never derived from the slug or URL, because those can change. | `SourcePostId` |
 | Post ID | The catalog-wide identity of a post: site ID plus source post ID. Its external form is `<siteId>:<sourcePostId>`, e.g. `sounie-wp:123`. | `PostId` |
@@ -58,6 +59,8 @@ It is **not** responsible for:
 | Sync outcome | `COMPLETED` (every page was handled), `PARTIAL` (failed after at least one page was handled), `FAILED` (no page was handled) or `SKIPPED` (a sync for the same site was already running). | `SyncOutcome` |
 | Skipped entry | A source entry that was not applied, with its source post ID (if readable) and reason: `MALFORMED`, `NOT_PUBLIC` or `DUPLICATE_CANONICAL_URL`. An unresolvable WordPress tag ID is *not* a skip; it is a `SyncWarning` of kind `SOURCE_NOTE` (AC-CAT-8). | `SkippedEntry` |
 | Get post | Look up one post by post ID or by URL. | `GetPost` use case |
+| Post reference | (slice 3, proposed in `docs/domain/app.md` 3.7, pending owner approval) The free text given to `get_post`. It is a **URL** if the trimmed text starts with a scheme and `://`, and a **post ID** otherwise. A reference of either form that does not parse is `InvalidPostReference`. | `PostReference` (sealed `ById`, `ByUrl`), `GetPost.byReference(String)` |
+| Post file / checkpoint file | (slice 3, proposed) The persisted form of one post or one checkpoint: one JSON file each under the data directory, written atomically. An unreadable file is quarantined, and the startup sync becomes a reconcile (`docs/domain/app.md` 3.3). | `FilePostRepository`, `FileSyncCheckpointRepository` (`adapter.out`) |
 
 ## 3. Aggregates
 
@@ -105,6 +108,9 @@ Behaviour and invariants:
 `Site(SiteId id, Platform platform, URI baseUrl)` is an immutable value that the catalog reads but never
 changes. `SitesConfiguration` validates the whole list and reports **all** violations together in
 one `InvalidSitesConfiguration` exception:
+- (slice 3b, proposed; `docs/domain/app.md` AC-APP-36 to 39) an optional top-level `syncEveryHours`, which must be a whole JSON
+  number of at least 1 if present (default 24 hours). A value below 1, or one that is not a whole number (`"24"`, `24.5`, `true`,
+  `null`), is a violation reported with the others;
 - at least one site. An empty list is invalid, and a **missing** configuration file is a startup error (`SitesConfigurationMissing`, raised by the `SiteDirectory` adapter) naming the path it looked at (owner decision, Q6; AC-CAT-25);
 - site IDs unique and matching `[a-z0-9-]{1,40}`;
 - platform is one of the supported values, matched case-insensitively (an unknown string such as `"ghost"` is a violation, not a crash);

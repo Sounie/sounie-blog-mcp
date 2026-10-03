@@ -194,6 +194,31 @@ class LayeringTest {
           .resideInAnyPackage("nz.sounie.blogmcp.shared.query..", "java..")
           .allowEmptyShould(true);
 
+  // ADR 0007: the file storage helpers use JDK types only (stricter than the `shared` rule: not
+  // even
+  // the other `shared` packages).
+  @ArchTest
+  static final ArchRule shared_storage_uses_jdk_types_only =
+      classes()
+          .that()
+          .resideInAPackage("nz.sounie.blogmcp.shared.storage..")
+          .should()
+          .onlyDependOnClassesThat()
+          .resideInAnyPackage("nz.sounie.blogmcp.shared.storage..", "java..")
+          .allowEmptyShould(true);
+
+  // ADR 0007: file storage is infrastructure for outbound adapters (and the composition root);
+  // the domain and application layers never touch files.
+  @ArchTest
+  static final ArchRule file_storage_stays_in_adapters =
+      noClasses()
+          .that()
+          .resideInAnyPackage("..domain..", "..application..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("nz.sounie.blogmcp.shared.storage..")
+          .allowEmptyShould(true);
+
   // search.md section 6: search translates the published language at its adapters (anti-corruption
   // layer), so neither its domain nor its application layer sees `shared` types.
   @ArchTest
