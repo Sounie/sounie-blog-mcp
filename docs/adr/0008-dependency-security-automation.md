@@ -21,7 +21,7 @@ sign). The owner chose security updates plus weekly minor/patch bumps, and depen
    - **Code scanning:** SpotBugs with the FindSecBugs plugin runs as `spotbugsMain` inside `./gw check`, so locally and in CI.
      It scans production classes only (`spotbugsTest` is disabled), reports only the `SECURITY` category
      (`config/spotbugs/security-include.xml`) and fails the build on any finding; the HTML report is
-     `build/reports/spotbugs/main.html`. A finding is fixed, or excluded in `config/spotbugs/exclude.xml` with the narrowest
+     `build/reports/spotbugs/main.html`. A finding is fixed, or excluded in a `config/spotbugs/exclude.xml` (created and wired in as `excludeFilter` when first needed) with the narrowest
      match and a `<!-- justified: -->` comment, listed in the PR like a PMD suppression. CodeQL was the first choice but
      can't serve here: this is a personal repository, not in an organisation, so code scanning alerts can't be enabled, and
      CodeQL's terms only allow free use on public repositories. SpotBugs also runs inside the gates rather than as a separate
