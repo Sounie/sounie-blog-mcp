@@ -1,6 +1,7 @@
 # blog-mcp
 
-A local, read-only [MCP](https://modelcontextprotocol.io) server that lets Claude search and read my blog posts.
+A local, read-only [MCP](https://modelcontextprotocol.io) server that lets any MCP client (an AI assistant, IDE or agent) search
+and read my blog posts.
 
 It syncs posts from WordPress and Blogger sites, stores them as plain text on disk, and indexes them with a
 local embedding model (BGE-small-en-v1.5, quantised ONNX, bundled in the jar). Search runs entirely on your
@@ -52,15 +53,40 @@ Create `~/.config/blog-mcp/sites.json`:
 | `BLOG_MCP_CONFIG` | `~/.config/blog-mcp/sites.json` | Location of the sites configuration |
 | `BLOG_MCP_DATA` | `~/.local/share/blog-mcp` | Where posts, sync checkpoints and the vector index are stored |
 
-## Register with Claude Code
+## Connect an MCP client
+
+The server uses the stdio transport: the client starts it as a subprocess and talks to it over stdin and
+stdout. Any client that supports local stdio servers can use it. Point the client at this command:
+
+```sh
+java -jar /path/to/blog-mcp-all.jar
+```
+
+Set `BLOG_MCP_CONFIG` and `BLOG_MCP_DATA` in the server's environment if you don't want the defaults.
+
+Many clients take a JSON configuration in this shape. Check your client's documentation for the file's name
+and location:
+
+```json
+{
+  "mcpServers": {
+    "blog-mcp": {
+      "command": "java",
+      "args": ["-jar", "/path/to/blog-mcp-all.jar"],
+      "env": { "BLOG_MCP_CONFIG": "/path/to/sites.json" }
+    }
+  }
+}
+```
+
+For example, with Claude Code:
 
 ```sh
 claude mcp add --env BLOG_MCP_CONFIG=/path/to/sites.json --transport stdio blog-mcp -- \
   java -jar /path/to/blog-mcp-all.jar
 ```
 
-Keep another option, such as `--transport stdio`, between `--env` and the server name. Add
-`--env BLOG_MCP_DATA=/path/to/data` to move the data directory.
+Keep another option, such as `--transport stdio`, between `--env` and the server name.
 
 ## How it runs
 
@@ -71,8 +97,8 @@ Keep another option, such as `--transport stdio`, between `--env` and the server
 - **Storage:** one JSON file per post, checkpoint and indexed post, each written atomically. An unreadable file
   is renamed to `*.corrupt` and fetched again rather than crashing the server. If the embedding model changes,
   the affected entries are re-embedded automatically.
-- **Logs** go to stderr, which Claude Code shows in its MCP logs. Stdout carries only the protocol.
-- The server exits when Claude closes its stdin.
+- **Logs** go to stderr, which most clients show in their MCP logs. Stdout carries only the protocol.
+- The server exits when the client closes its stdin.
 
 ## Development
 
