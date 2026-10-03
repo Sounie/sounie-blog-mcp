@@ -1,0 +1,25 @@
+name: Dependency submission
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      # Submits the resolved Gradle graph so Dependabot alerts cover transitive dependencies (ADR 0008).
+      # v5, not v6: v6 requires accepting Gradle's Terms of Use (see ci.yml).
+      # May fail on Gradle 9.8.0: https://github.com/gradle/actions/issues/1088
+      - uses: gradle/actions/dependency-submission@v5
