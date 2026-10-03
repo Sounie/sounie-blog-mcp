@@ -7,14 +7,25 @@ import nz.sounie.blogmcp.catalog.application.SyncMode;
  * it to choose the startup sync mode (docs/domain/app.md 3.3).
  */
 public enum StorageHealth {
-  HEALTHY,
-  DAMAGED;
+  HEALTHY(SyncMode.INCREMENTAL),
+  DAMAGED(SyncMode.RECONCILE);
+
+  private final SyncMode startupSyncMode;
+
+  StorageHealth(SyncMode startupSyncMode) {
+    this.startupSyncMode = startupSyncMode;
+  }
+
+  /** Healthy when no stored file had to be quarantined. */
+  static StorageHealth afterQuarantining(int unreadableFiles) {
+    return unreadableFiles == 0 ? HEALTHY : DAMAGED;
+  }
 
   /**
    * {@code INCREMENTAL} when healthy; {@code RECONCILE} when damaged, so quarantined posts are
    * fetched again.
    */
   public SyncMode startupSyncMode() {
-    throw new UnsupportedOperationException("not implemented yet");
+    return startupSyncMode;
   }
 }

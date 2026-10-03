@@ -3,9 +3,13 @@ package nz.sounie.blogmcp.catalog.adapter.out;
 import java.io.PrintStream;
 import java.nio.file.Path;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentMap;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import nz.sounie.blogmcp.catalog.domain.site.SiteId;
 import nz.sounie.blogmcp.catalog.domain.sync.SyncCheckpoint;
 import nz.sounie.blogmcp.catalog.domain.sync.SyncCheckpointRepository;
+import nz.sounie.blogmcp.shared.storage.AtomicFile;
 
 /**
  * Stored sync checkpoints, one JSON file per site at {@code
@@ -15,28 +19,55 @@ import nz.sounie.blogmcp.catalog.domain.sync.SyncCheckpointRepository;
  */
 public final class FileSyncCheckpointRepository implements SyncCheckpointRepository {
 
-  private FileSyncCheckpointRepository() {}
+  private static final JsonFiles<CheckpointFile> FILES =
+      new JsonFiles<>(
+          CheckpointFile.class,
+          CheckpointFile::validated,
+          "is treated as absent, so the site gets a full fetch and a reconcile");
+
+  private final Path directory;
+  private final ConcurrentMap<SiteId, CheckpointFile> checkpoints;
+
+  private FileSyncCheckpointRepository(
+      Path directory, ConcurrentMap<SiteId, CheckpointFile> checkpoints) {
+    this.directory = directory;
+    this.checkpoints = checkpoints;
+  }
 
   /**
    * Loads every stored checkpoint under the data directory, deleting leftover temporary files and
    * quarantining unreadable ones (logged to {@code errors}).
    */
   public static FileSyncCheckpointRepository open(Path dataDirectory, PrintStream errors) {
-    throw new UnsupportedOperationException("not implemented yet");
+    Path directory = dataDirectory.resolve("catalog").resolve("checkpoints");
+    ConcurrentMap<SiteId, CheckpointFile> checkpoints =
+        FILES.loadAll(directory, errors).readable().stream()
+            .collect(
+                Collectors.toConcurrentMap(
+                    CheckpointFile::site, Function.identity(), (first, second) -> second));
+    return new FileSyncCheckpointRepository(directory, checkpoints);
   }
 
   @Override
   public Optional<SyncCheckpoint> find(SiteId siteId) {
-    throw new UnsupportedOperationException("not implemented yet");
+    return Optional.ofNullable(checkpoints.get(siteId)).map(CheckpointFile::toCheckpoint);
+  }
+
+  /** Writes the file first, then replaces the stored snapshot. Saves and deletes are serialised. */
+  @Override
+  public synchronized void save(SyncCheckpoint checkpoint) {
+    CheckpointFile file = CheckpointFile.of(checkpoint);
+    FILES.write(fileOf(checkpoint.siteId()), file);
+    checkpoints.put(checkpoint.siteId(), file);
   }
 
   @Override
-  public void save(SyncCheckpoint checkpoint) {
-    throw new UnsupportedOperationException("not implemented yet");
+  public synchronized void delete(SiteId siteId) {
+    AtomicFile.delete(fileOf(siteId));
+    checkpoints.remove(siteId);
   }
 
-  @Override
-  public void delete(SiteId siteId) {
-    throw new UnsupportedOperationException("not implemented yet");
+  private Path fileOf(SiteId siteId) {
+    return directory.resolve(siteId.value() + ".json");
   }
 }
