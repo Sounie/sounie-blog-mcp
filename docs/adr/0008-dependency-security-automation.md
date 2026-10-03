@@ -33,7 +33,7 @@ sign). The owner chose security updates plus weekly minor/patch bumps, and depen
    Dependabot PRs, and the owner merges.
 3. **Integrity.** `gradle/verification-metadata.xml` holds sha256 checksums (and verifies metadata) for every artifact resolved
    by `check pitest shadowJar jarTest`, including plugins, the PMD and PIT tools and the shadow jar's runtime classpath.
-   Signatures are not verified. The only trust exceptions are `-sources.jar` and `-javadoc.jar`, so IDE source downloads work.
+   Signatures are not verified. The only trust exceptions are `-sources.jar` and `-javadoc.jar`, plus the Gradle distribution's own `gradle-<version>-src.zip` (IntelliJ fetches it during sync for build-script navigation), so IDE source downloads work. None of these is compiled or run.
 4. **Regeneration is automated for Dependabot PRs, with a guard.** Dependabot doesn't update the metadata
    (dependabot-core#1996), so `.github/workflows/dependabot-verification-metadata.yml` does, on Dependabot PRs that change
    `gradle/libs.versions.toml`. No job both runs dependency or plugin code and holds a write token:
