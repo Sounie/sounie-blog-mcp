@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.spotless)
     alias(libs.plugins.pitest)
     alias(libs.plugins.shadow)
+    alias(libs.plugins.spotbugs)
 }
 
 group = "nz.sounie"
@@ -144,6 +145,25 @@ tasks.jacocoTestCoverageVerification {
 }
 
 tasks.check { dependsOn(tasks.jacocoTestCoverageVerification) }
+
+// Security scan (ADR 0008): SpotBugs with FindSecBugs, security findings only, production code only.
+// `check` depends on spotbugsMain through the plugin; any finding fails the build.
+dependencies { spotbugsPlugins(libs.findsecbugs) }
+
+spotbugs {
+    toolVersion = libs.versions.spotbugs.get()
+    ignoreFailures = false
+    includeFilter = file("config/spotbugs/security-include.xml")
+}
+
+tasks.spotbugsMain {
+    reports.create("html") {
+        required = true
+        outputLocation = layout.buildDirectory.file("reports/spotbugs/main.html")
+    }
+}
+
+tasks.spotbugsTest { enabled = false }
 
 spotless {
     java {
