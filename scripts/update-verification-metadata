@@ -44,7 +44,14 @@ refuse_main "${branch:-$(git branch --show-current)}"
 
 if [[ -n "$branch" ]]; then
   scripts/git-remote fetch
-  git checkout "$branch"
+  # Never let git guess and track the remote branch: recording upstream tracking writes .git/config,
+  # which the Claude Code sandbox blocks, and a failed write leaves HEAD on the old branch with the
+  # new branch's files staged.
+  if git show-ref --verify --quiet "refs/heads/$branch"; then
+    git switch --no-guess "$branch"
+  else
+    git switch --no-track -c "$branch" "origin/$branch"
+  fi
   refuse_main "$(git branch --show-current)"
   scripts/git-remote pull
 fi
