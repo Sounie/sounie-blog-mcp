@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.net.URI;
+import nz.sounie.blogmcp.catalog.adapter.out.InMemoryPostRepository;
 import nz.sounie.blogmcp.catalog.domain.site.SiteId;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -82,5 +83,27 @@ class PostReferenceTest {
   @ValueSource(strings = {"ftp://blog2.sounie.nz/hello/", "https://", "https://exa mple.com/"})
   void text_with_a_scheme_that_is_not_an_absolute_http_url_is_invalid(String text) {
     assertThatThrownBy(() -> PostReference.parse(text)).isInstanceOf(InvalidPostReference.class);
+  }
+
+  @Test
+  void a_post_id_reference_finds_the_stored_post() {
+    PostRepository posts = repositoryHolding("https://blog2.sounie.nz/2026/09/20/hello/");
+
+    assertThat(PostReference.parse("sounie-wp:123").lookUpIn(posts))
+        .hasValueSatisfying(post -> assertThat(post.id()).isEqualTo(postId("sounie-wp", "123")));
+  }
+
+  @Test
+  void a_url_reference_finds_the_stored_post_by_its_canonical_url() {
+    PostRepository posts = repositoryHolding("https://blog2.sounie.nz/2026/09/20/hello/");
+
+    assertThat(PostReference.parse("http://blog2.sounie.nz/2026/09/20/hello/").lookUpIn(posts))
+        .hasValueSatisfying(post -> assertThat(post.id()).isEqualTo(postId("sounie-wp", "123")));
+  }
+
+  private static PostRepository repositoryHolding(String url) {
+    InMemoryPostRepository posts = new InMemoryPostRepository();
+    posts.save(PostSnapshotBuilder.aSnapshot().sourcePostId("123").url(url).buildStoredPost());
+    return posts;
   }
 }
