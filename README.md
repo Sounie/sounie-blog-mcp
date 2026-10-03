@@ -88,6 +88,16 @@ claude mcp add --env BLOG_MCP_CONFIG=/path/to/sites.json --transport stdio blog-
 
 Keep another option, such as `--transport stdio`, between `--env` and the server name.
 
+### Compatibility
+
+- **Protocol versions:** 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25, through the MCP Java SDK 2.0.1. A
+  client that asks for any other version is offered 2025-11-25, and the server logs a warning. It never refuses
+  the connection.
+- **Older clients:** each tool result carries structured JSON (`structuredContent`) and the same JSON as text, so
+  clients on 2024-11-05, which predates structured content, can still read it.
+- **Requirements:** the client needs the stdio transport and tools support. The server offers no HTTP transport,
+  resources or prompts.
+
 ## How it runs
 
 - **First start:** the server answers straight away. Search results stay incomplete until the first sync and
