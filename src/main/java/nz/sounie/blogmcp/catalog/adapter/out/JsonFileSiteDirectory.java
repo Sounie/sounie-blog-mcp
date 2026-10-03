@@ -9,17 +9,20 @@ import nz.sounie.blogmcp.catalog.application.SiteDirectory;
 import nz.sounie.blogmcp.catalog.domain.site.SiteDefinition;
 import nz.sounie.blogmcp.catalog.domain.site.SitesConfiguration;
 import nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationMissing;
+import nz.sounie.blogmcp.catalog.domain.site.SyncIntervalSetting;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Loads the sites configuration from a JSON file of the form {@code {"sites": [{"id": "...",
- * "platform": "WORDPRESS", "baseUrl": "https://..."}]}}.
+ * Loads the sites configuration from a JSON file of the form {@code {"syncEveryHours": 24, "sites":
+ * [{"id": "...", "platform": "WORDPRESS", "baseUrl": "https://..."}]}}, where {@code
+ * syncEveryHours} is optional.
  */
 public final class JsonFileSiteDirectory implements SiteDirectory {
 
   private static final String CONFIG_VARIABLE = "BLOG_MCP_CONFIG";
+  private static final String SYNC_INTERVAL_FIELD = "syncEveryHours";
 
   private final Path path;
 
@@ -45,7 +48,24 @@ public final class JsonFileSiteDirectory implements SiteDirectory {
    */
   @Override
   public SitesConfiguration load() {
-    return SitesConfiguration.of(definitionsIn(readJson()));
+    JsonNode root = readJson();
+    return SitesConfiguration.of(definitionsIn(root), syncIntervalIn(root));
+  }
+
+  /**
+   * The raw {@code syncEveryHours}: absent is {@code Omitted}, an integral number is {@code
+   * WholeHours}, anything else is {@code Unparseable} so validation reports it.
+   */
+  private static SyncIntervalSetting syncIntervalIn(JsonNode root) {
+    return Optional.ofNullable(root.get(SYNC_INTERVAL_FIELD))
+        .map(JsonFileSiteDirectory::syncIntervalOf)
+        .orElseGet(SyncIntervalSetting.Omitted::new);
+  }
+
+  private static SyncIntervalSetting syncIntervalOf(JsonNode value) {
+    return value.isIntegralNumber() && value.canConvertToLong()
+        ? new SyncIntervalSetting.WholeHours(value.longValue())
+        : new SyncIntervalSetting.Unparseable(value.toString());
   }
 
   private JsonNode readJson() {

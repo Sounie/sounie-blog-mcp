@@ -2,6 +2,7 @@ package nz.sounie.blogmcp.catalog.domain.site;
 
 import java.util.Objects;
 import java.util.Optional;
+import nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationViolation.Kind;
 
 /**
  * What the sites configuration says about the sync interval ({@code syncEveryHours}), before
@@ -23,12 +24,12 @@ public sealed interface SyncIntervalSetting {
   record Omitted() implements SyncIntervalSetting {
     @Override
     public Optional<SitesConfigurationViolation> violation() {
-      throw new UnsupportedOperationException("not implemented yet (app.md 3.8)");
+      return Optional.empty();
     }
 
     @Override
     public SyncInterval toInterval() {
-      throw new UnsupportedOperationException("not implemented yet (app.md 3.8)");
+      return SyncInterval.DEFAULT;
     }
   }
 
@@ -36,12 +37,18 @@ public sealed interface SyncIntervalSetting {
   record WholeHours(long hours) implements SyncIntervalSetting {
     @Override
     public Optional<SitesConfigurationViolation> violation() {
-      throw new UnsupportedOperationException("not implemented yet (app.md 3.8)");
+      return Optional.of(hours)
+          .filter(value -> value < 1)
+          .map(
+              value ->
+                  new SitesConfigurationViolation(
+                      Kind.INVALID_SYNC_INTERVAL,
+                      "syncEveryHours must be at least 1, got " + value));
     }
 
     @Override
     public SyncInterval toInterval() {
-      throw new UnsupportedOperationException("not implemented yet (app.md 3.8)");
+      return SyncInterval.ofHours(hours);
     }
   }
 
@@ -53,12 +60,15 @@ public sealed interface SyncIntervalSetting {
 
     @Override
     public Optional<SitesConfigurationViolation> violation() {
-      throw new UnsupportedOperationException("not implemented yet (app.md 3.8)");
+      return Optional.of(
+          new SitesConfigurationViolation(
+              Kind.INVALID_SYNC_INTERVAL,
+              "syncEveryHours must be a whole number of hours, at least 1, got " + text));
     }
 
     @Override
     public SyncInterval toInterval() {
-      throw new UnsupportedOperationException("not implemented yet (app.md 3.8)");
+      throw new IllegalStateException("syncEveryHours is not a whole number of hours: " + text);
     }
   }
 }

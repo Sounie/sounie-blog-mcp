@@ -14,6 +14,8 @@ public final class StdoutGuard {
    * @return the captured stdout, for the transport only
    */
   public static PrintStream install() {
-    throw new UnsupportedOperationException("not implemented yet (app.md 3.4)");
+    PrintStream protocol = System.out;
+    System.setOut(System.err);
+    return protocol;
   }
 }

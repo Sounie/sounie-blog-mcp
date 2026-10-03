@@ -2,8 +2,11 @@ package nz.sounie.blogmcp.app;
 
 import java.time.Clock;
 import java.util.Map;
+import nz.sounie.blogmcp.catalog.adapter.out.BlogSources;
 import nz.sounie.blogmcp.catalog.application.BlogSource;
 import nz.sounie.blogmcp.catalog.domain.site.Platform;
+import nz.sounie.blogmcp.search.adapter.out.BgeTokenCounter;
+import nz.sounie.blogmcp.search.adapter.out.OnnxEmbedder;
 import nz.sounie.blogmcp.search.application.QueryEmbedder;
 import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
 import nz.sounie.blogmcp.search.domain.text.TokenCounter;
@@ -24,6 +27,8 @@ public record Adapters(
    * system clock.
    */
   public static Adapters production() {
-    throw new UnsupportedOperationException("not implemented yet (app.md 3.4)");
+    OnnxEmbedder model = new OnnxEmbedder();
+    return new Adapters(
+        BlogSources.overHttp(), model, model, new BgeTokenCounter(), Clock.systemUTC());
   }
 }

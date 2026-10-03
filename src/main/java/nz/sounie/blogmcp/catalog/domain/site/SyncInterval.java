@@ -1,6 +1,7 @@
 package nz.sounie.blogmcp.catalog.domain.site;
 
 import java.time.Duration;
+import java.util.Objects;
 
 /**
  * How long to wait between the end of one sync-and-reconcile run and the start of the next. At
@@ -17,10 +18,13 @@ public record SyncInterval(Duration value) {
    * @throws IllegalArgumentException if the value is shorter than {@link #MINIMUM}
    */
   public SyncInterval {
-    // red: the implementer adds the minimum check (app.md 3.8)
+    Objects.requireNonNull(value, "value");
+    if (value.compareTo(MINIMUM) < 0) {
+      throw new IllegalArgumentException("Sync interval must be at least 1 hour: " + value);
+    }
   }
 
   public static SyncInterval ofHours(long hours) {
-    throw new UnsupportedOperationException("not implemented yet (app.md 3.8)");
+    return new SyncInterval(Duration.ofHours(hours));
   }
 }

@@ -2,6 +2,8 @@ package nz.sounie.blogmcp.app;
 
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Optional;
+import nz.sounie.blogmcp.catalog.adapter.out.JsonFileSiteDirectory;
 
 /**
  * Where the configuration and all state live.
@@ -12,7 +14,14 @@ import java.util.Map;
  */
 public record AppPaths(Path configFile, Path dataDirectory) {
 
+  private static final String DATA_VARIABLE = "BLOG_MCP_DATA";
+
   public static AppPaths resolve(Map<String, String> environment, Path userHome) {
-    throw new UnsupportedOperationException("not implemented yet (app.md 3.4)");
+    return new AppPaths(
+        JsonFileSiteDirectory.resolvePath(environment, userHome),
+        Optional.ofNullable(environment.get(DATA_VARIABLE))
+            .filter(value -> !value.isBlank())
+            .map(Path::of)
+            .orElseGet(() -> userHome.resolve(".local").resolve("share").resolve("blog-mcp")));
   }
 }

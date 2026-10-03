@@ -2,7 +2,7 @@ package nz.sounie.blogmcp.catalog.application;
 
 import java.util.Optional;
 import nz.sounie.blogmcp.catalog.domain.post.InvalidPostReference;
-import nz.sounie.blogmcp.catalog.domain.post.PostId;
+import nz.sounie.blogmcp.catalog.domain.post.PostReference;
 import nz.sounie.blogmcp.catalog.domain.post.PostRepository;
 import nz.sounie.blogmcp.catalog.domain.post.WebAddress;
 
@@ -20,7 +20,7 @@ public final class GetPost {
    * @throws InvalidPostReference if the text is not a post ID
    */
   public Optional<PostView> byId(String postId) {
-    return posts.findById(parsePostId(postId)).map(PostView::of);
+    return PostReference.ById.parse(postId).lookUpIn(posts).map(PostView::of);
   }
 
   /**
@@ -34,20 +34,11 @@ public final class GetPost {
   }
 
   /**
-   * Looks up a post by a reference that is either a post ID or a URL ({@link
-   * nz.sounie.blogmcp.catalog.domain.post.PostReference}).
+   * Looks up a post by a reference that is either a post ID or a URL ({@link PostReference}).
    *
    * @throws InvalidPostReference if the text is neither
    */
   public Optional<PostView> byReference(String reference) {
-    throw new UnsupportedOperationException("not implemented yet (app.md 3.7)");
-  }
-
-  private static PostId parsePostId(String text) {
-    try {
-      return PostId.parse(text);
-    } catch (IllegalArgumentException e) {
-      throw new InvalidPostReference("Not a post ID (<siteId>:<sourcePostId>): '" + text + "'");
-    }
+    return PostReference.parse(reference).lookUpIn(posts).map(PostView::of);
   }
 }
