@@ -6,6 +6,8 @@ pitestCore = "1.30.0"
 pitestJunit5 = "1.2.3"
 googleJavaFormat = "1.36.1"
 jackson = "3.2.3"
+# Jackson 2 arrives only transitively (langchain4j-core); pinned via its BOM for security fixes.
+jackson2 = "2.22.3"
 jsoup = "1.23.2"
 wiremock = "3.13.2"
 pmd = "7.28.0"
@@ -22,6 +24,7 @@ junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher
 assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson2-bom = { module = "com.fasterxml.jackson:jackson-bom", version.ref = "jackson2" }
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 wiremock-standalone = { module = "org.wiremock:wiremock-standalone", version.ref = "wiremock" }
 langchain4j-embeddings-bge-small-en-v15-q = { module = "dev.langchain4j:langchain4j-embeddings-bge-small-en-v15-q", version.ref = "langchain4jBgeSmall" }
