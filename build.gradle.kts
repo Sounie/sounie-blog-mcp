@@ -191,7 +191,10 @@ pitest {
     pitestVersion = pitestCoreVersion
     junit5PluginVersion = pitestJunit5Version
     targetClasses = setOf("nz.sounie.blogmcp.*.domain.*")
-    targetTests = setOf("nz.sounie.blogmcp.*")
+    // Domain mutants are killed by domain tests: each decision is tested where it's made (CLAUDE.md).
+    // Running only those keeps the subprocess, WireMock and file-store tests out of PIT's coverage pass.
+    targetTests = setOf("nz.sounie.blogmcp.*.domain.*")
+    threads = Runtime.getRuntime().availableProcessors()
     mutationThreshold = 80
     timestampedReports = false
     outputFormats = setOf("HTML", "XML")
