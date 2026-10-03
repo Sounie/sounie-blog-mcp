@@ -4,6 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # The Dependabot verification metadata workflow starts CI on its own commit (ADR 0008).
+  workflow_dispatch:
 
 permissions:
   contents: read
