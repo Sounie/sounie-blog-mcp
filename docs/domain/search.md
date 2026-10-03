@@ -83,7 +83,7 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Chunk hit | The similarity of one indexed chunk to the query. | `ChunkHit` |
 | Post match | One post in the results: its post metadata, its **best chunk hit**'s similarity as the post's score, and that chunk's text as the **snippet**. | `PostMatch` |
 | Best chunk | The chunk hit of a post with the highest similarity. If two are equal, the lower chunk index wins. | `IndexedPost.bestMatch(Embedding)` |
-| Snippet | The text of the best chunk, without the title line. It may be empty for a post with an empty body. In this slice it is the whole chunk. Trimming it to about 60 words is a **slice 3** item (Q5). | `PostMatch.snippet()` |
+| Snippet | The first 60 words of the best chunk, without the title line. If the chunk has more words, a trailing ` …` is added and the snippet is marked truncated. It may be empty for a post with an empty body. Trimming was deferred from slice 2 (Q5) and is decided here, in search, rather than in the MCP presenter (slice 3, `docs/domain/app.md` 3.6; proposed, pending owner approval). | `Snippet` (`search.domain.index`), `PostMatch.snippet()` |
 | Search results | The post matches ordered by **ranking** and cut to the limit. | `SearchResults` |
 | Ranking | Order by score, highest first. Ties go to the more recent `publishedAt` first, and then to the lower post ID (compared as a string). | `PostMatch.RANKING` |
 | Search posts | Answer a search query. | `SearchPosts` use case |
@@ -603,6 +603,16 @@ Then the `Unidentified` entry produces no decision, O is **not** removed in that
 And when a later reconcile has no unidentified entry, O is `REMOVED`.
 And given a catalog listing the post ID `sounie-wp:4` twice, the plan contains exactly one `IndexDecision.Unreadable` for it, whose reason mentions "duplicate". Its existing entry is unchanged, it is reported `FAILED`, and every other post is still planned and applied (the reconcile is not aborted).
 
+### Snippet trimming (slice 3; proposed in `docs/domain/app.md`, pending owner approval)
+
+**AC-SRCH-39: A snippet is at most 60 words of the best chunk.**
+Given a best chunk of 300 words `w1 … w300`,
+When a `PostMatch` is built,
+Then its snippet text is `w1 … w60` followed by ` …`, and `truncated()` is true.
+And given a chunk of exactly 60 words, or of 40 words, the snippet is the chunk text unchanged and `truncated()` is false.
+And given an empty chunk (an empty-body post), the snippet is empty.
+(AC-SRCH-23's fixtures use chunks of 60 words or fewer, so its expectation, "the text of its 0.90 chunk", still holds.)
+
 ## 9. Decisions
 
 Model decisions (approved with the model by the owner on 2026-10-02):
@@ -647,7 +657,7 @@ Owner decisions (all resolved 2026-10-02, owner):
   - Moving `CatalogEventListener` onto a single-thread executor would be an adapter-only change.
 - **Q10 (resolved): chunks are cut by word and token counts** (section 3.4), not at sentence or paragraph boundaries.
 
-Slice 3 follow-ups recorded here:
+Slice 3 follow-ups recorded here (all addressed by the slice 3 model, `docs/domain/app.md` and ADR 0007, pending owner approval):
 - file persistence of the index;
 - trimming snippets to about 60 words;
 - revisiting embedding on the sync thread;
