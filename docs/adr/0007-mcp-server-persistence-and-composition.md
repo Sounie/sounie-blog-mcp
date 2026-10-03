@@ -57,6 +57,11 @@ and **3b (server, wiring, scheduler, jar)**.
      data directory it is given. `FileVectorIndex.open(dataDirectory, modelId, recipe)` also takes the current model ID and
      `IndexRecipe`, which the composition root takes from `PostIndexer.recipe()`. The recipe is stored in each index file.
    - **File keys are case-safe:** `FileKey` uses only `[a-z0-9_%-]`, percent-encoding upper case and every other character as UTF-8 in lower-case hex, because macOS APFS is case-insensitive by default.
+   - **A file's location must match its content ID** (3a review). A post, checkpoint or index file whose ID does not map to the
+     `FileKey` path it was found at is unreadable: it is quarantined, and catalog health becomes `DAMAGED`. Duplicate IDs are
+     therefore impossible.
+   - **Every stored file carries `"format": 1`** (post, checkpoint and index).
+   - **Index files:** a missing `modelId` is unreadable (quarantined), not an incompatible model (deleted).
    - **No shared mutable aggregates:** the catalog repositories keep immutable stored snapshots and restore a fresh `Post` or
      `SyncCheckpoint` on every `find`, because tool calls read concurrently with the sync.
    - **Index file:** a JSON file whose vectors are the base64 of 384 little-endian float32 values. That is bit-exact, about 2×
@@ -72,14 +77,21 @@ and **3b (server, wiring, scheduler, jar)**.
      - Damaged index entries are re-added by the reconcile.
    - **Recipes:** recipe changes after a restart are caught by the stored fingerprint (ADR 0005). An index file whose **model ID**
      differs from the current model is not loaded (its vector space is incompatible) and is re-embedded.
-4. **`nz.sounie.blogmcp.shared.storage`: a new JDK-only package** holding `AtomicFile` and `FileKey`, used by both contexts'
-   adapters instead of duplicating them. This extends ADR 0006's description of `shared`, which was "published language", with one
+4. **`nz.sounie.blogmcp.shared.storage`: a new JDK-only package** used by both contexts' adapters instead of duplicating code:
+   - `AtomicFile` writes atomically, renames unreadable files to `.corrupt`, and sweeps `.tmp` files;
+   - `FileKey` names files;
+   - `StoredFiles` (public) finds, sweeps and reads stored JSON files. An I/O error on one file quarantines or skips that file, and
+     never aborts startup.
+
+   A generic helper formats a quarantine log reason from an exception. This extends ADR 0006's description of `shared`, which was "published language", with one
    JDK-only infrastructure package. The existing rule that `shared` depends on no context still holds.
 
 ### Slice 3b (proposed), continued
 5. **Composition root `app`:**
    - **Stdout:** `StdoutGuard` hands the real stdout to the transport and redirects `System.out` to stderr.
    - **Paths:** `AppPaths` resolves the config file and the data directory.
+   - **One process per data directory:** `DataDirectoryLock` takes an exclusive `FileChannel.tryLock` on `<data>/.lock`. If another
+     process holds it, the app exits with status 1, so two servers never collide on `.tmp` names or sweep each other's files (AC-APP-46).
    - **Configuration:** a missing or invalid configuration, or an unwritable data directory, means exit status 1 with a stderr
      message and no server.
    - **DJL cache:** `DjlCacheSetting` sets the system property `DJL_CACHE_DIR` = `<data>/cache/djl` only when neither the
@@ -135,6 +147,11 @@ and **3b (server, wiring, scheduler, jar)**.
   model change, still embeds everything in the background (tens of seconds), while the server answers from whatever is present.
 - **Crash safety:** a crash can lose only the write in progress, never corrupt a stored file. A quarantined file means data loss
   only until the next reconcile.
+- **Known limit: power loss.** The directory is not fsynced, so on Linux the latest rename may not survive a power loss. This is
+  acceptable, because every store can be rebuilt (by sync and reconcile). A best-effort directory fsync is an optional follow-up.
+- **Known limit: file-name length.** A `FileKey` can be up to 3× the ID's length, and file names are capped at about 255 bytes, so a
+  source post ID longer than about 80 escaped characters cannot be saved. Today's IDs are short and numeric; a guard (e.g. hashing
+  over-long keys) can be added later if needed.
 - **ArchUnit additions:**
   - SDK and Reactor types only in `app.mcp`;
   - `shared.storage` uses JDK types only (covered by the existing `shared` rule).

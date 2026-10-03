@@ -1,7 +1,7 @@
 # App: MCP server, persistence and composition (slice 3)
 
 Status:
-- **Slice 3a (persistence): approved by the owner on 2026-10-03.** ACs: AC-APP-24 to 29, 35, 40 and 41 (section 7).
+- **Slice 3a (persistence): approved by the owner on 2026-10-03.** ACs: AC-APP-24 to 29, 35, 40 and 41, plus AC-APP-44 and 45 from the 3a review (section 7).
 - **Slice 3b (MCP server, tools, wiring, scheduler, jar): draft, awaiting the owner's 3b checkpoint.** The owner's decisions so far are recorded in section 9, and what still needs input is listed there.
 
 SDK facts come from MCP Java SDK v2.0.1 (researcher, 2026-10-03). Section 8 marks each item resolved, or still **UNVERIFIED**.
@@ -55,6 +55,8 @@ layers and constructs their adapters. The persistence adapters live in each cont
 | Stdout guard | Keeps stdout for protocol only. At startup, the real stdout is captured and handed to the transport (`StdioServerTransportProvider(mapper, in, out)`), and `System.out` is redirected to stderr. A stray `println`, ours or a library's, therefore can never corrupt the protocol. | `StdoutGuard` (`app`) |
 | End of input | Stdin reaching end of file, meaning Claude has gone away. It is detected by our own wrapper around the stdin stream given to the transport, which then raises the shutdown signal. | `EndOfInputWatch` (`app`) |
 | Shutdown signal | One-shot latch that `Main` waits on. It is released by end of input or by the JVM shutdown hook (SIGTERM or SIGINT), whichever comes first. | `ShutdownSignal` (`app`) |
+| Stored files | The JDK-only helper that finds, sweeps and reads a repository's stored JSON files, for both contexts' file adapters. | `StoredFiles` (`shared.storage`) |
+| Data directory lock | An exclusive `FileChannel.tryLock` on `<data>/.lock`, held for the life of the process. A second server on the same data directory exits with status 1, so two processes never collide on `.tmp` names or sweep each other's files (3b). | `DataDirectoryLock` (`app`) |
 | Atomic file write | Write to a temporary file in the **same directory** (so the same file store), force it to disk, then move it over the target with `ATOMIC_MOVE`. A reader sees either the old file or the new one, never a partial one. | `AtomicFile` (`shared.storage`) |
 | Temporary file | `*.tmp` left behind by a crash mid-write. It is deleted at load, never read. | `AtomicFile.sweep` |
 | Quarantine | Renaming an unreadable file to `<name>.corrupt`, replacing any earlier quarantined copy, and logging one line to stderr with the path, the reason and what happens next. The file's data is then treated as absent. | `AtomicFile.quarantine` |
@@ -170,10 +172,12 @@ flush at shutdown.
 |---|---|---|
 | Atomic write, delete, sweeping temporary files, quarantine | `AtomicFile` (`shared.storage`, JDK only) | It writes `x.json.tmp` in the target's directory, calls `FileChannel.force(true)`, then `Files.move(tmp, x.json, ATOMIC_MOVE)`. With `ATOMIC_MOVE` the JDK ignores other options, and replacing an existing target is "implementation specific". On Linux and macOS it is `rename(2)`, which replaces atomically, but that is UNVERIFIED from source. So AC-APP-41 proves replace-on-move on the CI and development platforms. Forcing the directory to disk is not portable and is not attempted (ADR 0007). `write` creates missing parent directories, and `sweep` walks the directory tree recursively. |
 | Safe file names | `FileKey` (`shared.storage`) | It is a total function: no branching at callers. |
+| Finding, sweeping and reading stored JSON files | `StoredFiles` (`shared.storage`, public, JDK only) | Used by both contexts' file adapters. It lists the stored `*.json` files under a repository's directory, sweeps leftover `.tmp` files, and reads each file's bytes. An I/O error on one file is reported for that file, so the caller quarantines or skips it; it **never aborts startup**. Formatting a quarantine reason from an exception is a small generic helper, owned by `AtomicFile` or `StoredFiles`. |
+| Location matches content | Each file adapter, through `StoredFiles` and `FileKey` | A post, checkpoint or index file whose content ID (`postId`, or `siteId` for a checkpoint) does not map to the `FileKey` path it was found at is **unreadable**: it is quarantined, and for posts, `StorageHealth` becomes `DAMAGED`. So two files can never claim the same ID (AC-APP-44). |
 | Post file format (JSON, `"format": 1`) | `PostFile` (`catalog.adapter.out`, Jackson 3) | Fields: `postId`, `canonicalUrl`, `title`, `body`, `completeness`, `tags`, `publishedAt`, `updatedAt`. Reading goes through the catalog value objects and `Post.restore`, so an invalid value makes the file **unreadable**. |
-| Checkpoint file format | `CheckpointFile` | `siteId`, `changesSeenUpTo?`, `lastReconciledAt?`, then `SyncCheckpoint.restore`. |
+| Checkpoint file format (JSON, `"format": 1`) | `CheckpointFile` | `format`, `siteId`, `changesSeenUpTo?`, `lastReconciledAt?`, then `SyncCheckpoint.restore`. An unknown `format` makes the file unreadable. |
 | Index file format | `IndexFile` (`search.adapter.out`) | `"format": 1`. Instants are ISO-8601 strings, and vectors are float32 little-endian in standard **padded** base64. Fields:<br>• `format`, `postId`, `modelId`, `recipe`, `fingerprint`;<br>• `metadata` {`siteId`, `canonicalUrl`, `title`, `tags`, `publishedAt`, `updatedAt`};<br>• `chunks` [{`index`, `text`, `vector`}], each vector encoded by `VectorCodec`.<br>Read through `IndexedPost.restore`, `IndexedChunk` and `Embedding`, so a wrong vector length, a gap in chunk indexes or a site mismatch makes the file unreadable. |
-| Model compatibility on load | `IndexFileLoader`, returning `IndexFileLoad` (`Loaded`, `IncompatibleModel` or `Unreadable`) | Comparing the stored `modelId` with the current one is one comparison in one place. `FileVectorIndex` acts on each variant: keep it, delete and log it, or quarantine it. |
+| Model compatibility on load | `IndexFileLoader`, returning `IndexFileLoad` (`Loaded`, `IncompatibleModel` or `Unreadable`) | Comparing the stored `modelId` with the current one is one comparison in one place. `FileVectorIndex` acts on each variant: keep it, delete and log it, or quarantine it. A **missing** `modelId` is `Unreadable` (quarantined), not `IncompatibleModel` (deleted). |
 | Unreadable file handling | `FilePostRepository`, `FileSyncCheckpointRepository` and `FileVectorIndex` all call `AtomicFile.quarantine` and continue | Never a crash. Only `FilePostRepository` reports `StorageHealth`. |
 | Startup sync mode after damage | `StorageHealth.startupSyncMode()` | `HEALTHY` gives `INCREMENTAL` (which is still upgraded per site when a reconcile is due). `DAMAGED` gives `RECONCILE`, forcing every site, so a quarantined post is fetched again and re-published. A quarantined checkpoint is simply absent, which already means a full fetch and a due reconcile. |
 
@@ -192,7 +196,9 @@ finds every fingerprint stale and re-embeds each post, rewriting its file. With 
 
 `Main.main(args)` is a straight line:
 1. `StdoutGuard.install()` captures the real `System.out` for the transport, and points `System.out` at stderr.
-2. `AppPaths.resolve(environment, userHome)` gives the config file and the data directory.
+2. `AppPaths.resolve(environment, userHome)` gives the config file and the data directory. `DataDirectoryLock.acquire(dataDirectory)`
+   takes an exclusive lock on `<data>/.lock`. If another process holds it, a stderr message names the directory and the process
+   exits with status 1, without starting the server (AC-APP-46). The lock is held until exit.
 3. Load and validate the configuration (sites and sync interval, 3.8). A missing file (`SitesConfigurationMissing`), an invalid
    configuration (`InvalidSitesConfiguration`, listing all violations) or an unwritable data directory is reported on stderr in
    one clear message, and the process exits with status 1. The MCP server is **not** started.
@@ -588,12 +594,35 @@ Given a table of example `search_posts` and `get_post` argument objects, each la
 When each is parsed by `ToolArguments`,
 Then every schema-valid example is accepted, and every schema-invalid example is rejected. The only exception is the documented leniency: an out-of-range integer `limit` is clamped.
 
+### Persistence (3a, from the 3a review)
+
+**AC-APP-44: A file's location must match its content ID.** (3a)
+Given a well-formed post file whose `postId` is `sounie-wp:2` but which sits at the path for `sounie-wp:1` (or under another site's directory), a checkpoint file whose `siteId` differs from its file name, or an index file whose `postId` does not map to its path,
+When the repository loads,
+Then that file is unreadable: it is quarantined as `.corrupt` with one stderr line, and the post repository reports `DAMAGED`. A correctly placed file with the same ID still loads, so two stored files can never claim the same ID.
+
+**AC-APP-45: Missing model IDs and I/O errors never abort startup.** (3a)
+Given an index file with no `modelId`,
+When `FileVectorIndex` loads,
+Then it is `Unreadable` and quarantined, not deleted as `IncompatibleModel`.
+And given a stored post, checkpoint or index file that cannot be read because of an I/O error (e.g. no read permission),
+When its repository opens,
+Then that file is quarantined, or skipped with one stderr line if it cannot even be renamed, the other files load, and the repository opens normally. Catalog and search behave the same way.
+
+### Single-process data directory (3b)
+
+**AC-APP-46: Only one server per data directory.**
+Given a running server holding the lock on `<data>/.lock`,
+When a second server is started with the same data directory,
+Then the second exits with status 1, a stderr message names the data directory and says another blog-mcp process is using it, nothing goes to its stdout, and the first server's files are untouched (no sweep, no `.tmp` collision).
+And once the first server exits, a new server acquires the lock and starts normally.
+
 ## 7. Slice split (owner decision: split)
 
 | Slice | Status | Scope | ACs |
 |---|---|---|---|
-| **3a, persistence** | **Approved by the owner, 2026-10-03.** It needs no SDK and can start now. | `shared.storage` (`AtomicFile`, `FileKey`); `FilePostRepository` and `FileSyncCheckpointRepository` (`catalog.adapter.out`); `FileVectorIndex`, `IndexFile`, `VectorCodec` and `IndexFileLoader` (`search.adapter.out`); `StorageHealth` | AC-APP-24, 25, 26, 27, 28, 29, 35, 40, 41 |
-| **3b, server** | **Draft. Awaiting the owner's 3b checkpoint** (open items in section 9). | The MCP tools and schemas; `Snippet`; `PostReference`; `SyncInterval` configuration; `Main`; `Wiring`; `StdoutGuard`; `DjlCacheSetting`; the scheduler; shutdown; the shadow jar; the SDK and `slf4j-simple` dependencies | AC-APP-1 to 23, 30 to 34, 36 to 39, 42, 43 (plus AC-SRCH-39) |
+| **3a, persistence** | **Approved by the owner, 2026-10-03.** It needs no SDK and can start now. | `shared.storage` (`AtomicFile`, `FileKey`, `StoredFiles`); `FilePostRepository` and `FileSyncCheckpointRepository` (`catalog.adapter.out`); `FileVectorIndex`, `IndexFile`, `VectorCodec` and `IndexFileLoader` (`search.adapter.out`); `StorageHealth` | AC-APP-24, 25, 26, 27, 28, 29, 35, 40, 41, 44, 45 |
+| **3b, server** | **Draft. Awaiting the owner's 3b checkpoint** (open items in section 9). | The MCP tools and schemas; `Snippet`; `PostReference`; `SyncInterval` configuration; `Main`; `Wiring`; `StdoutGuard`; `DjlCacheSetting`; the scheduler; shutdown; the shadow jar; the SDK and `slf4j-simple` dependencies | AC-APP-1 to 23, 30 to 34, 36 to 39, 42, 43, 46 (plus AC-SRCH-39) |
 
 Notes on the split:
 - **AC-APP-27's second half** ("the startup run then syncs every site in `RECONCILE`") needs the 3b wiring. In 3a it is covered at
