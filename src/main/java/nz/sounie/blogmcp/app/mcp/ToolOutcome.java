@@ -1,7 +1,11 @@
 package nz.sounie.blogmcp.app.mcp;
 
 import io.modelcontextprotocol.json.McpJsonMapper;
+import io.modelcontextprotocol.json.TypeRef;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.util.Map;
 import java.util.Objects;
 
 /** What a tool handler produces. Each variant knows how to become an MCP result. */
@@ -17,7 +21,12 @@ public sealed interface ToolOutcome {
 
     @Override
     public CallToolResult toResult(McpJsonMapper mapper) {
-      throw new UnsupportedOperationException("not implemented yet (app.md 3.1)");
+      Map<String, Object> json = mapper.convertValue(view, new TypeRef<Map<String, Object>>() {});
+      return CallToolResult.builder()
+          .structuredContent(json)
+          .addTextContent(ToolOutcome.asText(mapper, json))
+          .isError(false)
+          .build();
     }
   }
 
@@ -29,7 +38,7 @@ public sealed interface ToolOutcome {
 
     @Override
     public CallToolResult toResult(McpJsonMapper mapper) {
-      throw new UnsupportedOperationException("not implemented yet (app.md 3.1)");
+      return new Answered(Map.of("found", false, "message", message)).toResult(mapper);
     }
   }
 
@@ -41,7 +50,15 @@ public sealed interface ToolOutcome {
 
     @Override
     public CallToolResult toResult(McpJsonMapper mapper) {
-      throw new UnsupportedOperationException("not implemented yet (app.md 3.1)");
+      return CallToolResult.builder().addTextContent(message).isError(true).build();
+    }
+  }
+
+  private static String asText(McpJsonMapper mapper, Map<String, Object> json) {
+    try {
+      return mapper.writeValueAsString(json);
+    } catch (IOException e) {
+      throw new UncheckedIOException("Cannot write a tool result as JSON", e);
     }
   }
 }

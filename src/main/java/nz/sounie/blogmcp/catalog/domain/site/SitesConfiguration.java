@@ -14,22 +14,21 @@ import java.util.stream.Stream;
 public final class SitesConfiguration {
 
   private final List<Site> sites;
+  private final SyncInterval syncInterval;
 
-  private SitesConfiguration(List<Site> sites) {
+  private SitesConfiguration(List<Site> sites, SyncInterval syncInterval) {
     this.sites = List.copyOf(sites);
+    this.syncInterval = syncInterval;
   }
 
   /**
-   * Validates the whole list and reports every violation together.
+   * Validates the whole list and reports every violation together. The sync interval is the
+   * default.
    *
    * @throws InvalidSitesConfiguration listing all violations
    */
   public static SitesConfiguration of(List<SiteDefinition> definitions) {
-    List<SitesConfigurationViolation> violations = violationsIn(definitions);
-    if (!violations.isEmpty()) {
-      throw new InvalidSitesConfiguration(violations);
-    }
-    return new SitesConfiguration(definitions.stream().map(SitesConfiguration::toSite).toList());
+    return of(definitions, new SyncIntervalSetting.Omitted());
   }
 
   /**
@@ -39,12 +38,19 @@ public final class SitesConfiguration {
    */
   public static SitesConfiguration of(
       List<SiteDefinition> definitions, SyncIntervalSetting syncInterval) {
-    throw new UnsupportedOperationException("not implemented yet (app.md 3.8)");
+    List<SitesConfigurationViolation> violations =
+        Stream.concat(violationsIn(definitions).stream(), syncInterval.violation().stream())
+            .toList();
+    if (!violations.isEmpty()) {
+      throw new InvalidSitesConfiguration(violations);
+    }
+    return new SitesConfiguration(
+        definitions.stream().map(SitesConfiguration::toSite).toList(), syncInterval.toInterval());
   }
 
   /** How long to wait between sync-and-reconcile runs. */
   public SyncInterval syncInterval() {
-    throw new UnsupportedOperationException("not implemented yet (app.md 3.8)");
+    return syncInterval;
   }
 
   /** Sites in configuration order. */

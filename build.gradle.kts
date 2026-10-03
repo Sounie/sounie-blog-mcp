@@ -7,6 +7,7 @@ plugins {
 }
 
 group = "nz.sounie"
+version = "0.1.0"
 
 java {
     toolchain { languageVersion = JavaLanguageVersion.of(25) }
@@ -48,6 +49,26 @@ tasks.test {
     systemProperty("DJL_CACHE_DIR", djlCache.get().asFile.absolutePath)
     // DJL loads its tokenizer library through JNA, which calls a restricted JDK method.
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
+// app.md 3.5: one runnable jar, build/libs/blog-mcp-all.jar.
+tasks.shadowJar {
+    archiveBaseName = "blog-mcp"
+    archiveClassifier = "all"
+    archiveVersion = ""
+    // Required: McpJsonDefaults finds mcp-json-jackson3 through ServiceLoader.
+    mergeServiceFiles()
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    // A signed dependency's signatures would not match the merged jar.
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+    manifest {
+        attributes(
+            "Main-Class" to "nz.sounie.blogmcp.app.Main",
+            "Implementation-Version" to project.version.toString(),
+            // JEP 472: DJL (through JNA) and ONNX Runtime call restricted methods.
+            "Enable-Native-Access" to "ALL-UNNAMED",
+        )
+    }
 }
 
 // AC-APP-12: the shadow jar runs as an MCP server under the real client. Separate from `test`

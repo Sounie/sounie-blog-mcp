@@ -1,5 +1,6 @@
 package nz.sounie.blogmcp.search.domain.index;
 
+import java.util.Arrays;
 import java.util.Objects;
 
 /**
@@ -10,12 +11,17 @@ public record Snippet(String text, boolean truncated) {
 
   public static final int MAX_WORDS = 60;
 
+  private static final String ELLIPSIS = " …";
+
   public Snippet {
     Objects.requireNonNull(text, "text");
   }
 
   /** The snippet of a chunk's (already normalised, single-space separated) text. */
   public static Snippet of(String chunkText) {
-    throw new UnsupportedOperationException("not implemented yet (AC-SRCH-39)");
+    String[] words = chunkText.split(" ", MAX_WORDS + 1);
+    return words.length > MAX_WORDS
+        ? new Snippet(String.join(" ", Arrays.copyOf(words, MAX_WORDS)) + ELLIPSIS, true)
+        : new Snippet(chunkText, false);
   }
 }
