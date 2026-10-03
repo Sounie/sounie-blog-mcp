@@ -18,6 +18,7 @@ public record SitesConfigurationViolation(Kind kind, String detail) {
     UNSUPPORTED_PLATFORM,
     BASE_URL_NOT_ABSOLUTE_HTTPS,
     BASE_URL_HAS_QUERY_OR_FRAGMENT,
-    DUPLICATE_BASE_URL
+    DUPLICATE_BASE_URL,
+    INVALID_SYNC_INTERVAL
   }
 }

@@ -32,6 +32,21 @@ public final class SitesConfiguration {
     return new SitesConfiguration(definitions.stream().map(SitesConfiguration::toSite).toList());
   }
 
+  /**
+   * Validates the sites and the sync interval setting, and reports every violation together.
+   *
+   * @throws InvalidSitesConfiguration listing all violations
+   */
+  public static SitesConfiguration of(
+      List<SiteDefinition> definitions, SyncIntervalSetting syncInterval) {
+    throw new UnsupportedOperationException("not implemented yet (app.md 3.8)");
+  }
+
+  /** How long to wait between sync-and-reconcile runs. */
+  public SyncInterval syncInterval() {
+    throw new UnsupportedOperationException("not implemented yet (app.md 3.8)");
+  }
+
   /** Sites in configuration order. */
   public List<Site> sites() {
     return sites;

@@ -72,7 +72,7 @@ class SearchPostsTest {
         .containsExactly("sounie-wp:1", "elegant:2");
     assertThat(matches.get(0).score().value()).isCloseTo(0.90, within(1e-6));
     assertThat(matches.get(1).score().value()).isCloseTo(0.85, within(1e-6));
-    assertThat(matches.get(0).snippet()).isEqualTo(chunkText(a.id(), 0));
+    assertThat(matches.get(0).snippet().text()).isEqualTo(chunkText(a.id(), 0));
   }
 
   @Test

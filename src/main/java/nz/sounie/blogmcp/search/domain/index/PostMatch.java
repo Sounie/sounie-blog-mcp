@@ -6,8 +6,8 @@ import nz.sounie.blogmcp.search.domain.embedding.Similarity;
 import nz.sounie.blogmcp.search.domain.post.PostId;
 import nz.sounie.blogmcp.search.domain.post.PostMetadata;
 
-/** One post in the results: its metadata, its best chunk's similarity, and that chunk's text. */
-public record PostMatch(PostId postId, PostMetadata metadata, Similarity score, String snippet) {
+/** One post in the results: its metadata, its best chunk's similarity, and that chunk's snippet. */
+public record PostMatch(PostId postId, PostMetadata metadata, Similarity score, Snippet snippet) {
 
   /** Score descending, then more recent published-at, then post ID ascending (as a string). */
   public static final Comparator<PostMatch> RANKING =

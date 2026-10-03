@@ -33,6 +33,16 @@ public final class GetPost {
     return posts.findByCanonicalUrl(WebAddress.parse(url).asHttps()).map(PostView::of);
   }
 
+  /**
+   * Looks up a post by a reference that is either a post ID or a URL ({@link
+   * nz.sounie.blogmcp.catalog.domain.post.PostReference}).
+   *
+   * @throws InvalidPostReference if the text is neither
+   */
+  public Optional<PostView> byReference(String reference) {
+    throw new UnsupportedOperationException("not implemented yet (app.md 3.7)");
+  }
+
   private static PostId parsePostId(String text) {
     try {
       return PostId.parse(text);

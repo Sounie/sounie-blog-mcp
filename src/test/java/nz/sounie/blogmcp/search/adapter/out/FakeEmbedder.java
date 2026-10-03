@@ -28,6 +28,7 @@ public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
   private volatile Embedding assignedQuery;
   private volatile Predicate<List<Passage>> failWhen = passages -> false;
   private volatile int countAdjustment;
+  private volatile boolean queriesFail;
 
   public FakeEmbedder() {
     this("fake-model");
@@ -58,6 +59,9 @@ public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
   @Override
   public Embedding embedQuery(QueryPassage query) {
     queries.add(query);
+    if (queriesFail) {
+      throw new EmbedderUnavailable("fake embedder failure");
+    }
     if (assignedQuery != null) {
       return assignedQuery;
     }
@@ -107,7 +111,15 @@ public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
     return failWhen(passages -> passages.stream().anyMatch(p -> p.text().contains(marker)));
   }
 
+  /** Fails every {@code embedQuery} call, until {@link #working()}. */
+  public FakeEmbedder failingQueries() {
+    this.queriesFail = true;
+    return this;
+  }
+
+  /** Embeds passages and queries normally again. */
   public FakeEmbedder working() {
+    this.queriesFail = false;
     return failWhen(passages -> false);
   }
 
