@@ -53,6 +53,10 @@ and **3b (server, wiring, scheduler, jar)**.
      `catalog/posts/<site>/<key>.json`, `catalog/checkpoints/<site>.json`, `search/index/<site>/<key>.json` and `cache/djl/`.
    - **Adapters:** `FilePostRepository` and `FileSyncCheckpointRepository` (`catalog.adapter.out`, Jackson 3), and
      `FileVectorIndex` (`search.adapter.out`). Each loads every file at startup, then is write-through, with lookups served from memory.
+   - **Each file repository owns its sub-directory** (`catalog/posts`, `catalog/checkpoints`, `search/index`), resolved from the
+     data directory it is given. `FileVectorIndex.open(dataDirectory, modelId, recipe)` also takes the current model ID and
+     `IndexRecipe`, which the composition root takes from `PostIndexer.recipe()`. The recipe is stored in each index file.
+   - **File keys are case-safe:** `FileKey` uses only `[a-z0-9_%-]`, percent-encoding upper case and every other character as UTF-8 in lower-case hex, because macOS APFS is case-insensitive by default.
    - **No shared mutable aggregates:** the catalog repositories keep immutable stored snapshots and restore a fresh `Post` or
      `SyncCheckpoint` on every `find`, because tool calls read concurrently with the sync.
    - **Index file:** a JSON file whose vectors are the base64 of 384 little-endian float32 values. That is bit-exact, about 2×

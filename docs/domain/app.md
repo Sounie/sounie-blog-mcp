@@ -58,11 +58,11 @@ layers and constructs their adapters. The persistence adapters live in each cont
 | Atomic file write | Write to a temporary file in the **same directory** (so the same file store), force it to disk, then move it over the target with `ATOMIC_MOVE`. A reader sees either the old file or the new one, never a partial one. | `AtomicFile` (`shared.storage`) |
 | Temporary file | `*.tmp` left behind by a crash mid-write. It is deleted at load, never read. | `AtomicFile.sweep` |
 | Quarantine | Renaming an unreadable file to `<name>.corrupt`, replacing any earlier quarantined copy, and logging one line to stderr with the path, the reason and what happens next. The file's data is then treated as absent. | `AtomicFile.quarantine` |
-| Storage health | Whether loading found any unreadable catalog file: `HEALTHY` or `DAMAGED`. `DAMAGED` makes the startup job sync in `RECONCILE` mode, so the lost posts are fetched again. | `StorageHealth` (enum with `startupSyncMode()`) |
-| File key | The file-name form of an identifier: every character outside `[A-Za-z0-9_-]` is percent-encoded, so names are safe on every file system and cannot contain path separators or `..`. | `FileKey` (`shared.storage`) |
+| Storage health | Whether loading found any unreadable **post** file: `HEALTHY` or `DAMAGED`. Only `FilePostRepository` reports it; a quarantined checkpoint is simply absent, which already means a full fetch. `DAMAGED` makes the startup job sync in `RECONCILE` mode, so the lost posts are fetched again. | `StorageHealth` (enum with `startupSyncMode()`) |
+| File key | The file-name form of an identifier. Keys use only `[a-z0-9_%-]`. Upper-case letters and every other character are percent-encoded as UTF-8 bytes with **lower-case** hex (`A` → `%41`, `/` → `%2f`, `ü` → `%c3%bc`). This makes keys **case-safe** on case-insensitive file systems (macOS APFS by default), and they cannot contain path separators or `..` (lead decision, 3a). | `FileKey` (`shared.storage`) |
 | Stored snapshot | The immutable form that a file repository keeps in memory and on disk. Every `find` restores a **fresh** aggregate from it, so no two threads ever share one mutable `Post` or `SyncCheckpoint`. | `PostFile`, `CheckpointFile` (`catalog.adapter.out`) |
 | Vector encoding | A chunk's embedding stored as the base64 of 384 little-endian IEEE-754 float32 values (1,536 bytes). It round-trips bit-exactly. | `VectorCodec` (`search.adapter.out`) |
-| Model compatibility | An index file whose stored model ID differs from the current `PassageEmbedder.modelId()` is not loaded: its vectors are in a different space. It is deleted and logged, and the reconcile re-adds the post. | `IndexFileLoader` (`search.adapter.out`) |
+| Model compatibility | An index file whose stored model ID differs from the current `PassageEmbedder.modelId()` is not loaded: its vectors are in a different space. It is deleted and logged, and the reconcile re-adds the post. | `IndexFileLoader` (`search.adapter.out`), returning `IndexFileLoad` (sealed: `Loaded`, `IncompatibleModel`, `Unreadable`) |
 | Sync-and-reconcile job | One background run: `SyncAllSites.run(mode)` and then `ReconcileIndex.run()`, in sequence on one thread. Each step's failure is caught and logged, and the reconcile runs even if the sync step threw. | `SyncAndReconcile` (`app`) |
 | Job timer | Our own port that runs a job now and then repeatedly with a **fixed delay** (the sync interval) between the end of one run and the start of the next, on one thread. Runs therefore never overlap. | `JobTimer` (port, `app`), `ExecutorJobTimer` (production) |
 | Shutdown sequence | An ordered list of close steps, each isolated so that one failure does not stop the rest:<br>1. stop the job timer and wait up to 5 s for a running job;<br>2. `McpSyncServer.closeGracefully()`;<br>3. close the tokenizer (`HuggingFaceTokenizer.close()`, which is idempotent).<br>It runs once even if triggered twice. | `ShutdownSequence` (`app`) |
@@ -148,6 +148,11 @@ search/index/<siteId>/<FileKey(postId external form)>.json
 cache/djl/
 ```
 
+**Each file repository owns its own sub-directory** (lead decision, 3a). It is opened on the data directory, and resolves
+`catalog/posts`, `catalog/checkpoints` or `search/index` itself, so the composition root passes only the data directory.
+`FileVectorIndex.open(dataDirectory, modelId, recipe)` also takes the current model ID and `IndexRecipe`; the composition root passes
+`PostIndexer.recipe()`. The recipe is written into each index file, and the model ID is used for model compatibility.
+
 **One file per aggregate** (post, checkpoint, indexed post). Every save is an atomic file write of one small file. A single
 file for everything would rewrite megabytes for each changed post: about 230 rewrites during a first sync. Each repository loads every
 file into a concurrent in-memory map at startup, and is then **write-through**: the file is written first, then the map is updated.
@@ -163,13 +168,13 @@ flush at shutdown.
 
 | Decision | Owner | Notes |
 |---|---|---|
-| Atomic write, delete, sweeping temporary files, quarantine | `AtomicFile` (`shared.storage`, JDK only) | It writes `x.json.tmp` in the target's directory, calls `FileChannel.force(true)`, then `Files.move(tmp, x.json, ATOMIC_MOVE)`. With `ATOMIC_MOVE` the JDK ignores other options, and replacing an existing target is "implementation specific". On Linux and macOS it is `rename(2)`, which replaces atomically, but that is UNVERIFIED from source. So AC-APP-41 proves replace-on-move on the CI and development platforms. Forcing the directory to disk is not portable and is not attempted (ADR 0007). |
+| Atomic write, delete, sweeping temporary files, quarantine | `AtomicFile` (`shared.storage`, JDK only) | It writes `x.json.tmp` in the target's directory, calls `FileChannel.force(true)`, then `Files.move(tmp, x.json, ATOMIC_MOVE)`. With `ATOMIC_MOVE` the JDK ignores other options, and replacing an existing target is "implementation specific". On Linux and macOS it is `rename(2)`, which replaces atomically, but that is UNVERIFIED from source. So AC-APP-41 proves replace-on-move on the CI and development platforms. Forcing the directory to disk is not portable and is not attempted (ADR 0007). `write` creates missing parent directories, and `sweep` walks the directory tree recursively. |
 | Safe file names | `FileKey` (`shared.storage`) | It is a total function: no branching at callers. |
 | Post file format (JSON, `"format": 1`) | `PostFile` (`catalog.adapter.out`, Jackson 3) | Fields: `postId`, `canonicalUrl`, `title`, `body`, `completeness`, `tags`, `publishedAt`, `updatedAt`. Reading goes through the catalog value objects and `Post.restore`, so an invalid value makes the file **unreadable**. |
 | Checkpoint file format | `CheckpointFile` | `siteId`, `changesSeenUpTo?`, `lastReconciledAt?`, then `SyncCheckpoint.restore`. |
-| Index file format | `IndexFile` (`search.adapter.out`) | Fields:<br>• `format`, `postId`, `modelId`, `recipe`, `fingerprint`;<br>• `metadata` {`siteId`, `canonicalUrl`, `title`, `tags`, `publishedAt`, `updatedAt`};<br>• `chunks` [{`index`, `text`, `vector`}], each vector encoded by `VectorCodec`.<br>Read through `IndexedPost.restore`, `IndexedChunk` and `Embedding`, so a wrong vector length, a gap in chunk indexes or a site mismatch makes the file unreadable. |
-| Model compatibility on load | `IndexFileLoader` | Comparing the stored `modelId` with the current one is one comparison in one place. |
-| Unreadable file handling | `FilePostRepository`, `FileSyncCheckpointRepository` and `FileVectorIndex` all call `AtomicFile.quarantine` and continue | Never a crash. The catalog repositories report `StorageHealth`. |
+| Index file format | `IndexFile` (`search.adapter.out`) | `"format": 1`. Instants are ISO-8601 strings, and vectors are float32 little-endian in standard **padded** base64. Fields:<br>• `format`, `postId`, `modelId`, `recipe`, `fingerprint`;<br>• `metadata` {`siteId`, `canonicalUrl`, `title`, `tags`, `publishedAt`, `updatedAt`};<br>• `chunks` [{`index`, `text`, `vector`}], each vector encoded by `VectorCodec`.<br>Read through `IndexedPost.restore`, `IndexedChunk` and `Embedding`, so a wrong vector length, a gap in chunk indexes or a site mismatch makes the file unreadable. |
+| Model compatibility on load | `IndexFileLoader`, returning `IndexFileLoad` (`Loaded`, `IncompatibleModel` or `Unreadable`) | Comparing the stored `modelId` with the current one is one comparison in one place. `FileVectorIndex` acts on each variant: keep it, delete and log it, or quarantine it. |
+| Unreadable file handling | `FilePostRepository`, `FileSyncCheckpointRepository` and `FileVectorIndex` all call `AtomicFile.quarantine` and continue | Never a crash. Only `FilePostRepository` reports `StorageHealth`. |
 | Startup sync mode after damage | `StorageHealth.startupSyncMode()` | `HEALTHY` gives `INCREMENTAL` (which is still upgraded per site when a reconcile is due). `DAMAGED` gives `RECONCILE`, forcing every site, so a quarantined post is fetched again and re-published. A quarantined checkpoint is simply absent, which already means a full fetch and a due reconcile. |
 
 **Why JSON with base64 float32 for the index**, rather than JSON number arrays or a separate binary file:
@@ -532,9 +537,9 @@ And the jar contains `Main-Class`, `Enable-Native-Access: ALL-UNNAMED`, the ONNX
 ### Persistence (3a, approved), continued
 
 **AC-APP-35: File keys are safe.**
-Given the IDs `123`, `a/b`, `..`, `x:y` and `ü`,
+Given the IDs `123`, `a/b`, `..`, `x:y`, `ü`, `Abc` and `abc`,
 When `FileKey` encodes them,
-Then each result contains only `[A-Za-z0-9_%-]`, two different IDs never map to the same key, and `..` cannot appear as a path segment.
+Then each result contains only `[a-z0-9_%-]`, with every other character percent-encoded as UTF-8 bytes in lower-case hex (e.g. `a/b` → `a%2fb`, `ü` → `%c3%bc`, `Abc` → `%41bc`). Two different IDs never map to the same key, **even compared case-insensitively** (`Abc` and `abc` stay distinct on APFS), and `..` cannot appear as a path segment.
 
 ### Sync interval configuration (3b; owner decision, 2026-10-03)
 
