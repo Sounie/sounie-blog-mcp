@@ -88,6 +88,28 @@ class GetPostTest {
   }
 
   @ParameterizedTest
+  @ValueSource(strings = {"sounie-wp:123", "http://BLOG2.sounie.nz/2026/09/20/hello#comments"})
+  @DisplayName("app.md 3.7: a reference finds the post by ID or by URL")
+  void returns_the_post_by_reference(String reference) {
+    assertThat(getPost.byReference(reference))
+        .hasValueSatisfying(view -> assertThat(view.postId()).isEqualTo("sounie-wp:123"));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"sounie-wp:999", "https://blog2.sounie.nz/nope/"})
+  @DisplayName("app.md 3.7: a well-formed reference to no stored post returns empty")
+  void unknown_reference_returns_empty(String reference) {
+    assertThat(getPost.byReference(reference)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("app.md 3.7: a malformed reference is an invalid reference")
+  void malformed_reference_is_rejected() {
+    assertThatThrownBy(() -> getPost.byReference("not-an-id"))
+        .isInstanceOf(InvalidPostReference.class);
+  }
+
+  @ParameterizedTest
   @ValueSource(strings = {"not a url"})
   @DisplayName("AC-CAT-31: text that is not an absolute http(s) URL is an invalid reference")
   void text_that_is_not_a_url_is_rejected(String text) {

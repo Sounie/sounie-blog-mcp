@@ -65,6 +65,43 @@ class SitesConfigurationTest {
   }
 
   @Test
+  @DisplayName("AC-APP-10: the configuration carries the sync interval it was given")
+  void holds_the_sync_interval() {
+    SitesConfiguration configuration =
+        SitesConfiguration.of(
+            List.of(TestSites.SOUNIE_WP_DEFINITION), new SyncIntervalSetting.WholeHours(6));
+
+    assertThat(configuration.syncInterval()).isEqualTo(SyncInterval.ofHours(6));
+  }
+
+  @Test
+  @DisplayName("AC-APP-10: a configuration without a setting syncs every 24 hours")
+  void defaults_the_sync_interval_when_omitted() {
+    SitesConfiguration configuration =
+        SitesConfiguration.of(
+            List.of(TestSites.SOUNIE_WP_DEFINITION), new SyncIntervalSetting.Omitted());
+
+    assertThat(configuration.syncInterval()).isEqualTo(SyncInterval.DEFAULT);
+  }
+
+  @Test
+  @DisplayName("AC-APP-8: an invalid interval is reported together with the site violations")
+  void reports_the_interval_violation_with_the_others() {
+    List<SiteDefinition> definitions =
+        List.of(new SiteDefinition("blog", "WORDPRESS", "http://blog2.sounie.nz"));
+
+    InvalidSitesConfiguration failure =
+        catchThrowableOfType(
+            InvalidSitesConfiguration.class,
+            () -> SitesConfiguration.of(definitions, new SyncIntervalSetting.WholeHours(0)));
+
+    assertThat(failure).as("InvalidSitesConfiguration raised").isNotNull();
+    assertThat(failure.violations())
+        .extracting(SitesConfigurationViolation::kind)
+        .containsExactlyInAnyOrder(BASE_URL_NOT_ABSOLUTE_HTTPS, Kind.INVALID_SYNC_INTERVAL);
+  }
+
+  @Test
   @DisplayName("AC-CAT-25: an empty site list is invalid")
   void an_empty_site_list_is_invalid() {
     assertThat(violationKinds(List.of())).containsExactly(NO_SITES);

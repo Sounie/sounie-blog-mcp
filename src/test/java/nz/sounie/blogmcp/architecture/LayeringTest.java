@@ -219,6 +219,20 @@ class LayeringTest {
           .resideInAPackage("nz.sounie.blogmcp.shared.storage..")
           .allowEmptyShould(true);
 
+  // ADR 0007: the MCP Java SDK (and the Reactor types it exposes) is wrapped by app.mcp only, so
+  // the composition root builds the server through a factory there and never imports the SDK.
+  @ArchTest
+  static final ArchRule only_app_mcp_uses_the_mcp_sdk =
+      noClasses()
+          .that()
+          .resideInAPackage("nz.sounie.blogmcp..")
+          .and()
+          .resideOutsideOfPackage("nz.sounie.blogmcp.app.mcp..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage("io.modelcontextprotocol..", "reactor..")
+          .allowEmptyShould(true);
+
   // search.md section 6: search translates the published language at its adapters (anti-corruption
   // layer), so neither its domain nor its application layer sees `shared` types.
   @ArchTest

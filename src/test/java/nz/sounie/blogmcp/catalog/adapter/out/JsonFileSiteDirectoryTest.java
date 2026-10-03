@@ -2,6 +2,7 @@ package nz.sounie.blogmcp.catalog.adapter.out;
 
 import static nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationViolation.Kind.BASE_URL_NOT_ABSOLUTE_HTTPS;
 import static nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationViolation.Kind.DUPLICATE_SITE_ID;
+import static nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationViolation.Kind.INVALID_SYNC_INTERVAL;
 import static nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationViolation.Kind.UNSUPPORTED_PLATFORM;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -15,10 +16,13 @@ import nz.sounie.blogmcp.catalog.domain.site.InvalidSitesConfiguration;
 import nz.sounie.blogmcp.catalog.domain.site.SitesConfiguration;
 import nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationMissing;
 import nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationViolation;
+import nz.sounie.blogmcp.catalog.domain.site.SyncInterval;
 import nz.sounie.blogmcp.catalog.domain.site.TestSites;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class JsonFileSiteDirectoryTest {
 
@@ -83,6 +87,62 @@ class JsonFileSiteDirectoryTest {
     SitesConfiguration configuration = new JsonFileSiteDirectory(file).load();
 
     assertThat(configuration.sites()).containsExactly(TestSites.SOUNIE_WP, TestSites.ELEGANT);
+  }
+
+  @Test
+  @DisplayName("AC-APP-10: without syncEveryHours the interval is 24 hours")
+  void an_absent_sync_interval_is_the_default() throws IOException {
+    Path file =
+        write(
+            """
+            {"sites": [
+              {"id": "sounie-wp", "platform": "WORDPRESS", "baseUrl": "https://blog2.sounie.nz"}
+            ]}
+            """);
+
+    assertThat(new JsonFileSiteDirectory(file).load().syncInterval())
+        .isEqualTo(SyncInterval.DEFAULT);
+  }
+
+  @Test
+  @DisplayName("AC-APP-10: syncEveryHours sets the interval in whole hours")
+  void reads_the_sync_interval_in_hours() throws IOException {
+    Path file =
+        write(
+            """
+            {"syncEveryHours": 6,
+             "sites": [
+              {"id": "sounie-wp", "platform": "WORDPRESS", "baseUrl": "https://blog2.sounie.nz"}
+            ]}
+            """);
+
+    assertThat(new JsonFileSiteDirectory(file).load().syncInterval())
+        .isEqualTo(SyncInterval.ofHours(6));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"0", "\"24\"", "24.5", "true", "null", "{}", "[24]"})
+  @DisplayName("AC-APP-8: a syncEveryHours that is not a whole number of at least 1 is a violation")
+  void an_invalid_sync_interval_is_reported_with_the_other_violations(String raw)
+      throws IOException {
+    Path file =
+        write(
+            """
+            {"syncEveryHours": %s,
+             "sites": [
+              {"id": "sounie-wp", "platform": "WORDPRESS", "baseUrl": "http://blog2.sounie.nz"}
+            ]}
+            """
+                .formatted(raw));
+
+    InvalidSitesConfiguration failure =
+        catchThrowableOfType(
+            InvalidSitesConfiguration.class, () -> new JsonFileSiteDirectory(file).load());
+
+    assertThat(failure).as("InvalidSitesConfiguration raised").isNotNull();
+    assertThat(failure.violations())
+        .extracting(SitesConfigurationViolation::kind)
+        .containsExactlyInAnyOrder(INVALID_SYNC_INTERVAL, BASE_URL_NOT_ABSOLUTE_HTTPS);
   }
 
   @Test

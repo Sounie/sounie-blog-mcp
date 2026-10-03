@@ -3,6 +3,7 @@ plugins {
     jacoco
     alias(libs.plugins.spotless)
     alias(libs.plugins.pitest)
+    alias(libs.plugins.shadow)
 }
 
 group = "nz.sounie"
@@ -17,6 +18,9 @@ dependencies {
     implementation(libs.jackson.databind)
     implementation(libs.jsoup)
     implementation(libs.langchain4j.embeddings.bge.small.en.v15.q)
+    implementation(libs.mcp.core)
+    implementation(libs.mcp.json.jackson3)
+    runtimeOnly(libs.slf4j.simple)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
@@ -30,15 +34,38 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
 }
 
+// The server-process tests (app.md section 6) start Main in a subprocess on this classpath.
+val mainRuntimeClasspath: FileCollection = sourceSets.main.get().runtimeClasspath
+
 tasks.test {
-    useJUnitPlatform()
+    // AC-APP-12's jar tests need the shadow jar; they run in `jarTest` instead.
+    useJUnitPlatform { excludeTags("jar") }
     finalizedBy(tasks.jacocoTestReport)
+    doFirst { systemProperty("blogmcp.runtimeClasspath", mainRuntimeClasspath.asPath) }
     // ADR 0005: DJL extracts its native tokenizer library to ~/.djl.ai by default, which the sandbox
     // cannot write. DJL 0.36.0 reads DJL_CACHE_DIR as an environment variable or system property.
     val djlCache = layout.buildDirectory.dir("djl-cache")
     systemProperty("DJL_CACHE_DIR", djlCache.get().asFile.absolutePath)
     // DJL loads its tokenizer library through JNA, which calls a restricted JDK method.
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
+// AC-APP-12: the shadow jar runs as an MCP server under the real client. Separate from `test`
+// because it needs the ~130 MB jar and the real model.
+val jarTest by tasks.registering(Test::class) {
+    group = "verification"
+    description = "Runs the shadow jar as an MCP server under the real MCP client (AC-APP-12)."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("jar") }
+    val shadowJarFile = tasks.shadowJar.flatMap { it.archiveFile }
+    inputs.file(shadowJarFile)
+    systemProperty(
+        "DJL_CACHE_DIR",
+        layout.buildDirectory.dir("djl-cache").get().asFile.absolutePath,
+    )
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
+    doFirst { systemProperty("blogmcp.shadowJar", shadowJarFile.get().asFile.absolutePath) }
 }
 
 // Complexity budget (ADR 0004): keeps execution paths per method small, so each type needs few

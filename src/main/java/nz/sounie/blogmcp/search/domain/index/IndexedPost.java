@@ -73,7 +73,10 @@ public final class IndexedPost {
     return chunks.stream()
         .map(chunk -> chunk.hitFor(query))
         .min(ChunkHit.BEST_FIRST)
-        .map(best -> new PostMatch(id, metadata, best.similarity(), best.text()));
+        // red (AC-SRCH-39): the implementer replaces this pass-through with Snippet.of(best.text())
+        .map(
+            best ->
+                new PostMatch(id, metadata, best.similarity(), new Snippet(best.text(), false)));
   }
 
   public PostId id() {

@@ -13,6 +13,7 @@ import java.util.stream.Stream;
 import nz.sounie.blogmcp.search.domain.embedding.Similarity;
 import nz.sounie.blogmcp.search.domain.index.PostMatch;
 import nz.sounie.blogmcp.search.domain.index.PostToIndexBuilder;
+import nz.sounie.blogmcp.search.domain.index.Snippet;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -23,7 +24,8 @@ class SearchResultsTest {
 
   private static PostMatch match(String id, double score, Instant publishedAt) {
     PostToIndexBuilder post = aPost().id(id).publishedAt(publishedAt);
-    return new PostMatch(post.postId(), post.metadata(), new Similarity(score), id + " snippet");
+    return new PostMatch(
+        post.postId(), post.metadata(), new Similarity(score), new Snippet(id + " snippet", false));
   }
 
   private static List<String> ids(SearchResults results) {

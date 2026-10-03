@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.within;
 import java.util.List;
 import nz.sounie.blogmcp.search.domain.embedding.Vectors;
 import nz.sounie.blogmcp.search.domain.post.PostMetadata;
+import nz.sounie.blogmcp.search.domain.text.Words;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -81,7 +82,7 @@ class IndexedPostTest {
       PostMatch match = a.bestMatch(Vectors.query()).orElseThrow();
 
       assertThat(match.score().value()).isCloseTo(0.90, within(1e-6));
-      assertThat(match.snippet()).isEqualTo(chunkText(post.id(), 1));
+      assertThat(match.snippet().text()).isEqualTo(chunkText(post.id(), 1));
       assertThat(match.postId()).isEqualTo(post.id());
       assertThat(match.metadata()).isEqualTo(post.metadata());
     }
@@ -97,8 +98,25 @@ class IndexedPostTest {
               Vectors.atSimilarity(0.85, 2),
               Vectors.atSimilarity(0.85, 3));
 
-      assertThat(a.bestMatch(Vectors.query()).orElseThrow().snippet())
+      assertThat(a.bestMatch(Vectors.query()).orElseThrow().snippet().text())
           .isEqualTo(chunkText(post.id(), 1));
+    }
+
+    @Test
+    @DisplayName("AC-SRCH-39: the match's snippet is the best chunk's snippet, not the whole chunk")
+    void the_snippet_is_cut_from_the_best_chunk() {
+      String longChunk = Words.numbered(300);
+      IndexedPost a =
+          IndexedPost.restore(
+              post.id(),
+              post.metadata(),
+              STORED,
+              List.of(new IndexedChunk(0, longChunk, Vectors.atSimilarity(0.9))));
+
+      PostMatch match = a.bestMatch(Vectors.query()).orElseThrow();
+
+      assertThat(match.snippet()).isEqualTo(Snippet.of(longChunk));
+      assertThat(match.snippet().truncated()).isTrue();
     }
 
     @Test
