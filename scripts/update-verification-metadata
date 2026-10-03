@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Regenerates gradle/verification-metadata.xml (ADR 0008), typically for a Dependabot PR that fails
-# CI on dependency verification, then commits and pushes it.
+# Regenerates gradle/verification-metadata.xml (ADR 0008), then commits and pushes it.
 #
-# New component versions and dropped ones are fine. A changed or added sha256 for an artifact that
-# already had one is a supply-chain alarm: the script reports it, restores the old file and stops
-# without committing.
+# Dependabot PRs normally get this from .github/workflows/dependabot-verification-metadata.yml; the
+# script is for manual cases. scripts/verification-checksum-guard decides what's acceptable: on an
+# alarm the script restores the old file and stops without committing.
 #
 # Usage:
 #   scripts/update-verification-metadata [--no-push] [<branch>]
@@ -56,35 +55,15 @@ if [[ -n "$branch" ]]; then
   scripts/git-remote pull
 fi
 
-# One line per artifact: "group:name:version artifact sha256[,also-trusted...]". Gradle writes one
-# element per line. On a mismatch, --write-verification-metadata keeps the old sha256 and adds the
-# new one as <also-trust>, so those count as checksums too.
-checksums() {
-  awk -F'"' '
-    /<component /                { component = $2 ":" $4 ":" $6 }
-    /<artifact /                 { artifact = $2 }
-    /<sha256 / || /<also-trust / { key = component " " artifact; sums[key] = (key in sums) ? sums[key] "," $2 : $2 }
-    END                          { for (key in sums) print key, sums[key] }
-  ' "$1"
-}
-
-# Temp files rather than process substitution, which the Claude Code sandbox blocks. An explicit
+# Temp file rather than process substitution, which the Claude Code sandbox blocks. An explicit
 # template, because macOS mktemp otherwise ignores $TMPDIR, which is the only temp dir the sandbox allows.
-tmp="${TMPDIR:-/tmp}"
-old="$(mktemp "$tmp/verification-metadata.XXXXXX")"
-old_sums="$(mktemp "$tmp/verification-metadata.XXXXXX")"
-new_sums="$(mktemp "$tmp/verification-metadata.XXXXXX")"
-trap 'rm -f "$old" "$old_sums" "$new_sums"' EXIT
+old="$(mktemp "${TMPDIR:-/tmp}/verification-metadata.XXXXXX")"
+trap 'rm -f "$old"' EXIT
 cp "$metadata" "$old"
 
 restore() {
   cp "$old" "$metadata"
 }
-
-if [[ -z "$(checksums "$old")" ]]; then
-  echo "No checksums found in $metadata; refusing to continue" >&2
-  exit 1
-fi
 
 # The tasks CI runs, plus the shadow jar and its test, so every configuration is resolved.
 # --refresh-dependencies: metadata Gradle serves from its cache (e.g. plugin BOMs) is otherwise
@@ -96,34 +75,11 @@ if ! ./gw --write-verification-metadata sha256 --refresh-dependencies \
   exit 1
 fi
 
-checksums "$old" >"$old_sums"
-checksums "$metadata" >"$new_sums"
-changed="$(awk '
-  NR == FNR { known[$1 " " $2] = $3; next }
-  ($1 " " $2) in known && known[$1 " " $2] != $3 { print $1, $2, "was", known[$1 " " $2], "now", $3 }
-' "$old_sums" "$new_sums")"
-
-if [[ -n "$changed" ]]; then
+# The comparison lives in one place, shared with the Dependabot workflow.
+if ! scripts/verification-checksum-guard "$old" "$metadata"; then
   restore
-  {
-    echo "STOP: checksums changed for versions that were already verified:"
-    echo "$changed"
-    echo "A changed checksum without a version change may mean a tampered artifact."
-    echo "$metadata restored, nothing committed. Tell the owner."
-  } >&2
+  echo "$metadata restored, nothing committed." >&2
   exit 1
-fi
-
-# Not an alarm, but worth a look: a version that was already verified gained an artifact.
-added="$(awk '
-  NR == FNR { known[$1 " " $2]; component[$1]; next }
-  ($1 in component) && !(($1 " " $2) in known) { print $1, $2 }
-' "$old_sums" "$new_sums")"
-if [[ -n "$added" ]]; then
-  {
-    echo "WARNING: new artifacts for versions that already had entries:"
-    echo "$added"
-  } >&2
 fi
 
 if git diff --quiet -- "$metadata"; then
