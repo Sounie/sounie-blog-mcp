@@ -127,7 +127,7 @@ class FileVectorIndexTest extends VectorIndexContract {
   void stores_one_file_per_post() {
     variedEntries().forEach(index::save);
 
-    assertThat(dataDirectory.resolve("search/index/sounie-wp/sounie-wp%3A1.json")).isRegularFile();
+    assertThat(dataDirectory.resolve("search/index/sounie-wp/sounie-wp%3a1.json")).isRegularFile();
     variedEntries().forEach(entry -> assertThat(fileOf(entry.id())).isRegularFile());
   }
 
