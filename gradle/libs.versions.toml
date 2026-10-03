@@ -12,6 +12,8 @@ pmd = "7.28.0"
 langchain4jBgeSmall = "1.20.2-beta30"
 mcp = "2.0.1"
 slf4j = "2.0.18"
+spotbugs = "4.10.4"
+findsecbugs = "1.14.0"
 
 [libraries]
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
@@ -28,8 +30,10 @@ pmd-java = { module = "net.sourceforge.pmd:pmd-java", version.ref = "pmd" }
 mcp-core = { module = "io.modelcontextprotocol.sdk:mcp-core", version.ref = "mcp" }
 mcp-json-jackson3 = { module = "io.modelcontextprotocol.sdk:mcp-json-jackson3", version.ref = "mcp" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+findsecbugs = { module = "com.h3xstream.findsecbugs:findsecbugs-plugin", version.ref = "findsecbugs" }
 
 [plugins]
 spotless = { id = "com.diffplug.spotless", version = "8.10.3" }
 pitest = { id = "info.solidsoft.pitest", version = "1.19.0" }
 shadow = { id = "com.gradleup.shadow", version = "9.6.1" }
+spotbugs = { id = "com.github.spotbugs", version = "6.5.12" }
