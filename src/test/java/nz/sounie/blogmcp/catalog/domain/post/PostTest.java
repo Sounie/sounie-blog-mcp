@@ -68,6 +68,13 @@ class PostTest {
     }
 
     @Test
+    void a_published_post_has_the_snapshot_tags() {
+      Post post = Post.publish(SOUNIE_WP, aSnapshot().tags("DDD", "Java").build()).post();
+
+      assertThat(post.tags()).extracting(Tag::value).containsExactlyInAnyOrder("DDD", "Java");
+    }
+
+    @Test
     @DisplayName("AC-CAT-16: a snapshot whose URL is not on the site host is invalid")
     void rejects_a_snapshot_whose_url_is_not_on_the_site_host() {
       PostSnapshot snapshot = aSnapshot().url("https://evil.example/x").build();

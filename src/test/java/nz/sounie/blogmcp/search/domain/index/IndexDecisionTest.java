@@ -162,4 +162,10 @@ class IndexDecisionTest {
         .isEqualTo(IndexOutcome.FAILED);
     assertThat(index.ids()).isEmpty();
   }
+
+  @Test
+  void unreadable_reports_its_failure_reason() {
+    assertThat(new IndexDecision.Unreadable(post.id(), "bad URL").failureReason())
+        .contains("bad URL");
+  }
 }
