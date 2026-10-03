@@ -3,6 +3,7 @@ package nz.sounie.blogmcp.catalog.adapter.out;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.aSnapshot;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -236,6 +237,64 @@ class FilePostRepositoryTest extends PostRepositoryContract {
   }
 
   @Test
+  @DisplayName(
+      "ADR 0007: a post file that cannot be read from disk is quarantined; startup continues")
+  void post_file_unreadable_from_disk_is_quarantined() throws IOException {
+    Post blocked = POST_123.buildStoredPost();
+    Post healthy = aSnapshot().sourcePostId("7").buildStoredPost();
+    repository.save(blocked);
+    repository.save(healthy);
+    Path file = fileOf(blocked.id());
+    makeUnreadable(file);
+
+    FilePostRepository reopened = reopen();
+
+    assertThat(reopened.findById(blocked.id())).isEmpty();
+    assertSamePost(reopened.findById(healthy.id()), healthy);
+    assertThat(file).doesNotExist();
+    assertThat(file.resolveSibling("123.json.corrupt")).exists();
+    assertThat(errorLines()).singleElement().asString().contains(file.toString());
+    assertThat(reopened.health()).isEqualTo(StorageHealth.DAMAGED);
+  }
+
+  @Test
+  @DisplayName(
+      "S3: a post file found at another post's location is quarantined, and health is DAMAGED")
+  void post_file_at_another_posts_location_is_quarantined() throws IOException {
+    Post a = aSnapshot().sourcePostId("1").buildStoredPost();
+    Post b = aSnapshot().sourcePostId("2").buildStoredPost();
+    repository.save(b);
+    Path pathOfA = fileOf(a.id());
+    Files.move(fileOf(b.id()), pathOfA);
+
+    FilePostRepository reopened = reopen();
+
+    assertThat(reopened.findById(a.id())).isEmpty();
+    assertThat(reopened.findById(b.id())).isEmpty();
+    assertThat(reopened.findSiteIds()).isEmpty();
+    assertThat(pathOfA).doesNotExist();
+    assertThat(pathOfA.resolveSibling("1.json.corrupt")).isRegularFile();
+    assertThat(errorLines()).singleElement().asString().contains(pathOfA.toString());
+    assertThat(reopened.health()).isEqualTo(StorageHealth.DAMAGED);
+  }
+
+  @Test
+  @DisplayName("S3: a deleted post never comes back from a file at another post's location")
+  void deleted_post_is_not_resurrected_by_a_misplaced_file() throws IOException {
+    Post a = aSnapshot().sourcePostId("1").buildStoredPost();
+    Post b = aSnapshot().sourcePostId("2").buildStoredPost();
+    repository.save(b);
+    Files.move(fileOf(b.id()), fileOf(a.id()));
+    FilePostRepository opened = reopen();
+
+    opened.delete(b.id());
+
+    FilePostRepository restarted = reopen();
+    assertThat(restarted.findById(b.id())).isEmpty();
+    assertThat(restarted.findSiteIds()).isEmpty();
+  }
+
+  @Test
   @DisplayName("AC-APP-40: an unsaved revision is not visible after a restart; a saved one is")
   void only_saved_revisions_survive_a_restart() {
     Post stored = POST_123.buildStoredPost();
@@ -317,6 +376,12 @@ class FilePostRepositoryTest extends PostRepositoryContract {
       }
     } while (writing.get());
     return problems;
+  }
+
+  /** Removes every permission, so reading fails; skipped where that has no effect (root). */
+  private static void makeUnreadable(Path file) throws IOException {
+    Files.setPosixFilePermissions(file, Set.of());
+    assumeFalse(Files.isReadable(file), "the file is still readable (running as root?)");
   }
 
   private static List<String> filesIn(Path dir) throws IOException {

@@ -98,6 +98,7 @@ class IndexFileLoaderTest {
             file -> ((ObjectNode) file.get("metadata")).put("siteId", "elegant")),
         corrupt("unknown format", file -> file.put("format", 2)),
         corrupt("missing fingerprint", file -> file.remove("fingerprint")),
+        corrupt("missing model ID (S2)", file -> file.remove("modelId")),
         corrupt("malformed post ID", file -> file.put("postId", "no-separator")),
         corrupt(
             "invalid instant",

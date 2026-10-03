@@ -5,6 +5,7 @@ import static nz.sounie.blogmcp.search.domain.index.IndexedPosts.fingerprint;
 import static nz.sounie.blogmcp.search.domain.index.IndexedPosts.indexed;
 import static nz.sounie.blogmcp.search.domain.index.PostToIndexBuilder.aPost;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -14,6 +15,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import nz.sounie.blogmcp.search.application.IndexWriteLock;
@@ -248,6 +250,95 @@ class FileVectorIndexTest extends VectorIndexContract {
     assertThat(report.outcomes())
         .isEqualTo(Map.of(a.id(), IndexOutcome.ADDED, b.id(), IndexOutcome.ADDED));
     assertThat(storedField(fileOf(a.id()), "modelId")).isEqualTo("model-r2");
+  }
+
+  @Test
+  @DisplayName(
+      "S1, ADR 0007: an index file that cannot be read from disk is quarantined; startup"
+          + " continues and the reconcile re-adds the post")
+  void index_file_unreadable_from_disk_is_quarantined_and_re_added() throws IOException {
+    PostToIndex blocked = aPost().id("sounie-wp:1").title("Blocked").words(50).build();
+    PostToIndex intact = aPost().id("sounie-wp:2").title("Intact").words(50).build();
+    index.save(INDEXER_R1.index(blocked));
+    index.save(INDEXER_R1.index(intact));
+    Path file = fileOf(blocked.id());
+    Files.setPosixFilePermissions(file, Set.of());
+    assumeFalse(Files.isReadable(file), "the file is still readable (running as root?)");
+
+    FileVectorIndex reopened = reopen();
+
+    assertThat(reopened.ids()).containsExactly(intact.id());
+    assertThat(file).doesNotExist();
+    assertThat(file.resolveSibling(file.getFileName() + ".corrupt")).exists();
+    assertThat(errorLines()).singleElement().asString().contains(file.toString());
+
+    ReconcileReport report = reconcile(reopened, INDEXER_R1, blocked, intact);
+
+    assertThat(report.outcomes())
+        .isEqualTo(Map.of(blocked.id(), IndexOutcome.ADDED, intact.id(), IndexOutcome.UNCHANGED));
+    assertSameEntry(reopen().find(blocked.id()), INDEXER_R1.index(blocked));
+  }
+
+  @Test
+  @DisplayName("S1: a directory where an index file belongs does not stop startup")
+  void directory_in_place_of_an_index_file_does_not_stop_startup() throws IOException {
+    IndexedPost kept = variedEntries().get(0);
+    index.save(kept);
+    Path occupied = fileOf(variedEntries().get(1).id());
+    Files.createDirectories(occupied);
+    Files.writeString(occupied.resolve("blocker"), "");
+
+    FileVectorIndex reopened = reopen();
+
+    assertThat(reopened.ids()).containsExactly(kept.id());
+  }
+
+  @Test
+  @DisplayName("S2: an index file without a model ID is quarantined, not deleted")
+  void index_file_without_model_id_is_quarantined() throws IOException {
+    index.save(first);
+    Path file = fileOf(post.id());
+    ObjectNode json = (ObjectNode) IndexFileJson.JSON.readTree(Files.readAllBytes(file));
+    json.remove("modelId");
+    Files.write(file, IndexFileJson.bytes(json));
+
+    FileVectorIndex reopened = reopen();
+
+    assertThat(reopened.ids()).isEmpty();
+    assertThat(file).doesNotExist();
+    assertThat(file.resolveSibling(file.getFileName() + ".corrupt")).isRegularFile();
+    assertThat(errorLines()).singleElement().asString().contains(file.toString());
+  }
+
+  @Test
+  @DisplayName("S3: an index file found at another post's location is quarantined")
+  void index_file_at_another_posts_location_is_quarantined() throws IOException {
+    IndexedPost a = variedEntries().get(0);
+    IndexedPost b = variedEntries().get(1);
+    index.save(b);
+    Path pathOfA = fileOf(a.id());
+    Files.move(fileOf(b.id()), pathOfA);
+
+    FileVectorIndex reopened = reopen();
+
+    assertThat(reopened.ids()).isEmpty();
+    assertThat(pathOfA).doesNotExist();
+    assertThat(pathOfA.resolveSibling(pathOfA.getFileName() + ".corrupt")).isRegularFile();
+    assertThat(errorLines()).singleElement().asString().contains(pathOfA.toString());
+  }
+
+  @Test
+  @DisplayName("S3: a removed entry never comes back from a file at another post's location")
+  void removed_entry_is_not_resurrected_by_a_misplaced_file() throws IOException {
+    IndexedPost a = variedEntries().get(0);
+    IndexedPost b = variedEntries().get(1);
+    index.save(b);
+    Files.move(fileOf(b.id()), fileOf(a.id()));
+    FileVectorIndex opened = reopen();
+
+    opened.remove(b.id());
+
+    assertThat(reopen().ids()).isEmpty();
   }
 
   private static ReconcileReport reconcile(

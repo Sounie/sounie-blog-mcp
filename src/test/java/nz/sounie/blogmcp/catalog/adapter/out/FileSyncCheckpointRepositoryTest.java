@@ -2,6 +2,7 @@ package nz.sounie.blogmcp.catalog.adapter.out;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -11,6 +12,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import nz.sounie.blogmcp.catalog.domain.site.SiteId;
 import nz.sounie.blogmcp.catalog.domain.site.TestSites;
 import nz.sounie.blogmcp.catalog.domain.sync.SyncCheckpoint;
@@ -103,7 +105,8 @@ class FileSyncCheckpointRepositoryTest extends SyncCheckpointRepositoryContract 
   }
 
   @ParameterizedTest(name = "{0}")
-  @ValueSource(strings = {"truncated", "not JSON", "invalid instant"})
+  @ValueSource(
+      strings = {"truncated", "not JSON", "invalid instant", "missing format", "unknown format"})
   @DisplayName("AC-APP-27: a corrupt checkpoint is quarantined, logged and treated as absent")
   void corrupt_checkpoint_is_quarantined_and_absent(String kind) throws IOException {
     SyncCheckpoint healthy = SyncCheckpoint.start(TestSites.ELEGANT_ID);
@@ -126,12 +129,82 @@ class FileSyncCheckpointRepositoryTest extends SyncCheckpointRepositoryContract 
     return switch (kind) {
       case "truncated" -> Arrays.copyOf(valid, valid.length / 2);
       case "not JSON" -> "<checkpoint/>".getBytes(UTF_8);
+      case "missing format" -> {
+        ObjectNode json = (ObjectNode) JSON.readTree(valid);
+        json.remove("format");
+        yield JSON.writeValueAsBytes(json);
+      }
+      case "unknown format" -> {
+        ObjectNode json = (ObjectNode) JSON.readTree(valid);
+        json.put("format", 99);
+        yield JSON.writeValueAsBytes(json);
+      }
       default -> {
         ObjectNode json = (ObjectNode) JSON.readTree(valid);
         json.put("changesSeenUpTo", "yesterday-ish");
         yield JSON.writeValueAsBytes(json);
       }
     };
+  }
+
+  @Test
+  @DisplayName("S4: a saved checkpoint file carries \"format\": 1")
+  void saved_checkpoint_file_carries_its_format() throws IOException {
+    repository.save(checkpoint(SEEN, RECONCILED));
+
+    ObjectNode json =
+        (ObjectNode) JSON.readTree(Files.readAllBytes(fileOf(TestSites.SOUNIE_WP_ID)));
+
+    assertThat(json.has("format")).isTrue();
+    assertThat(json.get("format").isIntegralNumber()).isTrue();
+    assertThat(json.get("format").asInt()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("S3: a checkpoint file found at another site's location is quarantined")
+  void checkpoint_file_at_another_sites_location_is_quarantined() throws IOException {
+    repository.save(SyncCheckpoint.start(TestSites.ELEGANT_ID));
+    Path pathOfWp = fileOf(TestSites.SOUNIE_WP_ID);
+    Files.move(fileOf(TestSites.ELEGANT_ID), pathOfWp);
+
+    FileSyncCheckpointRepository reopened = reopen();
+
+    assertThat(reopened.find(TestSites.SOUNIE_WP_ID)).isEmpty();
+    assertThat(reopened.find(TestSites.ELEGANT_ID)).isEmpty();
+    assertThat(pathOfWp).doesNotExist();
+    assertThat(pathOfWp.resolveSibling("sounie-wp.json.corrupt")).isRegularFile();
+    assertThat(errorLines()).singleElement().asString().contains(pathOfWp.toString());
+  }
+
+  @Test
+  @DisplayName("S3: a deleted checkpoint never comes back from a file at another site's location")
+  void deleted_checkpoint_is_not_resurrected_by_a_misplaced_file() throws IOException {
+    repository.save(SyncCheckpoint.start(TestSites.ELEGANT_ID));
+    Files.move(fileOf(TestSites.ELEGANT_ID), fileOf(TestSites.SOUNIE_WP_ID));
+    FileSyncCheckpointRepository opened = reopen();
+
+    opened.delete(TestSites.ELEGANT_ID);
+
+    assertThat(reopen().find(TestSites.ELEGANT_ID)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "ADR 0007: a checkpoint file that cannot be read from disk is quarantined; startup continues")
+  void checkpoint_file_unreadable_from_disk_is_quarantined() throws IOException {
+    SyncCheckpoint healthy = SyncCheckpoint.start(TestSites.ELEGANT_ID);
+    repository.save(checkpoint(SEEN, RECONCILED));
+    repository.save(healthy);
+    Path file = fileOf(TestSites.SOUNIE_WP_ID);
+    Files.setPosixFilePermissions(file, Set.of());
+    assumeFalse(Files.isReadable(file), "the file is still readable (running as root?)");
+
+    FileSyncCheckpointRepository reopened = reopen();
+
+    assertThat(reopened.find(TestSites.SOUNIE_WP_ID)).isEmpty();
+    assertSameCheckpoint(reopened.find(TestSites.ELEGANT_ID), healthy);
+    assertThat(file.resolveSibling("sounie-wp.json.corrupt")).exists();
+    assertThat(errorLines()).singleElement().asString().contains(file.toString());
   }
 
   @Test
