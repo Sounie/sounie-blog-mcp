@@ -56,13 +56,14 @@ public final class FileVectorIndex implements VectorIndex {
         new FileVectorIndex(dataDirectory.resolve("search").resolve("index"), modelId, recipe);
     IndexFileLoader loader = new IndexFileLoader(modelId);
     StoredFiles.jsonFilesAfterSweep(index.directory)
-        .forEach(file -> index.accept(file, loader.read(StoredFiles.read(file)), errors));
+        .forEach(file -> index.accept(file, loader.read(file, index::fileOf), errors));
     return index;
   }
 
   private void accept(Path file, IndexFileLoad load, PrintStream errors) {
     switch (load) {
-      case IndexFileLoad.Loaded loaded -> posts.put(loaded.post().id(), loaded.post());
+      case IndexFileLoad.Loaded loaded ->
+          posts.merge(loaded.post().id(), loaded.post(), FileVectorIndex::unreachableDuplicate);
       case IndexFileLoad.IncompatibleModel other -> dropIncompatible(file, other, errors);
       case IndexFileLoad.Unreadable unreadable ->
           AtomicFile.quarantine(file, unreadable.reason(), NEXT_STEP, errors);
@@ -82,6 +83,14 @@ public final class FileVectorIndex implements VectorIndex {
             + "; it was deleted and "
             + NEXT_STEP
             + ".");
+  }
+
+  /**
+   * Unreachable: every loaded file is at its post ID's location, so no two files can claim the same
+   * post.
+   */
+  private static IndexedPost unreachableDuplicate(IndexedPost first, IndexedPost second) {
+    throw new IllegalStateException("Two index files claim " + first.id().external());
   }
 
   @Override

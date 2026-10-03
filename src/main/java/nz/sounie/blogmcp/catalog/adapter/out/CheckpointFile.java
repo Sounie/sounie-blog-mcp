@@ -6,13 +6,15 @@ import nz.sounie.blogmcp.catalog.domain.site.SiteId;
 import nz.sounie.blogmcp.catalog.domain.sync.SyncCheckpoint;
 
 /**
- * A stored sync checkpoint as JSON, and the immutable snapshot the repository keeps in memory. The
- * two instants are optional ({@code null} in the file when absent).
+ * A stored sync checkpoint as JSON ({@code "format": 1}), and the immutable snapshot the repository
+ * keeps in memory. The two instants are optional ({@code null} in the file when absent).
  */
-record CheckpointFile(String siteId, String changesSeenUpTo, String lastReconciledAt) {
+record CheckpointFile(
+    Integer format, String siteId, String changesSeenUpTo, String lastReconciledAt) {
 
   static CheckpointFile of(SyncCheckpoint checkpoint) {
     return new CheckpointFile(
+        StoredFormat.CURRENT,
         checkpoint.siteId().value(),
         checkpoint.changesSeenUpTo().map(Instant::toString).orElse(null),
         checkpoint.lastReconciledAt().map(Instant::toString).orElse(null));
@@ -24,6 +26,7 @@ record CheckpointFile(String siteId, String changesSeenUpTo, String lastReconcil
    * @throws RuntimeException naming the problem, if it does not
    */
   CheckpointFile validated() {
+    StoredFormat.require(format);
     toCheckpoint();
     return this;
   }

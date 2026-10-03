@@ -19,7 +19,7 @@ import nz.sounie.blogmcp.catalog.domain.post.Title;
  * value makes the file unreadable.
  */
 record PostFile(
-    int format,
+    Integer format,
     String postId,
     String canonicalUrl,
     String title,
@@ -29,15 +29,13 @@ record PostFile(
     String publishedAt,
     String updatedAt) {
 
-  static final int CURRENT_FORMAT = 1;
-
   PostFile {
     tags = List.copyOf(tags);
   }
 
   static PostFile of(Post post) {
     return new PostFile(
-        CURRENT_FORMAT,
+        StoredFormat.CURRENT,
         post.id().external(),
         post.url().value().toString(),
         post.title().value(),
@@ -54,16 +52,9 @@ record PostFile(
    * @throws RuntimeException naming the problem, if it does not
    */
   PostFile validated() {
-    requireCurrentFormat();
+    StoredFormat.require(format);
     toPost();
     return this;
-  }
-
-  private void requireCurrentFormat() {
-    if (format != CURRENT_FORMAT) {
-      throw new IllegalArgumentException(
-          "Unknown format " + format + "; this version reads format " + CURRENT_FORMAT);
-    }
   }
 
   /** A fresh post, restored from this snapshot. */

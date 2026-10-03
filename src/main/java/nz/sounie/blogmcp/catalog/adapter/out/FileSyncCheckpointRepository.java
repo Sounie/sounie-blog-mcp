@@ -19,18 +19,16 @@ import nz.sounie.blogmcp.shared.storage.AtomicFile;
  */
 public final class FileSyncCheckpointRepository implements SyncCheckpointRepository {
 
-  private static final JsonFiles<CheckpointFile> FILES =
-      new JsonFiles<>(
-          CheckpointFile.class,
-          CheckpointFile::validated,
-          "is treated as absent, so the site gets a full fetch and a reconcile");
-
   private final Path directory;
+  private final JsonFiles<CheckpointFile> files;
   private final ConcurrentMap<SiteId, CheckpointFile> checkpoints;
 
   private FileSyncCheckpointRepository(
-      Path directory, ConcurrentMap<SiteId, CheckpointFile> checkpoints) {
+      Path directory,
+      JsonFiles<CheckpointFile> files,
+      ConcurrentMap<SiteId, CheckpointFile> checkpoints) {
     this.directory = directory;
+    this.files = files;
     this.checkpoints = checkpoints;
   }
 
@@ -40,12 +38,19 @@ public final class FileSyncCheckpointRepository implements SyncCheckpointReposit
    */
   public static FileSyncCheckpointRepository open(Path dataDirectory, PrintStream errors) {
     Path directory = dataDirectory.resolve("catalog").resolve("checkpoints");
+    JsonFiles<CheckpointFile> files =
+        new JsonFiles<>(
+            directory,
+            CheckpointFile.class,
+            CheckpointFile::validated,
+            file -> fileOf(directory, file.site()),
+            "is treated as absent, so the site gets a full fetch and a reconcile");
     ConcurrentMap<SiteId, CheckpointFile> checkpoints =
-        FILES.loadAll(directory, errors).readable().stream()
+        files.loadAll(errors).readable().stream()
             .collect(
                 Collectors.toConcurrentMap(
-                    CheckpointFile::site, Function.identity(), (first, second) -> second));
-    return new FileSyncCheckpointRepository(directory, checkpoints);
+                    CheckpointFile::site, Function.identity(), JsonFiles.unreachableDuplicate()));
+    return new FileSyncCheckpointRepository(directory, files, checkpoints);
   }
 
   @Override
@@ -57,17 +62,17 @@ public final class FileSyncCheckpointRepository implements SyncCheckpointReposit
   @Override
   public synchronized void save(SyncCheckpoint checkpoint) {
     CheckpointFile file = CheckpointFile.of(checkpoint);
-    FILES.write(fileOf(checkpoint.siteId()), file);
+    files.write(file);
     checkpoints.put(checkpoint.siteId(), file);
   }
 
   @Override
   public synchronized void delete(SiteId siteId) {
-    AtomicFile.delete(fileOf(siteId));
+    AtomicFile.delete(fileOf(directory, siteId));
     checkpoints.remove(siteId);
   }
 
-  private Path fileOf(SiteId siteId) {
+  private static Path fileOf(Path directory, SiteId siteId) {
     return directory.resolve(siteId.value() + ".json");
   }
 }

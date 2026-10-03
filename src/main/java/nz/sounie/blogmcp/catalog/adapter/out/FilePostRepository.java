@@ -26,16 +26,18 @@ import nz.sounie.blogmcp.shared.storage.FileKey;
  */
 public final class FilePostRepository implements PostRepository {
 
-  private static final JsonFiles<PostFile> FILES =
-      new JsonFiles<>(PostFile.class, PostFile::validated, "will be fetched again by a reconcile");
-
   private final Path directory;
+  private final JsonFiles<PostFile> files;
   private final ConcurrentMap<PostId, PostFile> posts;
   private final StorageHealth health;
 
   private FilePostRepository(
-      Path directory, ConcurrentMap<PostId, PostFile> posts, StorageHealth health) {
+      Path directory,
+      JsonFiles<PostFile> files,
+      ConcurrentMap<PostId, PostFile> posts,
+      StorageHealth health) {
     this.directory = directory;
+    this.files = files;
     this.posts = posts;
     this.health = health;
   }
@@ -46,14 +48,21 @@ public final class FilePostRepository implements PostRepository {
    */
   public static FilePostRepository open(Path dataDirectory, PrintStream errors) {
     Path directory = dataDirectory.resolve("catalog").resolve("posts");
-    JsonFiles.Loaded<PostFile> loaded = FILES.loadAll(directory, errors);
+    JsonFiles<PostFile> files =
+        new JsonFiles<>(
+            directory,
+            PostFile.class,
+            PostFile::validated,
+            file -> fileOf(directory, file.id()),
+            "will be fetched again by a reconcile");
+    JsonFiles.Loaded<PostFile> loaded = files.loadAll(errors);
     ConcurrentMap<PostId, PostFile> posts =
         loaded.readable().stream()
             .collect(
                 Collectors.toConcurrentMap(
-                    PostFile::id, Function.identity(), (first, second) -> second));
+                    PostFile::id, Function.identity(), JsonFiles.unreachableDuplicate()));
     return new FilePostRepository(
-        directory, posts, StorageHealth.afterQuarantining(loaded.quarantined()));
+        directory, files, posts, StorageHealth.afterQuarantining(loaded.quarantined()));
   }
 
   /** Whether loading found any unreadable post file. */
@@ -91,17 +100,17 @@ public final class FilePostRepository implements PostRepository {
   @Override
   public synchronized void save(Post post) {
     PostFile file = PostFile.of(post);
-    FILES.write(fileOf(post.id()), file);
+    files.write(file);
     posts.put(post.id(), file);
   }
 
   @Override
   public synchronized void delete(PostId id) {
-    AtomicFile.delete(fileOf(id));
+    AtomicFile.delete(fileOf(directory, id));
     posts.remove(id);
   }
 
-  private Path fileOf(PostId id) {
+  private static Path fileOf(Path directory, PostId id) {
     return directory
         .resolve(id.siteId().value())
         .resolve(FileKey.of(id.sourcePostId().value()).value() + ".json");
