@@ -30,6 +30,7 @@ public final class FilePostRepository implements PostRepository {
   private final JsonFiles<PostFile> files;
   private final ConcurrentMap<PostId, PostFile> posts;
   private final StorageHealth health;
+  private final Object writeLock = new Object();
 
   private FilePostRepository(
       Path directory,
@@ -98,16 +99,20 @@ public final class FilePostRepository implements PostRepository {
 
   /** Writes the file first, then replaces the stored snapshot. Saves and deletes are serialised. */
   @Override
-  public synchronized void save(Post post) {
+  public void save(Post post) {
     PostFile file = PostFile.of(post);
-    files.write(file);
-    posts.put(post.id(), file);
+    synchronized (writeLock) {
+      files.write(file);
+      posts.put(post.id(), file);
+    }
   }
 
   @Override
-  public synchronized void delete(PostId id) {
-    AtomicFile.delete(fileOf(directory, id));
-    posts.remove(id);
+  public void delete(PostId id) {
+    synchronized (writeLock) {
+      AtomicFile.delete(fileOf(directory, id));
+      posts.remove(id);
+    }
   }
 
   private static Path fileOf(Path directory, PostId id) {

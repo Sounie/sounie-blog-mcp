@@ -36,6 +36,7 @@ public final class FileVectorIndex implements VectorIndex {
   private final String modelId;
   private final IndexRecipe recipe;
   private final ConcurrentMap<PostId, IndexedPost> posts = new ConcurrentHashMap<>();
+  private final Object writeLock = new Object();
 
   private FileVectorIndex(Path directory, String modelId, IndexRecipe recipe) {
     this.directory = directory;
@@ -100,16 +101,20 @@ public final class FileVectorIndex implements VectorIndex {
 
   /** Writes the file first, then replaces the entry. Saves and removals are serialised. */
   @Override
-  public synchronized void save(IndexedPost post) {
-    AtomicFile.write(
-        fileOf(post.id()), JSON.writeValueAsBytes(IndexFile.of(post, modelId, recipe)));
-    posts.put(post.id(), post);
+  public void save(IndexedPost post) {
+    byte[] json = JSON.writeValueAsBytes(IndexFile.of(post, modelId, recipe));
+    synchronized (writeLock) {
+      AtomicFile.write(fileOf(post.id()), json);
+      posts.put(post.id(), post);
+    }
   }
 
   @Override
-  public synchronized boolean remove(PostId id) {
-    AtomicFile.delete(fileOf(id));
-    return posts.remove(id) != null;
+  public boolean remove(PostId id) {
+    synchronized (writeLock) {
+      AtomicFile.delete(fileOf(id));
+      return posts.remove(id) != null;
+    }
   }
 
   @Override

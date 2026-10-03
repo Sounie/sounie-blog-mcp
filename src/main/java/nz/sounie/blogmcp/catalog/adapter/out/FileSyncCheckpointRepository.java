@@ -22,6 +22,7 @@ public final class FileSyncCheckpointRepository implements SyncCheckpointReposit
   private final Path directory;
   private final JsonFiles<CheckpointFile> files;
   private final ConcurrentMap<SiteId, CheckpointFile> checkpoints;
+  private final Object writeLock = new Object();
 
   private FileSyncCheckpointRepository(
       Path directory,
@@ -60,16 +61,20 @@ public final class FileSyncCheckpointRepository implements SyncCheckpointReposit
 
   /** Writes the file first, then replaces the stored snapshot. Saves and deletes are serialised. */
   @Override
-  public synchronized void save(SyncCheckpoint checkpoint) {
+  public void save(SyncCheckpoint checkpoint) {
     CheckpointFile file = CheckpointFile.of(checkpoint);
-    files.write(file);
-    checkpoints.put(checkpoint.siteId(), file);
+    synchronized (writeLock) {
+      files.write(file);
+      checkpoints.put(checkpoint.siteId(), file);
+    }
   }
 
   @Override
-  public synchronized void delete(SiteId siteId) {
-    AtomicFile.delete(fileOf(directory, siteId));
-    checkpoints.remove(siteId);
+  public void delete(SiteId siteId) {
+    synchronized (writeLock) {
+      AtomicFile.delete(fileOf(directory, siteId));
+      checkpoints.remove(siteId);
+    }
   }
 
   private static Path fileOf(Path directory, SiteId siteId) {
