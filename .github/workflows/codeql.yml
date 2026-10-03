@@ -19,6 +19,8 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       # build-mode none: CodeQL reads the sources without running Gradle, so no dependency or
       # plugin code executes in this job (ADR 0008).
       - uses: github/codeql-action/init@v4

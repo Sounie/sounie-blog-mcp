@@ -28,9 +28,24 @@ for arg in "$@"; do
   esac
 done
 
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "Working tree has uncommitted changes; commit or stash them first" >&2
+  exit 1
+fi
+
+refuse_main() {
+  if [[ "$1" == main ]]; then
+    echo "Refusing to run on main; use a feature or Dependabot branch" >&2
+    exit 1
+  fi
+}
+
+refuse_main "${branch:-$(git branch --show-current)}"
+
 if [[ -n "$branch" ]]; then
   scripts/git-remote fetch
   git checkout "$branch"
+  refuse_main "$(git branch --show-current)"
   scripts/git-remote pull
 fi
 
@@ -92,6 +107,18 @@ if [[ -n "$changed" ]]; then
   exit 1
 fi
 
+# Not an alarm, but worth a look: a version that was already verified gained an artifact.
+added="$(awk '
+  NR == FNR { known[$1 " " $2]; component[$1]; next }
+  ($1 in component) && !(($1 " " $2) in known) { print $1, $2 }
+' "$old_sums" "$new_sums")"
+if [[ -n "$added" ]]; then
+  {
+    echo "WARNING: new artifacts for versions that already had entries:"
+    echo "$added"
+  } >&2
+fi
+
 if git diff --quiet -- "$metadata"; then
   echo "Verification metadata is already up to date; nothing to commit"
   exit 0
@@ -99,7 +126,7 @@ fi
 
 git add "$metadata"
 git commit -m "build(deps): update dependency verification metadata" \
-  -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+  -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- "$metadata"
 
 if [[ "$push" == true ]]; then
   scripts/git-remote push
