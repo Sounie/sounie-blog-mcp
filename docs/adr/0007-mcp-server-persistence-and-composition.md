@@ -4,7 +4,8 @@ Date: 2026-10-03
 
 ## Status
 - **Decisions 3 and 4 (persistence, slice 3a): Accepted (2026-10-03, by the owner).**
-- **Decisions 1, 2 and 5 to 8 (slice 3b): Proposed.** They await the owner's 3b checkpoint (`docs/domain/app.md` section 9).
+- **Decisions 1, 2 and 5 to 8 (slice 3b): Proposed.** Trimmed to essentials for a single-user tool; deferred items are listed in
+  `docs/domain/app.md` section 7. They await the owner's 3b checkpoint (section 9 there).
 
 SDK facts are from MCP Java SDK v2.0.1 (researcher, 2026-10-03). Items still UNVERIFIED are named where they matter.
 
@@ -29,18 +30,15 @@ and **3b (server, wiring, scheduler, jar)**.
    - **Types in `app.mcp`:**
      - `ToolDefinitions` (names, schemas, descriptions, annotations);
      - `ToolArguments` and `SearchPostsArguments` (parsing);
-     - `ToolOutcome` (sealed: `Answered`, `NotFound`, `InvalidInput`, `Unavailable`);
+     - `ToolOutcome` (sealed: `Answered`, `NotFound`, `Failed`);
      - `ToolFailures` (a rule table from exception to outcome, and the only `catch` in the tool path).
    - **Output:** `structuredContent` that matches the output schema, plus a text copy of the same JSON for clients on protocol
      2024-11-05. Recoverable failures use `isError = true`, and we never throw `McpError`.
-   - **Input validation has one owner, `ToolArguments`.** The SDK's schema validation is switched off because its failure
-     format is UNVERIFIED, and because it would reject an out-of-range `limit` that the domain clamps. A test keeps the advertised
-     schema and the parser consistent (AC-APP-43).
-   - **Concurrency:** the SDK runs handlers concurrently, on Reactor `boundedElastic` threads. Safety comes from:
-     - immutable `IndexedPost` snapshots;
-     - `OnnxEmbedder`'s model lock;
-     - file repositories that restore a fresh aggregate on every `find` (decision 3);
-     - stateless handlers.
+   - **Input validation has one owner, `ToolArguments`.** The SDK's schema validation is switched off because it would reject an
+     out-of-range `limit` that the domain clamps, and its failure format is UNVERIFIED.
+   - **Concurrency:** the SDK may run handlers concurrently, also during a sync. No extra machinery is needed: `IndexedPost`
+     snapshots are immutable, `OnnxEmbedder` has a model lock, the file repositories restore a fresh aggregate on every `find`
+     (decision 3), and the handlers are stateless.
    - **Proposed ArchUnit rule:** only `nz.sounie.blogmcp.app.mcp..` may depend on `io.modelcontextprotocol..` or `reactor..`.
 2. **Domain additions owned by their contexts, not by the tools:**
    - `search.domain.index.Snippet`: the first 60 words of the best chunk, then ` …` (AC-SRCH-39);
@@ -89,24 +87,16 @@ and **3b (server, wiring, scheduler, jar)**.
 ### Slice 3b (proposed), continued
 5. **Composition root `app`:**
    - **Stdout:** `StdoutGuard` hands the real stdout to the transport and redirects `System.out` to stderr.
-   - **Paths:** `AppPaths` resolves the config file and the data directory.
-   - **One process per data directory:** `DataDirectoryLock` takes an exclusive `FileChannel.tryLock` on `<data>/.lock`. If another
-     process holds it, the app exits with status 1, so two servers never collide on `.tmp` names or sweep each other's files (AC-APP-46).
-   - **Configuration:** a missing or invalid configuration, or an unwritable data directory, means exit status 1 with a stderr
-     message and no server.
-   - **DJL cache:** `DjlCacheSetting` sets the system property `DJL_CACHE_DIR` = `<data>/cache/djl` only when neither the
-     environment variable (which DJL reads first) nor the property is set.
-   - **Temporary directory:** `java.io.tmpdir` is left at its default. ONNX Runtime extracts to a temporary directory there and
-     deletes it on normal exit. A SIGKILL may leave it behind, for the OS to clean up.
+   - **Paths:** `AppPaths` resolves the config file and the data directory, which is created at startup.
+   - **Configuration:** a missing or invalid configuration, or a data directory that cannot be created, means exit status 1 with
+     one stderr message and no server.
+   - **Native libraries** keep their default locations (DJL's `~/.djl.ai`, ONNX Runtime's temporary directory) and are released
+     on JVM exit.
    - **Logging:** our code logs only to an injected stderr `PrintStream`. The SDK's SLF4J output goes to `slf4j-simple` 2.0.16 on
      stderr at `warn`, configured by a bundled `simplelogger.properties`.
-   - **Shutdown:**
-     - `Main` waits on its own `ShutdownSignal`, released by `EndOfInputWatch` (our wrapper around the stdin given to the transport)
-       or by a JVM shutdown hook;
-     - it does not rely on the transport's threads to keep the JVM alive (UNVERIFIED);
-     - `ShutdownSequence` runs once: it stops the timer and waits up to 5 s, then calls `McpSyncServer.closeGracefully()`, then
-       closes the tokenizer (idempotent);
-     - the ONNX session is released on JVM exit, because whether it can be closed is UNVERIFIED.
+   - **Exit:** `Main` waits for end of input, detected by `EndOfInputWatch` (our wrapper around the stdin given to the transport),
+     then calls `closeGracefully()` and exits with status 0. It does not rely on the transport's threads to keep the JVM alive
+     (UNVERIFIED). No drain or shutdown sequence is needed: every write is atomic and nothing is buffered (decision 3).
 6. **Scheduling and the sync interval:**
    - **The job:** `SyncAndReconcile` runs `SyncAllSites.run(mode)` and then `ReconcileIndex.run()` on one thread, through our
      `JobTimer` port (`ExecutorJobTimer`, a single-thread scheduled executor), now and then with a **fixed delay**. Runs therefore never
@@ -120,19 +110,17 @@ and **3b (server, wiring, scheduler, jar)**.
      - `app` reads `syncInterval()` at startup.
    - **The daily reconcile:** the catalog rule is unchanged (due when strictly older than 24 hours). With the default 24-hour fixed delay, every run is
      in practice a reconcile.
-   - **The first run** uses `StorageHealth.startupSyncMode()`. The server answers from the persisted index immediately, with a
-     warming-up note until the first run ends.
+   - **The first run** uses `StorageHealth.startupSyncMode()`. The server answers from the persisted index immediately.
    - **Embedding stays on the job's thread** (closes search Q9).
 7. **Packaging:**
    - The Shadow plugin `com.gradleup.shadow` 9.6.1 produces `blog-mcp-all.jar`, with `mergeServiceFiles()` and
      `duplicatesStrategy = INCLUDE`. That is required, because `McpJsonDefaults.getMapper()` finds the Jackson 3 mapper through `ServiceLoader`.
    - `META-INF/*.SF`, `*.DSA` and `*.RSA` are excluded explicitly.
    - The manifest has `Main-Class`, `Implementation-Version` and `Enable-Native-Access: ALL-UNNAMED` (JEP 472).
-   - Jar slimming (ONNX debug symbols, other platforms) is an optional follow-up, accepted only if the jar round-trip test passes.
 8. **Testing against the real SDK, as "don't mock what you don't own" requires:**
    - handler-level tests of our `SyncToolSpecification` handlers;
    - subprocess tests with the real `McpClient` and `StdioClientTransport` for `tools/list`, stdout cleanliness, startup
-     failure, shutdown and the jar round trip.
+     failure and the jar round trip (including exit when stdin closes).
 
    The SDK has no in-memory transport, and we do not hand-write a JSON-RPC client.
 
@@ -159,3 +147,6 @@ and **3b (server, wiring, scheduler, jar)**.
   re-read the sites on every run.
 - **Testing the jar:** the jar round-trip and subprocess tests are slower (`@Tag("model")` for the jar). Handler-level tests keep
   the tool logic fast.
+- **Deferred, add if needed** (single-user tool): a data-directory lock against two servers, a warming-up note in search results,
+  a shutdown drain, moving the DJL cache into the data directory, a schema-versus-parser validator test, jar slimming, directory
+  fsync, and a guard for over-long file keys. See `docs/domain/app.md` section 7.

@@ -108,7 +108,7 @@ Behaviour and invariants:
 `Site(SiteId id, Platform platform, URI baseUrl)` is an immutable value that the catalog reads but never
 changes. `SitesConfiguration` validates the whole list and reports **all** violations together in
 one `InvalidSitesConfiguration` exception:
-- (slice 3b, proposed; `docs/domain/app.md` AC-APP-36 to 39) an optional top-level `syncEveryHours`, which must be a whole JSON
+- (slice 3b, proposed; `docs/domain/app.md` 3.8, AC-APP-8 and 10) an optional top-level `syncEveryHours`, which must be a whole JSON
   number of at least 1 if present (default 24 hours). A value below 1, or one that is not a whole number (`"24"`, `24.5`, `true`,
   `null`), is a violation reported with the others;
 - at least one site. An empty list is invalid, and a **missing** configuration file is a startup error (`SitesConfigurationMissing`, raised by the `SiteDirectory` adapter) naming the path it looked at (owner decision, Q6; AC-CAT-25);
