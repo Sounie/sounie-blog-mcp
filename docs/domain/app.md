@@ -3,6 +3,7 @@
 Status:
 - **Slice 3a (persistence): approved by the owner on 2026-10-03.** ACs: AC-APP-24 to 29, 35, 40 and 41, plus AC-APP-44 and 45 from the 3a review (section 7).
 - **Slice 3b (MCP server, tools, wiring, scheduler, jar): draft, trimmed to essentials ("don't gild the lily"), awaiting the owner's 3b checkpoint.** ACs: AC-APP-1 to 12 (renumbered, section 7) plus AC-SRCH-39. Deferred items are listed in section 7.
+- **Build-time embedding-provider artifact selection, classpath discovery and provider-keyed search paths:** owner-selected direction; Gradle property spelling, SPI, packaging/classpath assembly and index layout remain proposed in ADR 0009 pending owner approval.
 
 SDK facts come from MCP Java SDK v2.0.1 (researcher, 2026-10-03). Section 8 keeps the ones that still inform a 3b decision.
 
@@ -56,8 +57,8 @@ layers and constructs their adapters. The persistence adapters live in each cont
 | Storage health | Whether loading found any unreadable **post** file: `HEALTHY` or `DAMAGED`. Only `FilePostRepository` reports it; a quarantined checkpoint is simply absent, which already means a full fetch. `DAMAGED` makes the startup job sync in `RECONCILE` mode, so the lost posts are fetched again. | `StorageHealth` (enum with `startupSyncMode()`) |
 | File key | The file-name form of an identifier. Keys use only `[a-z0-9_%-]`. Upper-case letters and every other character are percent-encoded as UTF-8 bytes with **lower-case** hex (`A` → `%41`, `/` → `%2f`, `ü` → `%c3%bc`). This makes keys **case-safe** on case-insensitive file systems (macOS APFS by default), and they cannot contain path separators or `..` (lead decision, 3a). | `FileKey` (`shared.storage`) |
 | Stored snapshot | The immutable form that a file repository keeps in memory and on disk. Every `find` restores a **fresh** aggregate from it, so no two threads ever share one mutable `Post` or `SyncCheckpoint`. | `PostFile`, `CheckpointFile` (`catalog.adapter.out`) |
-| Vector encoding | A chunk's embedding stored as the base64 of 384 little-endian IEEE-754 float32 values (1,536 bytes). It round-trips bit-exactly. | `VectorCodec` (`search.adapter.out`) |
-| Model compatibility | An index file whose stored model ID differs from the current `PassageEmbedder.modelId()` is not loaded: its vectors are in a different space. It is deleted and logged, and the reconcile re-adds the post. | `IndexFileLoader` (`search.adapter.out`), returning `IndexFileLoad` (sealed: `Loaded`, `IncompatibleModel`, `Unreadable`) |
+| Vector encoding | A chunk's embedding stored as the base64 of little-endian IEEE-754 float32 values; vector length is determined by the selected provider profile (384 for ONNX BGE, 768 for EmbeddingGemma 2). It round-trips bit-exactly. | `VectorCodec` (`search.adapter.out`) |
+| Model compatibility | Only the selected provider/profile subtree is opened. Within that subtree, an index file whose stored model ID differs from the current `PassageEmbedder.modelId()` is incompatible and is handled by `IndexFileLoader`; switching provider profiles never opens or deletes another profile's subtree. | `IndexFileLoader` (`search.adapter.out`), returning `IndexFileLoad` (sealed: `Loaded`, `IncompatibleModel`, `Unreadable`) |
 | Sync-and-reconcile job | One background run: `SyncAllSites.run(mode)` and then `ReconcileIndex.run()`, in sequence on one thread. Each step's failure is caught and logged, and the reconcile runs even if the sync step threw. | `SyncAndReconcile` (`app`) |
 | Job timer | Our own port that runs a job now and then repeatedly with a **fixed delay** (the sync interval) between the end of one run and the start of the next, on one daemon thread. Runs therefore never overlap. | `JobTimer` (port, `app`), `ExecutorJobTimer` (production) |
 | Snippet | (search; changed in this slice) The first 60 words of the best chunk. If the chunk is longer, a trailing ` …` is added. | `Snippet` (`search.domain.index`) |
@@ -129,14 +130,30 @@ misspelt argument (e.g. `date_from`) is not silently ignored.
 ```
 catalog/posts/<siteId>/<FileKey(sourcePostId)>.json
 catalog/checkpoints/<siteId>.json
-search/index/<siteId>/<FileKey(postId external form)>.json
+search/index/<indexProfileKey>/<siteId>/<FileKey(postId external form)>.json
 cache/djl/
 ```
 
 **Each file repository owns its own sub-directory** (lead decision, 3a). It is opened on the data directory, and resolves
 `catalog/posts`, `catalog/checkpoints` or `search/index` itself, so the composition root passes only the data directory.
-`FileVectorIndex.open(dataDirectory, modelId, recipe)` also takes the current model ID and `IndexRecipe`; the composition root passes
-`PostIndexer.recipe()`. The recipe is written into each index file, and the model ID is used for model compatibility.
+**Proposed provider-keyed search layout (ADR 0009, awaiting approval):**
+```
+search/index/onnx-bge-small-en-v1.5-q-v1/<siteId>/<FileKey(postId external form)>.json
+search/index/gemma2-914f7f89-v1/<siteId>/<FileKey(postId external form)>.json
+```
+The stable key identifies the provider/model revision and embedding-affecting profile version; it is not an environment setting.
+The default data directory remains `~/.local/share/blog-mcp` (or the existing `BLOG_MCP_DATA` override), with no new path variable.
+`FileVectorIndex.open(dataDirectory, indexProfileKey, modelId, recipe)` opens only the selected profile subtree. The composition
+root obtains the key and model identity from the selected provider profile and passes `PostIndexer.recipe()`. Each file still stores
+the recipe and model ID. The same profile key reuses its persisted entries after restart; another profile gets a distinct subtree,
+which it neither loads nor deletes or overwrites.
+To preserve existing ONNX index data at the former `search/index/<siteId>/<FileKey(postId)>.json`
+location, a one-time adoption into the ONNX subtree is proposed; Gemma2 startup must not inspect or
+move those legacy files. Adoption mechanics await approval in ADR 0009.
+Provider artifacts live on the build-produced application runtime classpath, not in the data directory. ONNX BGE and Gemma2 are
+separate JARs; a required build property includes exactly one. The selected artifact and its profile dependencies/assets are
+distributed beside the base app artifact and discovered at runtime. No provider JAR path or provider-selection environment
+variable is introduced.
 
 **One file per aggregate** (post, checkpoint, indexed post). Every save is an atomic file write of one small file. A single
 file for everything would rewrite megabytes for each changed post: about 230 rewrites during a first sync. Each repository loads every
@@ -171,9 +188,9 @@ flush at shutdown.
 - **Speed:** loading about 230 files and about 3 MB at startup takes well under a second.
 
 **Recipe changes after a restart:** each stored entry keeps the fingerprint it was built with, and the fingerprint includes the
-recipe (ADR 0005). After a restart with a new recipe for the **same model**, entries are loaded and served, and the reconcile then
-finds every fingerprint stale and re-embeds each post, rewriting its file. With a **different model**, entries are not loaded at all
-(model compatibility), so the reconcile adds them again.
+recipe (ADR 0005). Within a selected profile subtree, a changed recipe makes the reconcile re-embed stale entries and rewrite
+their files. An embedding-affecting profile change selects another stable subtree, leaving the former profile's entries intact.
+Restarting with the same profile key loads and serves its existing entries immediately.
 
 (3b note: the `cache/djl/` entry in the layout above is reserved but unused in 3b; DJL keeps its default cache, see section 7 "Deferred".)
 
@@ -185,19 +202,26 @@ finds every fingerprint stale and re-embeds each post, rewriting its file. With 
 3. Load and validate the configuration (sites and sync interval, 3.8). A missing file (`SitesConfigurationMissing`), an invalid
    configuration (`InvalidSitesConfiguration`, listing all violations) or a data directory that cannot be created is reported on
    stderr in one message, and the process exits with status 1. The MCP server is **not** started.
-4. `Wiring` constructs everything:
+4. Discover exactly one provider from the runtime classpath. The build was required to select exactly one separate provider JAR
+   (`onnx` or `gemma2`); missing, blank or invalid selection fails Gradle configuration. Missing or multiple provider
+   implementations on the resulting classpath, or unusable provider assets, fail startup without fallback. There is no runtime
+   provider selector.
+5. `Wiring` constructs everything:
    - the file repositories (giving `StorageHealth`);
-   - `OnnxEmbedder` and `BgeTokenCounter`, then `PostIndexer`, `IndexPost`, `ReconcileIndex`, `SearchPosts`;
+   - the discovered provider instance through both separate ports, `PassageEmbedder` and `QueryEmbedder`, plus its
+     `TokenCounter`, provider-specific query/passage preparation and passage-token budget; `FileVectorIndex` opens only that
+     profile's persistent subtree;
+   - `PostIndexer`, `IndexPost`, `ReconcileIndex`, `SearchPosts`;
    - the catalog use cases;
    - the `InProcessEventBus`, with `CatalogEventListener.subscribeTo(bus)`;
    - `ListCatalogPosts`, wired through `SharedCatalogPosts`.
-5. Build and start the server through a factory in `app.mcp` (so `app` never imports the SDK):
+6. Build and start the server through a factory in `app.mcp` (so `app` never imports the SDK):
    - `McpServer.sync(new StdioServerTransportProvider(McpJsonDefaults.getMapper(), EndOfInputWatch.wrap(System.in), guardedStdout))`;
    - `.serverInfo("blog-mcp", version)`, `.instructions(...)`, `.capabilities(ServerCapabilities.builder().tools(true).build())`;
    - `.tools(searchPostsSpec, getPostSpec)`, `.validateToolInputs(false)`, then `.build()`.
-6. `JobTimer.runNowThenEvery(syncInterval, syncAndReconcile)`. The first run uses `StorageHealth.startupSyncMode()`, and later runs
+7. `JobTimer.runNowThenEvery(syncInterval, syncAndReconcile)`. The first run uses `StorageHealth.startupSyncMode()`, and later runs
    use `INCREMENTAL`. The server already answers from the persisted index while the first run is in progress.
-7. Wait for end of input. Then call `closeGracefully()` on the server and `System.exit(0)`. `Main` does not rely on the transport's
+8. Wait for end of input. Then call `closeGracefully()` on the server and `System.exit(0)`. `Main` does not rely on the transport's
    threads to keep the JVM alive (UNVERIFIED), and the timer's thread is a daemon.
 
 A run in progress at exit, or a SIGTERM, needs no special handling: every write is atomic and nothing is buffered (3.3), so the
@@ -212,11 +236,23 @@ bind `slf4j-simple` 2.0.16 (matching `slf4j-api`), configured by a bundled `simp
 to a temporary directory it deletes on normal exit. Native resources are released when the JVM exits.
 
 **Embedding stays on the sync thread** (closes search Q9; owner-accepted). The whole job already runs on the timer's background
-thread, never on an MCP request thread, and with persistence only a first start or a recipe or model change embeds many chunks.
+thread, never on an MCP request thread. With persistence, a first start, a recipe change, or selection of a profile without an
+existing index embeds many chunks; a previously built profile reuses its own persisted index.
 
 ### 3.5 Packaging (3b)
 
-- The Gradle Shadow plugin `com.gradleup.shadow` **9.6.1** produces `build/libs/blog-mcp-all.jar`, with:
+- **Proposed provider build selection (ADR 0009):** the build requires `-PembeddingProvider=onnx` or
+  `-PembeddingProvider=gemma2`. Missing, blank or unsupported values fail Gradle configuration; no
+  provider is the default. Exactly the selected provider JAR is added to the distribution/runtime
+  classpath, separate from the base app JAR.
+- **Proposed classpath discovery/assembly:** the selected provider artifact advertises its implementation
+  through the `search.application` provider SPI. The app discovers exactly one provider using
+  `ServiceLoader`; missing or duplicate implementations fail startup. The distribution should retain
+  the provider JAR as a separate file and provide a launcher/classpath manifest that makes both the
+  app and selected provider (plus its required dependencies) available at runtime. The precise Gradle
+  configuration, distribution format and launcher mechanism remain structural questions for ADR 0009.
+- The Gradle Shadow plugin `com.gradleup.shadow` **9.6.1** produces the base `build/libs/blog-mcp-all.jar`,
+  with no embedding provider implementation shaded into it, and:
   - `mergeServiceFiles()` and `duplicatesStrategy = DuplicatesStrategy.INCLUDE`. **This is required:** `McpJsonDefaults.getMapper()`
     finds `mcp-json-jackson3` through `ServiceLoader`;
   - `META-INF/*.SF`, `*.DSA` and `*.RSA` excluded explicitly, so a signed dependency cannot break the merged jar;
@@ -375,9 +411,9 @@ Given a sync that is revising and saving posts on the job thread,
 When 20 `search_posts` and 20 `get_post` handler calls run at the same time on separate threads,
 Then every call returns a well-formed answer or "not found", with no exception, and each `get_post` returns either the old or the new version of a post, never a mixture.
 
-**AC-APP-12: The jar runs as an MCP server and exits when stdin closes.** (`@Tag("model")`, separate Gradle task after `shadowJar`)
-Given `build/libs/blog-mcp-all.jar`, a temporary config whose only site is unreachable, and a data directory containing a fixture post and its index entry,
-When the real `McpClient` starts it through `StdioClientTransport` (`java -jar …`) and calls `initialize()`, `listTools()` and `callTool("search_posts", {"query": <the fixture topic>})`,
+**AC-APP-12: The selected-provider distribution runs as an MCP server and exits when stdin closes.** (`@Tag("model")`, separate Gradle task after provider-specific distribution assembly)
+Given the base app and the single provider JAR selected by the required build property, plus a temporary config whose only site is unreachable and a data directory containing a fixture post and its index entry,
+When the real `McpClient` starts the generated distribution launcher through `StdioClientTransport` and calls `initialize()`, `listTools()` and `callTool("search_posts", {"query": <the fixture topic>})`,
 Then the call returns the fixture post first, and nothing on stderr mentions a missing SLF4J provider or a native-access warning.
 And when the client closes (stdin reaches end of file), the process exits with status 0 within a few seconds.
 
@@ -388,8 +424,8 @@ Given posts saved through `FilePostRepository` (including mixed-case tags, an em
 When a new repository instance opens the same directory,
 Then `findById`, `findByCanonicalUrl`, `findIdsBySite`, `findSiteIds` and `find(SiteId)` return equal values. `delete` removes the file, and the deletion survives a reopen.
 
-**AC-APP-25: The vector index survives a restart, bit-exactly.**
-Given indexed posts saved through `FileVectorIndex` (including one with zero chunks),
+**AC-APP-25: The vector index survives a restart, bit-exactly, for each provider dimension.** (768-dimension provider extension proposed in ADR 0009)
+Given indexed posts saved through `FileVectorIndex` for provider profiles with 384- and 768-dimensional vectors (including one post with zero chunks),
 When a new instance opens the same directory,
 Then every `IndexedPost` is equal: metadata, fingerprint, chunk texts and indexes, and every embedding float bit-for-bit. `remove` deletes the file.
 
@@ -411,9 +447,9 @@ When `FileVectorIndex` loads,
 Then the file is quarantined and one line is logged. The next reconcile reports the post `ADDED` and writes a valid file.
 
 **AC-APP-29: A recipe or model change after a restart re-embeds.**
-Given persisted entries built under recipe R1, and a restarted app whose recipe is R2 with the same model ID,
+Given persisted entries built under recipe R1 in the selected provider/profile subtree, and a restarted app whose recipe is R2 with the same model ID,
 Then the entries are loaded and served until the reconcile, which reports every post `RE_EMBEDDED` and rewrites each file with R2's fingerprint.
-And given persisted entries whose `modelId` differs from the current model, they are not loaded, are deleted, and one line is logged. The reconcile reports them `ADDED`.
+And given the selected provider/profile key differs, only that key's subtree is opened: entries under the other key are not loaded, deleted, quarantined or overwritten. The reconcile adds posts into the selected subtree, and the former profile's entries remain available if it is selected again.
 
 **AC-APP-35: File keys are safe.**
 Given the IDs `123`, `a/b`, `..`, `x:y`, `ü`, `Abc` and `abc`,
@@ -444,6 +480,19 @@ Then it is `Unreadable` and quarantined, not deleted as `IncompatibleModel`.
 And given a stored post, checkpoint or index file that cannot be read because of an I/O error (e.g. no read permission),
 When its repository opens,
 Then that file is quarantined, or skipped with one stderr line if it cannot even be renamed, the other files load, and the repository opens normally. Catalog and search behave the same way.
+
+**AC-APP-47: Persistent indexes use stable provider/profile-keyed directories.** (proposed, ADR 0009)
+Given the data directory is `~/.local/share/blog-mcp` and the selected profile key is
+`onnx-bge-small-en-v1.5-q-v1` or `gemma2-914f7f89-v1`,
+When `FileVectorIndex` opens and writes an indexed post,
+Then its file is under `search/index/<indexProfileKey>/<siteId>/<FileKey(postId)>.json`.
+And the key is obtained from the one provider instance discovered on the build-selected runtime classpath, not another environment variable.
+And reopening with the same key loads the existing entries from that subtree without rebuilding them
+solely because the process restarted.
+And opening a different key neither loads, deletes, quarantines nor overwrites entries in the other
+key's subtree; `BLOG_MCP_DATA` and the default data directory remain unchanged.
+And a proposed one-time adoption keeps existing legacy ONNX entries available under the ONNX key,
+while a Gemma2 startup leaves that legacy path untouched.
 
 ## 7. Slice split (owner decision: split)
 
@@ -528,7 +577,11 @@ Taken as recommended, for approval with the 3b checkpoint (no separate questions
 
 ## 10. Usage (for the README; 3b)
 
-1. Build: `./gw shadowJar` produces `build/libs/blog-mcp-all.jar` (about 130 MB). It needs Java 25.
+1. Choose exactly one provider at build time: `./gw -PembeddingProvider=onnx shadowJar` or
+   `./gw -PembeddingProvider=gemma2 shadowJar`. An omitted or invalid property fails configuration.
+   The build produces the base app artifact and a distribution/runtime classpath containing only the
+   chosen provider JAR and its required dependencies. It needs Java 25. There is no runtime provider
+   selector; provider artifacts carry their pinned profiles and matching tokenizer assets/dependencies.
 2. Configure `~/.config/blog-mcp/sites.json`:
    ```json
    {"syncEveryHours": 24,
@@ -538,11 +591,14 @@ Taken as recommended, for approval with the 3b checkpoint (no separate questions
    `syncEveryHours` is optional (default 24, minimum 1).
 3. Register it with Claude Code:
    ```
-   claude mcp add --env BLOG_MCP_CONFIG=/path/sites.json --transport stdio blog-mcp -- java -jar /path/blog-mcp-all.jar
+   claude mcp add --env BLOG_MCP_CONFIG=/path/sites.json --transport stdio blog-mcp -- /path/blog-mcp
    ```
    The server name must not come directly after `--env`, so keep another option such as `--transport stdio` between them. Add
    `--env BLOG_MCP_DATA=/path/data` to move the data directory. Both variables are optional; without them the defaults are
    `~/.config/blog-mcp/sites.json` and `~/.local/share/blog-mcp`.
+   The example launcher represents the generated classpath/launcher for the provider selected at
+   build time. Switching providers requires rebuilding the distribution, not setting a runtime
+   variable. Neither provider JAR belongs under the data directory.
 4. **First start:** the server answers at once, but search results stay incomplete until the first sync and index build finish
    (tens of seconds to a few minutes). Later starts serve the persisted index immediately.
 5. **Logs** go to stderr, which Claude Code shows in its MCP logs. Stdout is protocol only.

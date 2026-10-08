@@ -3,124 +3,167 @@
 Date: 2026-10-08
 
 ## Status
-Proposed; provider selection and the identity of the local serving alias were confirmed by the owner
-on 2026-10-08. The remaining model-approval checkpoint is to pin the served EmbeddingGemma 2
-revision and matching tokenizer assets, then approve its context and passage-budget profile before
-implementation.
+
+Proposed; awaiting owner approval. The build-time provider choice, separate ONNX/Gemma2 provider
+artifacts, local serving alias and EmbeddingGemma 2 profile reflect owner decisions. The SPI placement,
+Gradle property spelling, artifact assembly/classpath mechanism, token budgets and provider-keyed index
+layout remain proposed structural details.
 
 ## Context
+
 Search has two consumer-owned ports: `PassageEmbedder` in `search.domain.embedding` supplies the
 model identity and passage vectors used by indexing, while `QueryEmbedder` in `search.application`
-supplies query vectors. ADR 0006 split these ports by consumer. The selected provider must be the same
-for both operations because vectors from different model spaces cannot be compared.
-`IndexRecipe` incorporates the passage-model identity, and reconciliation re-embeds entries when the
-recipe changes. The owner confirmed that the local OpenAI-compatible alias
-`text-embedding-embeddinggemma-2` serves Google's EmbeddingGemma 2; the alias does not identify a
-revision, so model and tokenizer revisions still need to be pinned together.
+supplies query vectors. ADR 0006 split these ports by consumer. The selected provider must serve both
+operations because vectors from different model spaces cannot be compared. Keep both ports separate;
+no provider-selection aggregate or provider-specific type belongs in the domain.
 
-Provider-specific preparation is not interchangeable. Models can expect different query
-instructions, document templates, tokenizers and context limits. The existing ONNX BGE path has a
-known BGE query instruction and tokenizer-derived budget. The EmbeddingGemma 2 profile uses its own
-query and passage preparation, matching tokenizer assets from the pinned model revision, and
-explicitly configured context and token-budget values. An OpenAI-compatible API does not identify
-task prefixes, tokenizer assets or a reliable context limit; these must be configured from the
-confirmed model and pinned revision, not inferred from the API.
+ONNX BGE and Gemma2 are both separate provider JAR artifacts; neither provider implementation is
+bundled into the base application artifact. The owner requires a build-time choice of exactly one
+provider artifact, replacing the earlier runtime selector. The chosen provider is discovered from the
+runtime classpath; there is no provider-selection environment variable. The owner confirmed that the
+local OpenAI-compatible alias `text-embedding-embeddinggemma-2` serves Google EmbeddingGemma 2. Its
+artifact may include or depend on tokenizer assets. The Google Hugging Face revision pinned for the
+profile is `914f7f89142e33e77833254d9c9b90c3cef7303b`; official profile facts are 8,192 input
+context tokens, native dimension 768, query prefix `task: search result | query: `, and document
+format `title: {title} | text: {content}`, substituting `title: none` when a title is absent. The
+revision's `tokenizer.json` is approximately 32.2 MB and can be used with the existing DJL 0.36.0
+HuggingFace tokenizer. It is licensed Apache 2.0; redistribution must preserve its license and notices.
+
+Each provider requires its own query preparation, passage preparation, tokenizer and token budget.
+The existing ONNX BGE budget values are not generic defaults. Persisting every provider's index under
+the same directory would let concurrent or separate model runs overwrite entries from another vector
+space, so the index path must include a stable key for the selected indexing profile.
 
 ## Decision
-1. Select the provider in the `app` composition root; do not merge or relocate the consumer-owned
-   ports and do not introduce a new domain aggregate.
-2. Parse `BLOG_MCP_EMBEDDING_PROVIDER` once at startup through the proposed
-   `EmbeddingProviderSelection` composition type:
-   - absent: select ONNX BGE (`OnnxEmbedder`);
-   - `onnx`: explicitly select ONNX BGE;
-   - `gemma2`: select the configured local OpenAI-compatible embedding adapter;
-   - blank or any other value: report invalid configuration and fail startup, with no implicit
-     fallback.
-   Trim surrounding whitespace before matching.
-3. Create exactly one selected adapter instance and supply that same instance to both
-   `PassageEmbedder` and `QueryEmbedder`. Keep `Adapters` as the application composition boundary.
-4. Select provider-specific query-preparation and passage-preparation strategies with the provider.
-   The ports carry validated raw query text and canonical passage content; the selected adapter
-   applies its own strategy. Keep strategy behavior provider-neutral at the domain boundary: no
-   provider-specific prefixes, tokenizer classes, model templates or context claims enter the
-   domain.
-5. Select a provider-neutral `PassageTokenBudget` and matching `TokenCounter` with the provider.
-   Chunking uses that budget for body, title, overlap and fully prepared passage limits. The adapter
-   or explicit configuration supplies the actual tokenizer and supported context facts. For the
-   local provider, tokenizer assets must match the exact pinned model revision, and the served model
-   must use that same revision. Set profile limits from that revision's model/tokenizer configuration
-   and validation; do not reuse ONNX BGE numbers or assume context capacity from the alias. The
-   remaining model-approval checkpoint is approval of this pinned revision and profile.
-6. Include configured model/revision identity, passage-preparation version and passage-budget
-   parameters in `IndexRecipe`. Query preparation is excluded because it does not change stored
-   passages. A provider or passage-profile change therefore makes old entries stale and the next
-   reconcile re-embeds them before search compares vectors.
-7. Emit no domain event for provider selection. It is process-start composition, not a business
-   state transition.
 
-### Provider-specific facts and limits
+1. Require a build property naming exactly one provider artifact. Propose Gradle property
+   `embeddingProvider`, supplied as `-PembeddingProvider=onnx` or `-PembeddingProvider=gemma2`.
+   Missing, blank or unsupported values fail Gradle configuration; there is no default. This
+   build-time choice replaces, rather than coexists with, `BLOG_MCP_EMBEDDING_PROVIDER`; the app
+   reads no provider-selection environment variable at runtime.
+2. Provide the Gemma2 provider profile as built-in, pinned artifact configuration, including the model
+   revision, tokenizer revision, model dimension, context limit, query/passage preparation and token
+   budget. The provider artifact uses revision
+   `914f7f89142e33e77833254d9c9b90c3cef7303b`, dimension 768 and supported context 8,192. Propose
+   conservative passage limits of 3,000 body tokens, 256 overlap tokens, 128 title tokens and 4,096
+   fully prepared passage tokens. These limits are all provider-specific, remain below the documented
+   context, and must be checked against the artifact's pinned tokenizer. They do not inherit ONNX BGE's
+   400/100/64/465 values. ONNX BGE retains its existing model-matched profile.
+3. Build/distribute the base app with exactly the selected provider artifact on its runtime classpath.
+   Both providers are separate JARs. Propose a Gradle configuration and distribution/start script
+   which resolve the chosen provider and its runtime dependencies, preserving service descriptors;
+   `ServiceLoader` discovery then finds exactly one provider. The app fails startup if discovery finds
+   zero or multiple providers, or if the selected provider cannot load its pinned assets. No extra
+   provider JAR path under the data directory and no provider-related runtime variable is used.
+4. Place the proposed provider SPI in the existing `search.application` module/package boundary, for
+   example `nz.sounie.blogmcp.search.application.embedding.spi`. It is a public host contract consumed
+   by `app` and implemented by each provider artifact. It exposes a provider profile and one provider
+   instance that implements the separate consumer-owned `PassageEmbedder` and `QueryEmbedder` ports,
+   plus its tokenizer, budget, model identity and stable indexing-profile key. `app` discovers the
+   selected JAR through the runtime classpath and composes it; neither the SPI nor either provider may
+   depend on `app`, and neither search domain nor application depends on provider implementation
+   code. This placement lets provider artifacts depend inward on the host search API without
+   reversing the composition-root rule that nothing depends on `app`.
+5. Instantiate the single selected provider instance and supply that same instance through both
+   consumer-owned ports. Keep the port contracts separate. Query preparation and passage preparation
+   remain independent: query prefix applies only to validated raw query text; document formatting
+   only to canonical passage content.
+6. Keep model-specific instructions, tokenizer classes/assets, context facts and budget configuration
+   out of the domain. The selected `TokenCounter` and provider-neutral `PassageTokenBudget` are
+   supplied to search through existing boundaries. Validate each fully prepared Gemma2 passage with
+   the provider's tokenizer; tests verify its conservative limits are valid and provider-specific.
+7. Give every indexing profile a stable directory key derived from its provider/model revision and
+   indexing-profile version (including passage preparation and embedding-affecting budget/profile
+   choices; exclude query-only preparation). Proposed paths are:
+   - `search/index/onnx-bge-small-en-v1.5-q-v1/<site>/<FileKey(postId)>.json`
+   - `search/index/gemma2-914f7f89-v1/<site>/<FileKey(postId)>.json`
 
-- ONNX BGE retains its known query preparation and BGE-matched tokenizer/budget. The current 400
-  body-token, 100 overlap-token, 64 title-token and 465 total passage-token limits are BGE profile
-  values, not defaults that apply to another model.
-- The owner confirmed that the local alias `text-embedding-embeddinggemma-2` serves Google
-  EmbeddingGemma 2. Its provider profile retains the model-specific query prefix
-  `task: search result | query: ` and passage template
-  `title: {title} | text: {content}`, using `title: none` when there is no title. These strategies
-  are provider-specific, not shared domain behavior. Pin the exact served model revision and use
-  tokenizer assets from that same revision. Determine supported context and budget values from the
-  pinned assets and validate the fully prepared passage against them; no numeric Gemma2 budget is
-  assumed here
-  ([model card](https://huggingface.co/google/embeddinggemma-2),
-  [tokenizer config](https://huggingface.co/google/embeddinggemma-2/raw/main/tokenizer_config.json),
-  [model config](https://huggingface.co/google/embeddinggemma-2/raw/main/config.json)).
-- An OpenAI-compatible endpoint's request shape does not establish the task prefix, tokenizer or
-  reliable context limit. These must be established from the pinned model and tokenizer assets, not
-  guessed from the endpoint or alias
-  ([OpenAI embeddings API](https://developers.openai.com/api/reference/resources/embeddings/methods/create),
-  [LM Studio embeddings documentation](https://lmstudio.ai/docs/developer/openai-compat/embeddings)).
+   The keys are stable across restarts of the same profile and distinct between incompatible vector
+   spaces. The composition root passes the selected key to `FileVectorIndex`; it does not add another
+   path environment variable. Opening one profile reads and writes only its own subtree. Switching
+   profiles neither loads, deletes, quarantines nor overwrites the other profile's entries. Preserve
+   the existing per-file atomic writes, stored recipe/fingerprint checks and reconcile behavior within
+   the selected subtree. A profile-key change for embedding-affecting configuration selects a new
+   subtree; ordinary content changes continue to reconcile and rewrite entries for that profile.
+   For existing default ONNX data at the legacy `search/index/<site>/<post>.json` path, propose a
+   one-time adoption into the ONNX keyed subtree before opening it. A Gemma2 selection must not inspect
+   or move those legacy files.
+8. Keep provider identity and passage-recipe validation in index files. No domain event is emitted for
+   provider selection: it is process-start composition, not a business state transition.
 
-### Rejected alternatives
-- Merge the two ports into a provider interface: this reverses ADR 0006's consumer-owned port
-  decision and makes both consumers depend on an abstraction neither owns.
-- Construct passage and query adapters independently: it permits the two ports to use different
-  models and silently makes similarity results invalid.
-- Share BGE query instructions, tokenizer assumptions or fixed token budgets with another provider:
-  model-specific input semantics and context limits differ.
-- Treat blank or unknown input as the default: this hides configuration mistakes and could cause the
-  application to index and search with an unintended model.
-- Infer the pinned model revision, tokenizer or context limit from an OpenAI-compatible alias:
-  compatibility of the HTTP contract is not evidence of those model properties. The owner-confirmed
-  model identity does not establish the revision or its tokenizer assets.
+## Provider-specific facts and limits
+
+- ONNX BGE keeps its BGE query preparation, tokenizer and 400 body / 100 overlap / 64 title / 465
+  fully prepared passage token limits. Those limits are not defaults for other providers.
+- Google EmbeddingGemma 2 uses the pinned revision and profile stated above. Its query and document
+  inputs are exactly `task: search result | query: {query}` and
+  `title: {title} | text: {content}` (with `title: none` when absent). The provider tokenizer comes from
+  that same revision. Model and tokenizer facts are established by the pinned official model assets,
+  not inferred from the OpenAI-compatible alias.
+- The tokenizer asset is approximately 32.2 MB. The Gemma2 provider artifact may carry that asset
+  and/or depend on the existing DJL HuggingFace tokenizer library. Preserve Apache 2.0 attribution and
+  notices when packaging or redistributing it.
+
+## Rejected alternatives
+
+- Merge `PassageEmbedder` and `QueryEmbedder` into one provider port: that reverses ADR 0006's
+  consumer-owned-port decision.
+- Make a provider artifact or SPI depend on `app`, or put the SPI in `app`: providers would then depend on the
+  composition root and violate inward dependency direction.
+- Add runtime provider/profile environment variables: the owner chose build-time selection and
+  provider artifacts own their pinned profiles/defaults.
+- Reuse the ONNX BGE preparation, tokenizer or token budget for Gemma2: preparation and token counts
+  are provider-specific.
+- Treat a missing provider on the runtime classpath as a fallback to another model: this hides a
+  packaging error and risks comparing incompatible vectors.
+- Store all providers' indexes at `search/index/<site>/...`: different models could overwrite one
+  another, and concurrent model runs would not be isolated.
 
 ## Consequences
-- Production composition is configuration-driven, with ONNX BGE as the default. The selector and
-  provider factory belong to `app`; the two consumer-owned ports remain separate.
-- A provider profile consists of one shared adapter instance plus its query strategy, passage
-  strategy, tokenizer and explicit token budget. Provider internals stay in adapters/configuration;
-  search domain code consumes only the strategy and budget behavior it needs.
-- Changing model/revision identity or passage preparation/budget changes recipe identity. Existing
-  entries are treated as stale and rebuilt through the existing reconcile path.
-- No dependency or bounded context is added, and no domain event is emitted.
-- The local alias is owner-confirmed as Google EmbeddingGemma 2. Before implementation, pin the
-  exact served model revision, provision tokenizer assets from that same revision, and approve
-  context and passage-budget values from those assets and validation. The profile explicitly
-  configures body, title, overlap and fully prepared passage limits; it does not inherit ONNX BGE
-  limits or assume an unverified numeric context.
+
+- Exactly one provider artifact is required at build time and on the resulting runtime classpath.
+  There is no implicit ONNX default and no runtime provider selector.
+- The proposed host SPI belongs at the search application boundary. `app` owns provider discovery and
+  composition; both provider artifacts are independent of `app` and are not imported by domain code.
+- The profile's query/passage strategies, tokenizer, dimension and budget travel together, while the
+  two public consumer ports stay separate.
+- Profile-keyed index subtrees allow concurrent runs on different embedding profiles and stable
+  restart reuse without cross-profile deletion or overwrite. Content/recipe reconciliation remains
+  unchanged within each profile.
+- No domain event or provider-selection environment variable is introduced.
 
 ## Acceptance criteria
-- AC-SRCH-40–45 cover startup selection, failure on invalid values, shared provider instance and
-  recipe/vector compatibility.
-- AC-SRCH-46 verifies query and passage preparation independently for each configured provider.
-- AC-SRCH-47 verifies tokenizer assets match the pinned model revision and that the explicit,
-  validated provider budget stays within the supported context without inheriting BGE assumptions.
+
+- AC-SRCH-40–45 cover required build selection, classpath discovery/failure, separate ports, one
+  selected provider instance and embedding compatibility.
+- AC-SRCH-46–49 cover provider-specific preparation, built-in Gemma2 profile and budget validation,
+  artifact discovery and missing-asset failure.
+- AC-APP-47 and AC-SRCH-50 cover stable profile-keyed paths, same-profile restart reuse and profile
+  switching without cross-profile loads, deletes or overwrites.
+
+## Open questions before implementation
+
+- Approve the SPI's exact public API and package/module placement under `search.application`.
+- Confirm the Gradle property name, provider-artifact configuration, classpath assembly/distribution
+  and launcher mechanism. Build-time selection is required and there is no runtime selector.
+- Confirm the Gemma2 default budgets after running the pinned tokenizer against representative and
+  pathological passages; keep the final fully prepared limit conservative relative to 8,192.
+- Confirm how the Gemma2 provider artifact reaches the local OpenAI-compatible endpoint without adding
+  runtime provider/profile environment settings (or whether endpoint configuration belongs in its
+  built-in profile/configuration).
+- Confirm the one-time legacy ONNX index adoption and its atomic move/copy semantics. Once opened at
+  the selected profile path, subsequent restarts must reuse it; Gemma2 must not touch the legacy path.
+- Different profiles can write concurrently to separate subtrees. Same-profile concurrent app
+  instances share a subtree; decide whether the deferred data-directory lock in ADR 0007 is required
+  before supporting that deployment.
+- Confirm provider dependency packaging and tokenizer license/notice handling in the Gemma2 artifact.
 
 ## Sources
-- Google EmbeddingGemma 2 model card: <https://huggingface.co/google/embeddinggemma-2>
-- Google EmbeddingGemma 2 tokenizer configuration:
-  <https://huggingface.co/google/embeddinggemma-2/raw/main/tokenizer_config.json>
-- Google EmbeddingGemma 2 model configuration:
-  <https://huggingface.co/google/embeddinggemma-2/raw/main/config.json>
+
+- Google EmbeddingGemma 2 model card and files at pinned revision:
+  <https://huggingface.co/google/embeddinggemma-2/tree/914f7f89142e33e77833254d9c9b90c3cef7303b>
+- Pinned tokenizer configuration:
+  <https://huggingface.co/google/embeddinggemma-2/blob/914f7f89142e33e77833254d9c9b90c3cef7303b/tokenizer.json>
 - OpenAI embeddings request contract:
   <https://developers.openai.com/api/reference/resources/embeddings/methods/create>
 - LM Studio OpenAI-compatible embeddings documentation:

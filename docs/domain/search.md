@@ -1,9 +1,9 @@
 # Search bounded context
 
-Status: Existing model decisions approved by the owner on 2026-10-02; embedding-provider selection
-and the local alias identity confirmed by the owner on 2026-10-08. The EmbeddingGemma 2
-revision-specific tokenizer and passage-budget profile remain at the model-approval checkpoint
-(section 9).
+Status: Existing model decisions approved by the owner on 2026-10-02. Build-time provider-artifact
+selection and the EmbeddingGemma 2 profile reflect owner decisions from 2026-10-08; SPI placement,
+build/classpath assembly, token-budget values and profile-keyed index paths are proposed in ADR 0009
+and await owner approval.
 Package: `nz.sounie.blogmcp.search`
 Feature tag for acceptance criteria: `SRCH`
 
@@ -17,8 +17,8 @@ Search is responsible for:
 - indexing only posts whose body is the **full** text. Posts the catalog holds only as a `SUMMARY`
   are excluded (owner decision, Q7);
 - splitting each post into overlapping **chunks** that stay safely under the embedding model's input limit;
-- turning each chunk, together with the post title, into an **embedding** with the selected provider:
-  ONNX BGE by default or the owner-confirmed local Google EmbeddingGemma 2 provider;
+- turning each chunk, together with the post title, into an **embedding** with the provider artifact
+  selected at build time: ONNX BGE or the owner-confirmed local Google EmbeddingGemma 2 provider;
 - keeping the index in step with the catalog: reacting to the catalog's integration events, and
   **reconciling** against the catalog's current posts to repair missed events or a changed recipe;
 - answering a **search query** with optional site and published-date filters and a clamped limit.
@@ -38,7 +38,7 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 
 | Term | Meaning | Code name |
 |---|---|---|
-| Invalid provider configuration | A present provider-selection value that is blank or names no supported provider. It prevents application startup rather than silently selecting a different model. | `StartupFailure` (reported by `Main`) |
+| Invalid provider build selection | A missing, blank or unsupported required build property naming the embedding provider artifact. It fails build configuration instead of selecting a model implicitly. | Gradle configuration failure (proposed) |
 | Post ID | Search's own copy of the catalog's post identity, in the external form `<siteId>:<sourcePostId>`. Parsed from the published language, and never shared as a catalog type. | `PostId` (search.domain) |
 | Site ID | The site part of a post ID (`[a-z0-9-]{1,40}`). It is used for the site filter. | `SiteId` (search.domain) |
 | Completeness | Whether the catalog has the `FULL` post text or only a `SUMMARY`. It is also the **indexability rule**: `FULL` posts go through the normal index decision, and `SUMMARY` posts are always excluded (owner decision, Q7). It is not stored in the index and not shown in results, because everything indexed is `FULL`. | `Completeness` (enum with behaviour `decide(...)`) |
@@ -48,12 +48,13 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Word sequence | The post body after **text normalisation**, as an ordered list of words. Any run of Unicode whitespace (spaces, tabs, newlines, no-break space U+00A0) separates words. Any **overlong word** is split into pieces. | `WordSequence` |
 | Overlong word | A whitespace-free run longer than 64 characters, such as a URL, base64 data or minified code. It is split into consecutive pieces of at most 64 characters, which then count as separate words. | `WordSequence` (rule `MAX_WORD_CHARS = 64`) |
 | Token | One unit counted by the selected provider's configured tokenizer. Tokenization and context limits are provider-specific; a provider-neutral budget must be selected with the provider. | `TokenCounter` (domain port) |
-| Passage token budget | Provider-selected, provider-neutral limits for chunk body tokens, title tokens and total prepared passage tokens. It is applied with the selected provider's tokenizer; vendor/model details stay outside the domain. | `PassageTokenBudget` (domain policy/configuration, proposed) |
-| Token counter | Port that counts the selected provider's actual tokens. The adapter must use the tokenizer for the loaded model revision; an OpenAI-compatible endpoint alone does not identify one. | `TokenCounter` (domain port), provider adapter (`search.adapter.out`) |
-| Embedding provider | One selected implementation that embeds both passages for indexing and queries for search. Supported selections are ONNX BGE and the local OpenAI-compatible provider, whose `text-embedding-embeddinggemma-2` alias the owner confirmed serves Google EmbeddingGemma 2. | Provider adapter (`search.adapter.out`) |
-| Embedding provider selection | The application-composition choice read once at startup from `BLOG_MCP_EMBEDDING_PROVIDER`; unset selects `onnx`, while `onnx` and `gemma2` explicitly select the supported providers. A blank or unknown value is invalid, not a request for the default. | `EmbeddingProviderSelection` (`app`, proposed) |
-| Provider model identity | The explicitly configured model and pinned revision identity, exposed through the passage-embedding port and included in the index recipe. For `gemma2`, the owner-confirmed alias maps to Google EmbeddingGemma 2; its tokenizer assets must match the pinned revision. | `PassageEmbedder.modelId()` |
-| Shared provider instance | The one selected adapter instance supplied through both consumer-owned embedding ports, so passage and query vectors inhabit the same model space. | `Adapters` composition (`app`) |
+| Passage token budget | Provider-selected, provider-neutral limits for chunk body tokens, overlap tokens, title tokens and fully prepared passage tokens. It is applied with the selected provider's tokenizer; vendor/model details stay outside the domain. The Gemma2 limits are built into its pinned provider-artifact profile, not runtime environment settings. | `PassageTokenBudget` (domain policy/configuration, proposed) |
+| Token counter | Port that counts the selected provider's actual tokens. Provider tokenizer assets are pinned with the provider profile; an OpenAI-compatible endpoint cannot prove which model revision it loaded. | `TokenCounter` (domain port), provider adapter (`search.adapter.out`) |
+| Embedding provider | One selected provider artifact supplies a single provider instance, tokenizer and budget. ONNX BGE and Gemma2 are separate JAR artifacts; Gemma2 corresponds to the owner-confirmed `text-embedding-embeddinggemma-2` alias. | Provider JAR, discovered from classpath |
+| Embedding provider selection | A required build-time choice includes exactly one provider JAR on the app/runtime classpath. There is no runtime selector or implicit default. | Gradle property (proposed: `embeddingProvider`) |
+| Provider model identity | The model and pinned revision identity exposed through the passage-embedding port and recorded in the index recipe/profile key. Gemma2 uses revision `914f7f89142e33e77833254d9c9b90c3cef7303b`. | `PassageEmbedder.modelId()` |
+| Gemma2 profile | Built-in profile in its separate provider artifact: pinned revision, matching tokenizer, dimension 768, context 8,192, provider-specific preparation and conservative token limits. It is selected at build time; no Gemma2-specific runtime variables are required. | Gemma2 provider JAR |
+| Shared provider instance | Exactly one instance from the selected provider artifact implements both separate consumer-owned embedding ports, ensuring passage and query vectors inhabit the same model space. | Provider discovery/composition (`app`, proposed) |
 | Query preparation | Provider-selected transformation of the raw `QueryText` into the exact query input the model expects. It is separate from query validation and from passage preparation; the selected adapter applies it, so query text in the domain carries no provider-specific prefix. | Query-preparation strategy at the selected adapter boundary (proposed) |
 | Passage preparation | Provider-selected transformation of canonical passage content into the exact model input, including any required instruction/template. Its version and budget affect the index recipe; its implementation remains in the adapter. | Passage-preparation strategy at the selected adapter boundary (proposed) |
 | Chunk | A contiguous window of the word sequence that is embedded as one unit. A chunk has a zero-based **chunk index** in body order, and its text is its words joined by single spaces. | `Chunk` |
@@ -63,10 +64,10 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Title line | The canonical title content, limited according to the selected `PassageTokenBudget`; the adapter may apply its provider's passage template afterward. | `PassageComposition` |
 | Passage composition | The rule that builds passages from a title and chunks. | `PassageComposition` |
 | Embed | Turn canonical passage content or raw query text into an embedding through the selected provider and its input-preparation strategies. | `PassageEmbedder.embedPassages(...)`, `QueryEmbedder.embedQuery(QueryText)` (proposed signature) |
-| Embedder | The selected embedding provider, seen through two ports split by consumer (ADR 0006): the **passage embedder** (`modelId()` and `embedPassages(List<Passage>)`, used by indexing) and the **query embedder** (used by search). The same selected instance implements both ports and applies provider-specific preparation. | `PassageEmbedder` (`search.domain.embedding`), `QueryEmbedder` (`search.application`) |
+| Embedder | The selected provider instance is seen through two ports split by consumer (ADR 0006): the **passage embedder** (`modelId()` and `embedPassages(List<Passage>)`, used by indexing) and the **query embedder** (used by search). The same instance implements both ports and applies the provider's independent query and passage preparation. | `PassageEmbedder` (`search.domain.embedding`), `QueryEmbedder` (`search.application`) |
 | Embedding | A vector whose dimension matches the explicitly configured model, with finite values and unit length. | `Embedding` |
 | Similarity | The cosine similarity of two embeddings. Because embeddings are unit length, this is their dot product. Its range is [-1, 1], and higher means more related. | `Similarity` |
-| Index recipe | The identity of the method used to build an index entry: selected model/revision identity, chunking and selected passage-budget parameters, and passage-preparation/template version. Query preparation is excluded because it does not change stored passages. Changing an indexing-relevant part makes every entry stale. | `IndexRecipe` |
+| Index recipe | The identity of the method used to build an index entry: selected model and tokenizer revision identity, chunking and selected passage-budget parameters, and passage-preparation/template version. The tokenizer filesystem path and supported context are deployment/validation details, not recipe identity. Query preparation is excluded because it does not change stored passages. Changing an indexing-relevant part makes every entry stale. | `IndexRecipe` |
 | Content fingerprint | SHA-256 over the index recipe, the normalised title and the normalised body. If two posts have the same fingerprint, they produce the same passages. Tags and other metadata are **not** included. | `ContentFingerprint` |
 | Indexed post | The aggregate: one post's metadata, its content fingerprint and its indexed chunks. | `IndexedPost` |
 | Indexed chunk | A chunk's index and text together with its embedding. | `IndexedChunk` |
@@ -135,9 +136,9 @@ Invariants:
    so that reconciles do not keep re-adding it, but it never matches a query.
 3. **Embeddings**: one per chunk, each with the selected provider's configured dimension and unit
    length, all made under the same index
-   recipe as the fingerprint. The composition root selects one embedding provider and supplies the
-   same provider instance through both `PassageEmbedder` and `QueryEmbedder`; therefore search queries
-   are embedded in the vector space used by the index.
+   recipe as the fingerprint. The composition root selects one embedding provider profile and wires
+   its separate passage and query implementations through `PassageEmbedder` and `QueryEmbedder`;
+   therefore search queries are embedded in the vector space used by the index.
 4. **Fingerprint integrity**: the fingerprint is the one computed from the content the chunks were built
    from. `withMetadata` cannot change content, and new content always goes through `PostIndexer`.
 5. **Whole replacement**: an entry is saved and replaced as a whole. A search never sees a mixture of
@@ -173,7 +174,7 @@ approximate-nearest-neighbour structure is needed (ADR 0005).
 | Whether a post may be indexed at all | `Completeness.decide(...)` (`FULL` delegates to the normal decision; `SUMMARY` always gives `Exclude`) | Owner decision, Q7. It is reached only through `IndexDecision.forPost`, so events and reconciles share it. |
 | What changes re-embedding | `ContentFingerprint.of(IndexRecipe, title, WordSequence)` | Tags, URL and dates are excluded. Completeness is decided before the fingerprint matters. |
 | Recipe identity | `IndexRecipe` | Derived from selected model/revision identity, `ChunkingPolicy` and passage-budget parameters, and passage-preparation version. Query preparation is excluded. |
-| Provider selection, environment parsing and composition | `EmbeddingProviderSelection` in `app` (proposed) | Reads `BLOG_MCP_EMBEDDING_PROVIDER` once, defaults only when it is absent, rejects blank or unknown values, and selects one adapter instance for both consumer-owned ports. The application composition root owns this runtime choice; it is not a search-domain aggregate or a shared port. |
+| Provider-artifact selection and composition | Required Gradle property (proposed: `embeddingProvider`) and classpath discovery in `app` | Build configuration rejects missing, blank or unsupported values and includes exactly one provider artifact. At runtime `ServiceLoader` discovers exactly one provider from the classpath. No runtime provider selector or default exists; this is not a search-domain aggregate or shared port. |
 | Dimension check, finiteness, non-zero norm, normalisation, cosine | `Embedding` | It throws `InvalidEmbedding`. |
 | Query validation | `QueryText` | It stores trimmed, validated raw text. Provider-specific query preparation is not a domain rule; the selected adapter applies its configured strategy. |
 | Query versus passage preparation | Separate `QueryEmbedder` and `PassageEmbedder` consumer-owned ports; selected adapter's preparation strategies | No boolean flag or provider-specific prefix in the domain. Query preparation is not part of `IndexRecipe`; passage preparation is. |
@@ -272,16 +273,15 @@ Index mutations (`IndexPost` and `ReconcileIndex`) are serialised by a single lo
 application layer, so that a decision and its save cannot interleave with another mutation of the same post.
 Searches do not take that lock.
 
-**Embedding providers and model access.** `OnnxEmbedder` (ONNX BGE) and the configured local
-OpenAI-compatible embedding adapter each implement both consumer-owned ports. The composition root
-reads `BLOG_MCP_EMBEDDING_PROVIDER` once and supplies the same selected adapter instance as the
-passage and query embedder. The selected profile also supplies provider-specific query and passage
-preparation strategies, a matching tokenizer, and its explicit passage-token budget. These are
-provider-neutral behavior/configuration boundaries: model-specific instructions, tokenizers and
-context facts remain in adapters/configuration, not the domain. Passage vectors used by the index and
-query vectors used for search must be generated by the same configured model/revision. The configured
-model/revision identity, passage preparation and budget contribute to `IndexRecipe`; changing an
-indexing-relevant value makes entries stale and the next reconcile re-embeds them (AC-SRCH-45–47).
+**Embedding providers and model access.** ONNX BGE and Gemma2 are separate provider JAR artifacts;
+each provides one instance implementing both consumer-owned ports. A required build property selects
+exactly one artifact for the app/runtime classpath. The app discovers that provider from the runtime
+classpath; it reads no provider-selection environment variable. The provider supplies its own
+query/passage strategies, matching tokenizer and explicit passage-token budget. Model-specific
+instructions, tokenizers and context facts remain in adapters/configuration, not the domain. Passage
+and query vectors must use the same configured model/revision. Model identity, passage preparation
+and budget contribute to `IndexRecipe`; changing an indexing-relevant value makes entries stale
+within that profile's index (AC-SRCH-40–50).
 
 For ONNX BGE, LangChain4j shares one ONNX session and one tokenizer per model, and its own
 `embedAll` already calls them from a thread pool sized to `availableProcessors()`. That suggests
@@ -343,15 +343,16 @@ event. No other context needs to know about indexing. Outcomes are returned as r
   and `SharedCatalogPosts`) into `PostToIndex`. The pull side wraps each post in a `CatalogEntry`, so
   malformed states stay visible. Neither `search.domain` nor `search.application` sees
   `shared` types.
-- **search to embedding providers (conformist, wrapped)**: the ONNX BGE adapter and configured local
-  OpenAI-compatible adapter in `search.adapter.out` each implement both consumer-owned ports.
-  `EmbeddingProviderSelection` in `app` chooses one once at startup; the composition root supplies
-  that same adapter instance to both ports and selects its query/passage strategies and passage-token
-  budget. Provider tokenizers and model-specific preparation remain outside the domain; the selected
-  tokenizer implements the separate `TokenCounter` port.
+- **search to embedding providers (conformist, wrapped)**: ONNX BGE and Gemma2 are separate provider
+  JAR artifacts. A required build property includes exactly one in the runtime classpath, and `app`
+  discovers its provider through the proposed SPI at the `search.application` boundary. The same
+  discovered provider instance implements the separate consumer-owned embedding ports. Neither SPI
+  nor provider depends on `app`. Provider tokenizers and model-specific preparation remain outside
+  the domain; the selected tokenizer implements the separate `TokenCounter` port. Missing or
+  ambiguous classpath discovery fails startup.
   The ONNX model and tokenizer files are bundled in the LangChain4j jar, so nothing is downloaded
-  at runtime. ONNX loads lazily; the local endpoint's availability and startup behavior depend on its
-  explicit configuration.
+  at runtime. The selected provider loads lazily; Gemma2's built-in pinned profile and usable
+  tokenizer assets from the matching revision are supplied by its separate provider artifact.
 - **search to mcp (slice 3)**: the `search_posts` tool calls `SearchPosts` and maps its arguments with
   `SearchQuery`'s factories (`ResultLimit.defaultLimit()` when `limit` is absent,
   `PublishedDateRange.unbounded()` when both dates are absent, and so on).
@@ -465,46 +466,49 @@ Then the `QueryEmbedder` receives the validated raw `QueryText`, and the selecte
 And when a post is indexed, the selected provider's passage-preparation strategy is applied independently; query preparation is never applied to passages.
 And changing query preparation does not change any `IndexRecipe` or `ContentFingerprint`, while changing passage preparation does change the `IndexRecipe`.
 
-### Embedding provider selection
+### Embedding provider artifact selection
 
-The agreed configuration key is `BLOG_MCP_EMBEDDING_PROVIDER`. Its accepted values are the
-lowercase strings `onnx` and `gemma2`; surrounding whitespace is trimmed. An unset variable selects
-the default. A blank or unknown value fails startup rather than falling back. Each provider selection also
-selects its own query-preparation strategy, passage-preparation strategy, tokenizer and passage-token
-budget. The owner confirmed that the local `text-embedding-embeddinggemma-2` alias is Google
-EmbeddingGemma 2; the exact model revision and matching tokenizer assets must be pinned together.
+The build requires a provider choice and includes exactly one provider JAR on the application runtime
+classpath. Proposed Gradle invocation: `./gw -PembeddingProvider=onnx shadowJar` or
+`./gw -PembeddingProvider=gemma2 shadowJar`. This build property replaces the former
+`BLOG_MCP_EMBEDDING_PROVIDER` runtime selector; there is no runtime provider choice or implicit
+default. Each separate provider artifact owns its pinned profile and matching dependencies/assets.
+Runtime discovery is from the selected artifact on the classpath, not from the data directory.
 
-**AC-SRCH-40: An unset provider selection defaults to ONNX BGE.**
-Given `BLOG_MCP_EMBEDDING_PROVIDER` is absent,
+**AC-SRCH-40: Build selection is mandatory and chooses one provider artifact.**
+Given the build is invoked with `-PembeddingProvider=onnx` or `-PembeddingProvider=gemma2`,
+When Gradle configures and assembles the application distribution,
+Then exactly the matching provider artifact and its required dependencies/assets are included on the runtime classpath.
+And no provider-selection runtime environment variable is read.
+
+**AC-SRCH-41: Missing or invalid build selection fails configuration.**
+Given the `embeddingProvider` property is absent, blank or names anything other than `onnx` or `gemma2`,
+When Gradle configures the application,
+Then configuration fails with a clear error before producing a runnable distribution, with no implicit ONNX default.
+
+**AC-SRCH-42: The selected provider artifact is discovered exactly once.**
+Given a valid distribution whose runtime classpath contains exactly the provider artifact selected at build time,
+When the app assembles search,
+Then classpath discovery finds exactly one provider and uses its built-in profile, tokenizer, model identity and budget.
+And zero or multiple discovered providers, or unusable pinned assets, fail startup rather than falling back.
+And Gemma2 requires no Gemma2-specific runtime environment variables or config-file values.
+
+**AC-SRCH-43: ONNX and Gemma2 are separate provider artifacts.**
+Given either provider is selected at build time,
+When the application distribution is assembled,
+Then its provider implementation is in a separate JAR from the base app and only the selected provider JAR is on that distribution's runtime classpath.
+And the ONNX provider artifact is required explicitly; it is not silently bundled as a default in the base app.
+
+**AC-SRCH-44: One selected provider instance serves both consumer-owned ports.**
+Given exactly one provider is discovered,
 When the application assembles search,
-Then `OnnxEmbedder` is selected, its `modelId()` is `bge-small-en-v1.5-q`, and the index recipe uses that model ID.
+Then that same provider instance implements `PassageEmbedder` (`search.domain.embedding`) and `QueryEmbedder` (`search.application`) without merging or relocating those ports.
+And it applies independent provider-specific query and passage preparation so both vector types belong to the same model space.
 
-**AC-SRCH-41: ONNX BGE can be selected explicitly.**
-Given `BLOG_MCP_EMBEDDING_PROVIDER` is `onnx`,
-When the application assembles search,
-Then `OnnxEmbedder` is selected for passage and query embedding.
-
-**AC-SRCH-42: The Gemma2-compatible provider can be selected explicitly.**
-Given `BLOG_MCP_EMBEDDING_PROVIDER` is `gemma2`,
-When the application assembles search,
-Then the configured local OpenAI-compatible embedding adapter is selected for both embedding ports, and the index recipe records Google EmbeddingGemma 2 with its exact pinned model revision.
-And the tokenizer assets used by that provider match the pinned model revision; the alias alone is not used as the revision or tokenizer identity.
-
-**AC-SRCH-43: Blank and unknown provider selections fail startup.**
-Given the provider variable is present but empty, whitespace-only, or contains a value other than the exact lowercase strings `onnx` or `gemma2` after trimming,
-When the application resolves its provider selection,
-Then it reports an invalid provider configuration and does not silently fall back to ONNX or start search.
-
-**AC-SRCH-44: Both embedding ports use the same selected provider instance.**
-Given either supported provider selection,
-When the application assembles search,
-Then one selected adapter instance is supplied as both `PassageEmbedder` and `QueryEmbedder`; the consumer-owned ports remain `PassageEmbedder` in `search.domain.embedding` and `QueryEmbedder` in `search.application`.
-And passages are indexed and queries are embedded by the same provider and model.
-
-**AC-SRCH-45: The selected provider keeps the index recipe and search vectors compatible.**
-Given indexed entries were created with ONNX BGE and the application is restarted with `gemma2` selected (or vice versa),
-When the current recipe is built and reconciliation runs,
-Then the current recipe contains the selected provider's configured model/revision identity and indexing profile and differs from the old recipe, incompatible old-model entries are not compared with new query vectors, and each catalog post is searchable only after it has been embedded by the selected provider that also embeds its queries.
+**AC-SRCH-45: Search compares vectors only within the selected embedding profile.**
+Given a persisted index was created with a different provider or embedding-affecting profile,
+When the distribution built with the current provider profile starts,
+Then entries from the other profile are not loaded or compared with current query vectors, and catalog posts become searchable in the current profile only after indexing with that profile.
 
 **AC-SRCH-46: Query and passage preparation are selected per provider.**
 Given a provider is selected,
@@ -513,12 +517,31 @@ Then the selected provider applies its configured query-preparation strategy onl
 And tests for each configured provider verify the exact prepared inputs; no provider-specific prefix or template is asserted as shared domain behavior.
 And for the owner-confirmed local Google EmbeddingGemma 2 provider, its query input uses `task: search result | query: ` and its document input uses `title: {title} | text: {content}` (with `title: none` for an absent title), as documented by that model card.
 
-**AC-SRCH-47: Each provider uses an explicit matching tokenizer and context-derived token budget.**
-Given a provider profile is selected,
-When passages are split and prepared,
-Then the selected `TokenCounter` uses the tokenizer matching the configured model revision, the provider-specific `PassageTokenBudget` keeps the fully prepared passage within the explicitly configured supported context, and the profile—not a shared BGE assumption—determines body, title and overlap-token limits.
-And the local profile pins tokenizer assets to the exact served model revision and uses a supported context limit established from that revision's model/tokenizer configuration.
-And its configured body, overlap, title and fully prepared passage budgets are explicit profile values; the fully prepared input stays within that supported context. Do not assume numeric limits from an alias, another model revision, or the ONNX BGE profile.
+**AC-SRCH-47: The Gemma2 provider artifact uses its pinned tokenizer and conservative, provider-specific budget.**
+Given the build selects the Gemma2 provider artifact with pinned revision `914f7f89142e33e77833254d9c9b90c3cef7303b`,
+When the runtime classpath provider loads its tokenizer and validates its built-in profile,
+Then the tokenizer assets come from that same revision, the native dimension is 768, and the documented context is 8,192 tokens.
+And the proposed body, overlap, title and fully prepared passage budgets are 3,000, 256, 128 and 4,096 respectively, and tests using the pinned tokenizer assert `0 <= overlap < body`, `body <= fullyPrepared`, `title <= fullyPrepared`, and `fullyPrepared <= 8,192`.
+And tests assert this is the Gemma2 profile and does not inherit ONNX BGE's values.
+
+**AC-SRCH-48: Missing or unusable pinned tokenizer assets fail Gemma2 startup.**
+Given the build selected Gemma2 and its provider artifact or pinned tokenizer assets cannot be loaded,
+When the application resolves the provider profile,
+Then startup fails with a provider configuration error and does not start with a partial profile or substitute another provider.
+And the tokenizer asset's Apache 2.0 license and notices are preserved in the Gemma2 provider artifact.
+
+**AC-SRCH-49: The profile records its pinned model identity without claiming endpoint attestation.**
+Given the Gemma2 provider artifact is selected at build time and its local endpoint does not report a verifiable loaded revision,
+When the application records provider identity and embeds passages or queries,
+Then the profile and index recipe identify Google EmbeddingGemma 2 at revision `914f7f89142e33e77833254d9c9b90c3cef7303b`, while making no claim that the endpoint independently proved it.
+And the provider artifact's tokenizer assets are pinned to that exact revision.
+
+**AC-SRCH-50: Provider-keyed indexes are distinct, stable across restarts and isolated when switching profiles.**
+Given ONNX BGE and Gemma2 have each written entries under their stable provider/profile key,
+When an application restarts with the same profile, switches to the other profile, or both provider-specific distributions run against the same data directory concurrently,
+Then the same profile reuses its persisted entries from its own index subtree.
+And switching profiles neither loads, deletes, quarantines nor overwrites entries under the other profile's subtree.
+And concurrent runs using different profile keys write only within their respective subtrees.
 
 ### Index maintenance
 
@@ -718,18 +741,33 @@ Model decisions (approved with the model by the owner on 2026-10-02):
   context-derived budget (AC-SRCH-47).
 - `OnnxEmbedder` serialises model access with one lock (section 4.1).
 
-Embedding-provider decisions (AC-SRCH-40–47; provider selection and alias identity confirmed by
-the owner on 2026-10-08; the EmbeddingGemma 2 model profile remains for approval):
-- Provider selection belongs to the `app` composition root, not to a new search-domain aggregate or a merged embedding port. The consumer-owned ports remain `PassageEmbedder` and `QueryEmbedder`.
-- `EmbeddingProviderSelection` parses `BLOG_MCP_EMBEDDING_PROVIDER` once: unset selects ONNX BGE; trimmed lowercase `onnx` or `gemma2` selects the named provider; blank or unknown values fail startup.
-- The composition root creates one selected adapter instance and supplies it to both ports. It selects that provider's independent query-preparation and passage-preparation strategies, tokenizer and explicit passage-token budget.
-- Provider-neutral behavior and budget boundaries belong in search; provider instructions, tokenizer assets and model/context facts do not. The selected tokenizer must match the exact configured model revision, and the configured budget must fit the prepared input within the context limit.
-- The `gemma2` provider is the owner-confirmed local alias `text-embedding-embeddinggemma-2` for Google EmbeddingGemma 2. Configure and pin the exact served model revision, and provision tokenizer assets from that same revision.
-- Configured model/revision identity, passage preparation and passage budget remain part of `IndexRecipe`. Changing provider changes recipe identity, so reconcile re-embeds existing catalog posts before search uses the new provider's query vectors. Query-only preparation does not affect the index recipe.
+Embedding-provider decisions (AC-SRCH-40–50; build-time selection and model identity confirmed by
+the owner on 2026-10-08; implementation structure and index layout proposed in ADR 0009):
+- A required build property selects exactly one provider JAR. The proposed property is
+  `-PembeddingProvider=onnx|gemma2`; missing/blank/unsupported values fail Gradle configuration.
+  This replaces the former runtime `BLOG_MCP_EMBEDDING_PROVIDER` selector; none is read at runtime.
+- ONNX BGE and Gemma2 are separate provider artifacts. The selected provider is auto-discovered from
+  the app/runtime classpath. `app` owns discovery and composition, not a new domain aggregate or
+  merged embedding port. `PassageEmbedder` and `QueryEmbedder` remain separate consumer-owned ports,
+  implemented by the same selected provider instance.
+- Each artifact owns its pinned profile, query/passage strategies, tokenizer and budget. Gemma2's
+  provider artifact pins model and tokenizer revision
+  `914f7f89142e33e77833254d9c9b90c3cef7303b`, dimension 768 and context 8,192.
+- Gemma2 uses query prefix `task: search result | query: ` and document format
+  `title: {title} | text: {content}` (`title: none` when absent). Proposed body/overlap/title/fully
+  prepared limits are 3,000/256/128/4,096 tokens, validated with the pinned tokenizer. They are
+  provider-specific and do not inherit ONNX BGE limits (400/100/64/465). The tokenizer is
+  approximately 32.2 MB, usable with existing DJL 0.36.0 HuggingFace tokenizers, Apache 2.0; package
+  with required notices preserved.
+- The provider SPI is proposed in `search.application` (for example
+  `nz.sounie.blogmcp.search.application.embedding.spi`), consumed by `app` and implemented by each
+  provider artifact. Neither SPI nor provider depends on `app`; domain and search application depend
+  on no provider implementation.
+- Query preparation is excluded from `IndexRecipe`; passage preparation and other indexing-affecting
+  profile identity remain included. A stable profile key selects a distinct persistent index subtree;
+  the same profile reuses it after restart, while switching profiles cannot load, delete or overwrite
+  another profile's entries. The proposed keys and paths are in ADR 0009 and `docs/domain/app.md`.
 - No domain event is emitted for a startup composition choice, and no aggregate changes.
-
-Remaining model-approval checkpoint:
-- Pin the exact served EmbeddingGemma 2 revision and matching tokenizer assets, then approve its supported context limit and provider-specific passage-budget values (body, overlap, title and fully prepared passage). Set these from the pinned model/tokenizer configuration and validation, not from the alias or by inheriting ONNX BGE's limits. Query and passage preparation remain separate provider strategies; their model-specific inputs are verified against the pinned profile.
 
 Owner decisions (all resolved 2026-10-02, owner):
 - **Q1 (resolved): the catalog change is in this slice.** It adds `shared.query.CatalogPosts` / `CatalogPostState` and

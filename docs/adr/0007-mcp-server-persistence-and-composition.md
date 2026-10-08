@@ -6,6 +6,9 @@ Date: 2026-10-03
 - **Decisions 3 and 4 (persistence, slice 3a): Accepted (2026-10-03, by the owner).**
 - **Decisions 1, 2 and 5 to 8 (slice 3b): Proposed.** Trimmed to essentials for a single-user tool; deferred items are listed in
   `docs/domain/app.md` section 7. They await the owner's 3b checkpoint (section 9 there).
+- **Provider artifact/classpath composition and provider-keyed search index layout:** proposed by ADR
+  0009 and awaiting owner approval; these proposals do not change the previously accepted atomic-file
+  and repository ownership decisions.
 
 SDK facts are from MCP Java SDK v2.0.1 (researcher, 2026-10-03). Items still UNVERIFIED are named where they matter.
 
@@ -48,12 +51,20 @@ and **3b (server, wiring, scheduler, jar)**.
 ### Slice 3a (accepted)
 3. **File persistence: one JSON file per aggregate, atomic writes, quarantine on corruption.**
    - **Layout** under the data directory (`BLOG_MCP_DATA`, default `~/.local/share/blog-mcp`):
-     `catalog/posts/<site>/<key>.json`, `catalog/checkpoints/<site>.json`, `search/index/<site>/<key>.json` and `cache/djl/`.
+     `catalog/posts/<site>/<key>.json`, `catalog/checkpoints/<site>.json`,
+     `search/index/<indexProfileKey>/<site>/<key>.json` and `cache/djl/`.
+     The provider-keyed index path is a proposal in ADR 0009, not an amendment to the already accepted
+     per-file persistence semantics. Its proposed keys are `onnx-bge-small-en-v1.5-q-v1` and
+     `gemma2-914f7f89-v1`; the same profile key reuses its subtree after restart, and a different
+     profile neither loads nor deletes or overwrites that subtree. No additional path environment
+     variable is introduced. ADR 0009 also proposes one-time adoption of existing legacy ONNX files
+     from `search/index/<site>/<key>.json` into the ONNX subtree; Gemma2 must not inspect or move them.
    - **Adapters:** `FilePostRepository` and `FileSyncCheckpointRepository` (`catalog.adapter.out`, Jackson 3), and
      `FileVectorIndex` (`search.adapter.out`). Each loads every file at startup, then is write-through, with lookups served from memory.
    - **Each file repository owns its sub-directory** (`catalog/posts`, `catalog/checkpoints`, `search/index`), resolved from the
-     data directory it is given. `FileVectorIndex.open(dataDirectory, modelId, recipe)` also takes the current model ID and
-     `IndexRecipe`, which the composition root takes from `PostIndexer.recipe()`. The recipe is stored in each index file.
+     data directory it is given. `FileVectorIndex.open(dataDirectory, indexProfileKey, modelId, recipe)` also takes the selected
+     profile key, current model ID and `IndexRecipe`, which the composition root takes from `PostIndexer.recipe()`. The recipe is
+     stored in each index file. It opens only the selected key's subtree.
    - **File keys are case-safe:** `FileKey` uses only `[a-z0-9_%-]`, percent-encoding upper case and every other character as UTF-8 in lower-case hex, because macOS APFS is case-insensitive by default.
    - **A file's location must match its content ID** (3a review). A post, checkpoint or index file whose ID does not map to the
      `FileKey` path it was found at is unreadable: it is quarantined, and catalog health becomes `DAMAGED`. Duplicate IDs are
@@ -62,8 +73,9 @@ and **3b (server, wiring, scheduler, jar)**.
    - **Index files:** a missing `modelId` is unreadable (quarantined), not an incompatible model (deleted).
    - **No shared mutable aggregates:** the catalog repositories keep immutable stored snapshots and restore a fresh `Post` or
      `SyncCheckpoint` on every `find`, because tool calls read concurrently with the sync.
-   - **Index file:** a JSON file whose vectors are the base64 of 384 little-endian float32 values. That is bit-exact, about 2×
-     smaller than JSON numbers, and keeps a post in **one** file, so it needs only one atomic move.
+   - **Index file:** a JSON file whose vectors are the base64 of little-endian float32 values. Vector length is the selected
+     provider model's dimension (384 for ONNX BGE, 768 for EmbeddingGemma 2); encoding remains bit-exact, about 2× smaller than
+     JSON numbers, and keeps a post in **one** file, so it needs only one atomic move.
    - **Atomic write:**
      - write a temporary file **in the target's directory**, then `FileChannel.force`, then `Files.move(ATOMIC_MOVE)`;
      - leftover `*.tmp` files are deleted at load;
@@ -73,8 +85,9 @@ and **3b (server, wiring, scheduler, jar)**.
    - **Corruption:** an unreadable file is renamed to `.corrupt`, logged as one stderr line, and treated as absent. It never crashes the app.
      - A damaged catalog store makes the startup sync a forced `RECONCILE` (`StorageHealth`).
      - Damaged index entries are re-added by the reconcile.
-   - **Recipes:** recipe changes after a restart are caught by the stored fingerprint (ADR 0005). An index file whose **model ID**
-     differs from the current model is not loaded (its vector space is incompatible) and is re-embedded.
+   - **Recipes:** recipe changes after a restart are caught by the stored fingerprint (ADR 0005). With the proposed provider-keyed
+     layout (ADR 0009), each provider/profile opens a distinct subtree; changing profile leaves the previous subtree untouched.
+     Within the selected subtree, stored model IDs and recipes still guard vector compatibility and reconciliation.
 4. **`nz.sounie.blogmcp.shared.storage`: a new JDK-only package** used by both contexts' adapters instead of duplicating code:
    - `AtomicFile` writes atomically, renames unreadable files to `.corrupt`, and sweeps `.tmp` files;
    - `FileKey` names files;
@@ -113,14 +126,22 @@ and **3b (server, wiring, scheduler, jar)**.
    - **The first run** uses `StorageHealth.startupSyncMode()`. The server answers from the persisted index immediately.
    - **Embedding stays on the job's thread** (closes search Q9).
 7. **Packaging:**
-   - The Shadow plugin `com.gradleup.shadow` 9.6.1 produces `blog-mcp-all.jar`, with `mergeServiceFiles()` and
-     `duplicatesStrategy = INCLUDE`. That is required, because `McpJsonDefaults.getMapper()` finds the Jackson 3 mapper through `ServiceLoader`.
+   - The Shadow plugin `com.gradleup.shadow` 9.6.1 produces the base `blog-mcp-all.jar`, with
+     `mergeServiceFiles()` and `duplicatesStrategy = INCLUDE`. That is required, because
+     `McpJsonDefaults.getMapper()` finds the Jackson 3 mapper through `ServiceLoader`. The base app
+     JAR contains neither provider implementation.
+   - ADR 0009 proposes that the build require one provider selection and package exactly its
+     separate ONNX or Gemma2 provider JAR, plus its runtime dependencies, on the distribution
+     classpath. The launcher/distribution is proposed to keep this artifact separate and use the
+     search-application provider SPI for `ServiceLoader` discovery. Gradle property spelling,
+     configuration, dependency packaging, distribution and launcher mechanism await approval.
    - `META-INF/*.SF`, `*.DSA` and `*.RSA` are excluded explicitly.
    - The manifest has `Main-Class`, `Implementation-Version` and `Enable-Native-Access: ALL-UNNAMED` (JEP 472).
 8. **Testing against the real SDK, as "don't mock what you don't own" requires:**
    - handler-level tests of our `SyncToolSpecification` handlers;
    - subprocess tests with the real `McpClient` and `StdioClientTransport` for `tools/list`, stdout cleanliness, startup
-     failure and the jar round trip (including exit when stdin closes).
+     failure and the generated distribution round trip using the selected provider on the runtime classpath (including exit
+     when stdin closes). The build-time provider choice and separate provider JAR are specified by ADR 0009.
 
    The SDK has no in-memory transport, and we do not hand-write a JSON-RPC client.
 
@@ -130,9 +151,12 @@ and **3b (server, wiring, scheduler, jar)**.
     Annotations are allowed; the `no_jackson_2` rule bans only `databind`/`core`.
   - `org.slf4j:slf4j-simple` 2.0.16 (runtime).
   - The Shadow plugin 9.6.1.
-- **Jar size:** about 130 MB or more, mostly ONNX Runtime.
+- **Distribution size:** depends on the selected provider and its runtime dependencies/assets; ONNX
+  Runtime and the Gemma2 tokenizer/model assets may account for substantial size. Keep the provider
+  JAR separate from the base app JAR.
 - **Restarts:** a restart costs one load of a few hundred small files (well under a second). A first-ever start, or a recipe or
-  model change, still embeds everything in the background (tens of seconds), while the server answers from whatever is present.
+  embedding-profile change uses that profile's existing subtree when available, or embeds into its empty subtree; it never
+  overwrites another profile's vectors. A content/recipe change within the same profile is reconciled in the background.
 - **Crash safety:** a crash can lose only the write in progress, never corrupt a stored file. A quarantined file means data loss
   only until the next reconcile.
 - **Known limit: power loss.** The directory is not fsynced, so on Linux the latest rename may not survive a power loss. This is
