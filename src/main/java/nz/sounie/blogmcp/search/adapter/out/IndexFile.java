@@ -70,7 +70,8 @@ record IndexFile(
     }
 
     IndexedChunk toIndexedChunk() {
-      return new IndexedChunk(index, text, new Embedding(VectorCodec.decode(vector)));
+      // FIXME: at this point we don't know the modelId or recipe, so we can't check the vector dimension, it's a cheat to use vector length.
+      return new IndexedChunk(index, text, new Embedding(vector.length(), VectorCodec.decode(vector)));
     }
   }
 

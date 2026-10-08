@@ -22,9 +22,9 @@ abstract class VectorIndexContract {
   protected VectorIndex index;
 
   protected final PostToIndex post = aPost().id("sounie-wp:1").build();
-  protected final IndexedPost first = indexed(post, fingerprint('a'), Vectors.axis(1));
+  protected final IndexedPost first = indexed(post, fingerprint('a'), Vectors.axis(384, 1));
   protected final IndexedPost second =
-      indexed(post, fingerprint('b'), Vectors.axis(2), Vectors.axis(3));
+      indexed(post, fingerprint('b'), Vectors.axis(384, 2), Vectors.axis(384, 3));
 
   /** A fresh, empty index. */
   protected abstract VectorIndex newIndex();

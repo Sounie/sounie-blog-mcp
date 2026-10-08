@@ -11,7 +11,8 @@ jackson2 = "2.22.3"
 jsoup = "1.23.2"
 wiremock = "3.13.2"
 pmd = "7.28.0"
-langchain4jBgeSmall = "1.20.2-beta30"
+langchain4j-embeddings-bge-small-en-v15-q = "1.21.0-beta31"
+langchain4j = "1.21.0"
 mcp = "2.0.1"
 slf4j = "2.0.18"
 spotbugs = "4.10.4"
@@ -27,7 +28,8 @@ jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref
 jackson2-bom = { module = "com.fasterxml.jackson:jackson-bom", version.ref = "jackson2" }
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 wiremock-standalone = { module = "org.wiremock:wiremock-standalone", version.ref = "wiremock" }
-langchain4j-embeddings-bge-small-en-v15-q = { module = "dev.langchain4j:langchain4j-embeddings-bge-small-en-v15-q", version.ref = "langchain4jBgeSmall" }
+langchain4j-embeddings-bge-small-en-v15-q = { module = "dev.langchain4j:langchain4j-embeddings-bge-small-en-v15-q", version.ref = "langchain4j-embeddings-bge-small-en-v15-q" }
+langchain4j-openai = { module = "dev.langchain4j:langchain4j-open-ai", version.ref = "langchain4j" }
 pmd-cli = { module = "net.sourceforge.pmd:pmd-cli", version.ref = "pmd" }
 pmd-java = { module = "net.sourceforge.pmd:pmd-java", version.ref = "pmd" }
 mcp-core = { module = "io.modelcontextprotocol.sdk:mcp-core", version.ref = "mcp" }

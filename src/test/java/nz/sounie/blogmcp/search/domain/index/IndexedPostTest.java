@@ -19,9 +19,11 @@ import org.junit.jupiter.api.Test;
 
 class IndexedPostTest {
 
+  private static final int DIMENSION = 384;
+
   private static final ContentFingerprint STORED = fingerprint('a');
   private final PostToIndex post = aPost().id("sounie-wp:1").tags("Java").build();
-  private final IndexedPost entry = indexed(post, STORED, Vectors.axis(1), Vectors.axis(2));
+  private final IndexedPost entry = indexed(post, STORED, Vectors.axis(DIMENSION, 1), Vectors.axis(DIMENSION, 2));
 
   @Nested
   class DecideFor {
@@ -77,7 +79,7 @@ class IndexedPostTest {
     @DisplayName("AC-SRCH-23: the score is the best chunk's similarity and the snippet its text")
     void picks_the_most_similar_chunk() {
       IndexedPost a =
-          indexed(post, STORED, Vectors.atSimilarity(0.80, 1), Vectors.atSimilarity(0.90, 2));
+          indexed(post, STORED, Vectors.atSimilarity(DIMENSION, 0.80, 1), Vectors.atSimilarity(DIMENSION, 0.90, 2));
 
       PostMatch match = a.bestMatch(Vectors.query()).orElseThrow();
 
@@ -94,9 +96,9 @@ class IndexedPostTest {
           indexed(
               post,
               STORED,
-              Vectors.atSimilarity(0.5, 1),
-              Vectors.atSimilarity(0.85, 2),
-              Vectors.atSimilarity(0.85, 3));
+              Vectors.atSimilarity(DIMENSION, 0.5, 1),
+              Vectors.atSimilarity(DIMENSION, 0.85, 2),
+              Vectors.atSimilarity(DIMENSION, 0.85, 3));
 
       assertThat(a.bestMatch(Vectors.query()).orElseThrow().snippet().text())
           .isEqualTo(chunkText(post.id(), 1));
@@ -111,7 +113,7 @@ class IndexedPostTest {
               post.id(),
               post.metadata(),
               STORED,
-              List.of(new IndexedChunk(0, longChunk, Vectors.atSimilarity(0.9))));
+              List.of(new IndexedChunk(0, longChunk, Vectors.atSimilarity(DIMENSION, 0.9))));
 
       PostMatch match = a.bestMatch(Vectors.query()).orElseThrow();
 
@@ -168,7 +170,7 @@ class IndexedPostTest {
     private IndexedPost restoreWithIndexes(int... indexes) {
       List<IndexedChunk> chunks =
           java.util.Arrays.stream(indexes)
-              .mapToObj(i -> new IndexedChunk(i, "c" + i, Vectors.axis(i + 1)))
+              .mapToObj(i -> new IndexedChunk(i, "c" + i, Vectors.axis(DIMENSION, i + 1)))
               .toList();
       return IndexedPost.restore(post.id(), post.metadata(), STORED, chunks);
     }

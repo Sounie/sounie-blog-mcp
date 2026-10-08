@@ -15,12 +15,12 @@ final class TestEmbeddings {
    */
   static Embedding irregular(long seed) {
     Random random = new Random(seed);
-    float[] values = new float[Embedding.DIMENSION];
+    float[] values = new float[384];
     IntStream.range(0, values.length).forEach(i -> values[i] = (float) random.nextGaussian());
     values[1] = -0.0f;
     values[2] = 1.0e-40f;
     values[3] = Float.MIN_NORMAL;
-    return new Embedding(values);
+    return new Embedding(384, values);
   }
 
   /** The raw IEEE-754 bits of every value, for bit-exact comparison. */

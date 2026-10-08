@@ -22,6 +22,7 @@ import nz.sounie.blogmcp.search.domain.text.Passage;
 public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
 
   private final String modelId;
+  private final int dimensions;
   private final List<List<Passage>> passageCalls = new CopyOnWriteArrayList<>();
   private final List<QueryPassage> queries = new CopyOnWriteArrayList<>();
   private final Map<String, Embedding> assignedPassages = new ConcurrentHashMap<>();
@@ -31,11 +32,12 @@ public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
   private volatile boolean queriesFail;
 
   public FakeEmbedder() {
-    this("fake-model");
+    this("fake-model", 384);
   }
 
-  public FakeEmbedder(String modelId) {
+  public FakeEmbedder(String modelId, int dimensions) {
     this.modelId = modelId;
+    this.dimensions = dimensions;
   }
 
   @Override
@@ -51,7 +53,7 @@ public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
     }
     List<Embedding> embeddings =
         passages.stream()
-            .map(p -> assignedPassages.getOrDefault(p.text(), bagOfWords(p.text())))
+            .map(p -> assignedPassages.getOrDefault(p.text(), bagOfWords(dimensions, p.text())))
             .toList();
     return withAdjustedCount(embeddings);
   }
@@ -65,7 +67,7 @@ public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
     if (assignedQuery != null) {
       return assignedQuery;
     }
-    return bagOfWords(query.text());
+    return bagOfWords(dimensions, query.text());
   }
 
   /** Returns this vector for a passage with exactly this text. */
@@ -90,7 +92,7 @@ public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
     }
     List<Embedding> padded = new java.util.ArrayList<>(embeddings);
     for (int i = 0; i < adjustment; i++) {
-      padded.add(bagOfWords("extra " + i));
+      padded.add(bagOfWords(dimensions, "extra " + i));
     }
     return List.copyOf(padded);
   }
@@ -150,15 +152,15 @@ public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
   }
 
   /** A deterministic, unit-length vector from the words of the text. */
-  public static Embedding bagOfWords(String text) {
-    float[] v = new float[Embedding.DIMENSION];
+  public static Embedding bagOfWords(int dimensions, String text) {
+    float[] v = new float[dimensions];
     for (String word : text.toLowerCase(Locale.ROOT).split("[^\\p{L}\\p{N}]+")) {
       if (!word.isEmpty()) {
-        v[Math.floorMod(word.hashCode(), Embedding.DIMENSION)] += 1f;
+        v[Math.floorMod(word.hashCode(), dimensions)] += 1f;
       }
     }
-    v[Embedding.DIMENSION - 1] += 0.01f; // never the zero vector
-    return new Embedding(normalised(v));
+    v[dimensions - 1] += 0.01f; // never the zero vector
+    return new Embedding(dimensions, normalised(v));
   }
 
   static float[] normalised(float[] v) {

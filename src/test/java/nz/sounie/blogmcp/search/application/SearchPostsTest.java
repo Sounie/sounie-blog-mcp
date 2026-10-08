@@ -37,7 +37,7 @@ class SearchPostsTest {
             post,
             fingerprint('a'),
             IntStream.range(0, chunkScores.length)
-                .mapToObj(i -> Vectors.atSimilarity(chunkScores[i], i + 1))
+                .mapToObj(i -> Vectors.atSimilarity(384, chunkScores[i], i + 1))
                 .toArray(nz.sounie.blogmcp.search.domain.embedding.Embedding[]::new)));
   }
 

@@ -111,7 +111,7 @@ class OnnxEmbedderTest {
   }
 
   private static void assertUnitAnd384(Embedding e) {
-    assertThat(e.values()).hasSize(Embedding.DIMENSION);
+    assertThat(e.values()).hasSize(384);
     assertThat(e.similarityTo(e).value()).isCloseTo(1.0, within(1e-5));
   }
 

@@ -20,6 +20,9 @@ dependencies {
     implementation(libs.jackson.databind)
     implementation(libs.jsoup)
     implementation(libs.langchain4j.embeddings.bge.small.en.v15.q)
+    // Gemma Embeddings via LM Studio
+    implementation(libs.langchain4j.openai)
+
     // langchain4j-core brings Jackson 2 transitively. Declaring its BOM lifts it to a patched version
     // and gives Dependabot a declared version to update for future advisories.
     implementation(platform(libs.jackson2.bom))

@@ -19,6 +19,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 /** AC-SRCH-37: Completeness alone decides indexability, reached through IndexDecision.forPost. */
 class CompletenessTest {
 
+  private static final int DIMENSION = 384;
   private static final ContentFingerprint CURRENT = fingerprint('a');
 
   /** The existing entry, relative to the post to index. */
@@ -31,7 +32,7 @@ class CompletenessTest {
     Optional<IndexedPost> entryFor(PostToIndex post) {
       PostToIndex stored = this == METADATA_DIFFERS ? withOtherTags(post) : post;
       ContentFingerprint fp = this == FINGERPRINT_DIFFERS ? fingerprint('b') : CURRENT;
-      return this == ABSENT ? Optional.empty() : Optional.of(indexed(stored, fp, Vectors.axis(1)));
+      return this == ABSENT ? Optional.empty() : Optional.of(indexed(stored, fp, Vectors.axis(DIMENSION, 1)));
     }
 
     private static PostToIndex withOtherTags(PostToIndex post) {

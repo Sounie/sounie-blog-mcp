@@ -55,7 +55,7 @@ public final class OnnxEmbedder implements PassageEmbedder, QueryEmbedder {
   }
 
   private static Embedding toEmbedding(dev.langchain4j.data.embedding.Embedding embedding) {
-    return new Embedding(embedding.vector());
+    return new Embedding(embedding.dimension(), embedding.vector());
   }
 
   /**

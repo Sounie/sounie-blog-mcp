@@ -37,7 +37,7 @@ class IndexChangeTest {
   @Test
   void remove_applies_a_remove_decision() {
     PostToIndex post = aPost().build();
-    index.save(indexed(post, fingerprint('a'), Vectors.axis(1)));
+    index.save(indexed(post, fingerprint('a'), Vectors.axis(384, 1)));
 
     assertThat(new IndexChange.Remove(post.id()).applyTo(work)).isEqualTo(IndexOutcome.REMOVED);
     assertThat(new IndexChange.Remove(post.id()).applyTo(work))

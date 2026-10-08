@@ -102,7 +102,7 @@ class BlogMcpToolsTest {
   private record Chunk(String text, Embedding embedding) {}
 
   private static Chunk chunk(String text, double similarity) {
-    return new Chunk(text, Vectors.atSimilarity(similarity));
+    return new Chunk(text, Vectors.atSimilarity(384, similarity));
   }
 
   @Nested

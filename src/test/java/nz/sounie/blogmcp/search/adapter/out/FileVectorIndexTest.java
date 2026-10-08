@@ -39,10 +39,11 @@ import tools.jackson.databind.node.ObjectNode;
 /** Real files in a temporary directory, real Jackson 3, real file system. */
 class FileVectorIndexTest extends VectorIndexContract {
 
+  private static final int DIMENSION = 384;
   private static final String MODEL = "model-r1";
 
   /** Recipe R1: the standard chunking, under model-r1. */
-  private static final PostIndexer INDEXER_R1 = SearchContext.indexerWith(new FakeEmbedder(MODEL));
+  private static final PostIndexer INDEXER_R1 = SearchContext.indexerWith(new FakeEmbedder(MODEL, DIMENSION));
 
   /** Recipe R2: the same model, with different chunking. */
   private static final PostIndexer INDEXER_R2 =
@@ -50,7 +51,7 @@ class FileVectorIndexTest extends VectorIndexContract {
           new ChunkingPolicy(200, ChunkingPolicy.BODY_TOKEN_BUDGET, 40, 80),
           PassageComposition.standard(),
           FakeTokenCounter.perWord(1),
-          new FakeEmbedder(MODEL));
+          new FakeEmbedder(MODEL, DIMENSION));
 
   @TempDir Path dataDirectory;
 
@@ -234,7 +235,7 @@ class FileVectorIndexTest extends VectorIndexContract {
     PostToIndex b = aPost().id("elegant:2").words(40).build();
     index.save(INDEXER_R1.index(a));
     index.save(INDEXER_R1.index(b));
-    PostIndexer newModel = SearchContext.indexerWith(new FakeEmbedder("model-r2"));
+    PostIndexer newModel = SearchContext.indexerWith(new FakeEmbedder("model-r2", DIMENSION));
 
     FileVectorIndex restarted =
         FileVectorIndex.open(dataDirectory, "model-r2", newModel.recipe(), errors);
