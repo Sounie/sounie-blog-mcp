@@ -32,4 +32,13 @@ public record Adapters(
     return new Adapters(
         BlogSources.overHttp(), model, model, new BgeTokenCounter(), Clock.systemUTC());
   }
+
+  public static Adapters production(EmbeddingProviderSelection selection) {
+    throw new UnsupportedOperationException("Provider-selected adapter wiring is not implemented");
+  }
+
+  public static Adapters production(
+      EmbeddingProviderSelection selection, Gemma2EmbeddingProfile gemma2Profile) {
+    throw new UnsupportedOperationException("Provider-selected adapter wiring is not implemented");
+  }
 }

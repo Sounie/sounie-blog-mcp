@@ -7,6 +7,7 @@ import java.util.stream.Stream;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.text.ChunkingPolicy;
 import nz.sounie.blogmcp.search.domain.text.PassageComposition;
+import nz.sounie.blogmcp.search.domain.text.PassageTokenBudget;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -67,6 +68,46 @@ class IndexRecipeTest {
   @DisplayName("AC-SRCH-32: the query instruction is not part of the recipe")
   void query_instruction_is_not_part_of_the_recipe() {
     assertThat(standard().id()).doesNotContain(QueryPassage.INSTRUCTION.strip());
+  }
+
+  @Test
+  @DisplayName("AC-SRCH-45, 47: provider revision, passage preparation and budget define recipe")
+  void provider_revision_and_passage_profile_change_the_recipe() {
+    PassageTokenBudget firstBudget = new PassageTokenBudget(73, 11, 9, 96, 120);
+    PassageTokenBudget secondBudget = new PassageTokenBudget(72, 11, 9, 96, 120);
+    IndexRecipe first =
+        IndexRecipe.of(
+            "google-embeddinggemma-2@fixture-revision-1",
+            CHUNKING,
+            COMPOSITION,
+            "gemma-passage-v1",
+            firstBudget);
+
+    IndexRecipe changedBudget =
+        IndexRecipe.of(
+            "google-embeddinggemma-2@fixture-revision-1",
+            CHUNKING,
+            COMPOSITION,
+            "gemma-passage-v1",
+            secondBudget);
+    IndexRecipe changedPassagePreparation =
+        IndexRecipe.of(
+            "google-embeddinggemma-2@fixture-revision-1",
+            CHUNKING,
+            COMPOSITION,
+            "gemma-passage-v2",
+            firstBudget);
+    IndexRecipe changedModelRevision =
+        IndexRecipe.of(
+            "google-embeddinggemma-2@fixture-revision-2",
+            CHUNKING,
+            COMPOSITION,
+            "gemma-passage-v1",
+            firstBudget);
+
+    assertThat(changedBudget).isNotEqualTo(first);
+    assertThat(changedPassagePreparation).isNotEqualTo(first);
+    assertThat(changedModelRevision).isNotEqualTo(first);
   }
 
   @ParameterizedTest

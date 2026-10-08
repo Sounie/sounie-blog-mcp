@@ -2,6 +2,7 @@ package nz.sounie.blogmcp.search.domain.index;
 
 import nz.sounie.blogmcp.search.domain.text.ChunkingPolicy;
 import nz.sounie.blogmcp.search.domain.text.PassageComposition;
+import nz.sounie.blogmcp.search.domain.text.PassageTokenBudget;
 
 /**
  * Identity of the method used to build an index entry, e.g. {@code
@@ -24,5 +25,14 @@ public record IndexRecipe(String id) {
       String modelId, ChunkingPolicy chunking, PassageComposition composition) {
     return new IndexRecipe(
         String.join("/", modelId, chunking.recipePart(), composition.recipePart()));
+  }
+
+  public static IndexRecipe of(
+      String modelId,
+      ChunkingPolicy chunking,
+      PassageComposition composition,
+      String passagePreparationVersion,
+      PassageTokenBudget budget) {
+    throw new UnsupportedOperationException("Provider passage profiles are not in the recipe yet");
   }
 }
