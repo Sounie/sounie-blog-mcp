@@ -1,41 +1,48 @@
 package nz.sounie.blogmcp.search.adapter.out;
 
-import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.embedding.onnx.bgesmallenv15q.BgeSmallEnV15QuantizedEmbeddingModel;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
+
+import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
+import dev.langchain4j.model.output.Response;
 import nz.sounie.blogmcp.search.application.QueryEmbedder;
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
+import nz.sounie.blogmcp.search.domain.embedding.EmbeddingFactory;
 import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.text.Passage;
 
-/**
- * The local BGE-small-en-v1.5 (quantised) model through LangChain4j. The only class that touches
- * LangChain4j. Serialises its public calls with one lock; loads the model lazily on first use.
- *
- * <p>The model is one per process (it is about 34 MB and its ONNX session is shared), so the lock
- * is too. LangChain4j's own parallelism within one {@code embedAll} call is left alone (ADR 0005).
- */
-public final class OnnxEmbedder implements PassageEmbedder, QueryEmbedder {
+/** Trying out Google DeepMind's Gemma 2 embedding model, running locally behind an OpenAI-compatible API. */
+public class Gemma2Embedder implements PassageEmbedder, QueryEmbedder {
 
-  public static final String MODEL_ID = "bge-small-en-v1.5-q";
-
+  private static final String MODEL_ID = "text-embedding-embeddinggemma-2";
   private static final ReentrantLock MODEL_LOCK = new ReentrantLock();
 
   /** Loaded by the JVM on first access to {@link #INSTANCE}, so the model loads lazily. */
   private static final class Model {
-    static final EmbeddingModel INSTANCE = new BgeSmallEnV15QuantizedEmbeddingModel();
+    // This is a local server that proxies to the real Gemma 2 model, so we can run tests without an API key.
+    static final EmbeddingModel INSTANCE = OpenAiEmbeddingModel.builder()
+            .baseUrl("http://localhost:1234/v1")
+            .modelName(MODEL_ID)
+            .build();
 
     private Model() {}
   }
 
   @Override
+  public Embedding embedQuery(QueryPassage query) {
+    Response<dev.langchain4j.data.embedding.Embedding> response = Model.INSTANCE.embed(query.text());
+
+    return toEmbedding(response.content());
+  }
+
+  @Override
   public String modelId() {
-    return MODEL_ID;
+    return "text-embedding-embeddinggemma-2";
   }
 
   @Override
@@ -44,18 +51,13 @@ public final class OnnxEmbedder implements PassageEmbedder, QueryEmbedder {
     return passages.isEmpty() ? List.of() : withModel(model -> embedAll(model, passages));
   }
 
-  @Override
-  public Embedding embedQuery(QueryPassage query) {
-    return withModel(model -> toEmbedding(model.embed(query.text()).content()));
-  }
-
   private static List<Embedding> embedAll(EmbeddingModel model, List<Passage> passages) {
     List<TextSegment> segments = passages.stream().map(p -> TextSegment.from(p.text())).toList();
-    return model.embedAll(segments).content().stream().map(OnnxEmbedder::toEmbedding).toList();
+    return model.embedAll(segments).content().stream().map(Gemma2Embedder::toEmbedding).toList();
   }
 
   private static Embedding toEmbedding(dev.langchain4j.data.embedding.Embedding embedding) {
-    return new Embedding(embedding.dimension(), embedding.vector());
+    return EmbeddingFactory.createGemma2Embedding(embedding.vector());
   }
 
   /**
@@ -65,7 +67,7 @@ public final class OnnxEmbedder implements PassageEmbedder, QueryEmbedder {
   private static <T> T withModel(Function<EmbeddingModel, T> call) {
     MODEL_LOCK.lock();
     try {
-      return call.apply(Model.INSTANCE);
+      return call.apply(Gemma2Embedder.Model.INSTANCE);
     } catch (RuntimeException | LinkageError e) {
       throw new EmbedderUnavailable("The local embedding model " + MODEL_ID + " failed", e);
     } finally {

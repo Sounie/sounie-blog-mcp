@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.stream.IntStream;
-import nz.sounie.blogmcp.search.domain.embedding.Embedding;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -50,7 +49,7 @@ class VectorCodecTest {
 
     assertThat(encoded).hasSize(2_048); // base64 of 1,536 bytes
     assertThat(rawBits(VectorCodec.decode(encoded))).containsExactly(rawBits(values));
-    assertThat(VectorCodec.decode(encoded)).hasSize(Embedding.DIMENSION);
+    assertThat(VectorCodec.decode(encoded)).hasSize(384);
   }
 
   @ParameterizedTest

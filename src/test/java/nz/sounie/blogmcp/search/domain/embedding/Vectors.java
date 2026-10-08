@@ -8,29 +8,29 @@ public final class Vectors {
 
   private Vectors() {}
 
-  public static float[] axisValues(int axis) {
-    float[] v = new float[Embedding.DIMENSION];
+  public static float[] axisValues(int dimension, int axis) {
+    float[] v = new float[dimension];
     v[axis] = 1f;
     return v;
   }
 
-  public static Embedding axis(int axis) {
-    return new Embedding(axisValues(axis));
+  public static Embedding axis(int dimension, int axis) {
+    return new Embedding(dimension, axisValues(dimension, axis));
   }
 
   /** The query used with {@link #atSimilarity}. */
   public static Embedding query() {
-    return axis(0);
+    return axis(384, 0);
   }
 
-  public static Embedding atSimilarity(double similarity) {
-    return atSimilarity(similarity, 1);
+  public static Embedding atSimilarity(int dimension, double similarity) {
+    return atSimilarity(dimension, similarity, 1);
   }
 
-  public static Embedding atSimilarity(double similarity, int otherAxis) {
-    float[] v = new float[Embedding.DIMENSION];
+  public static Embedding atSimilarity(int dimension, double similarity, int otherAxis) {
+    float[] v = new float[dimension];
     v[0] = (float) similarity;
     v[otherAxis] = (float) Math.sqrt(1 - similarity * similarity);
-    return new Embedding(v);
+    return new Embedding(dimension, v);
   }
 }

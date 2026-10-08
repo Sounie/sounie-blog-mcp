@@ -21,7 +21,9 @@ import org.junit.jupiter.api.Test;
 
 class PostIndexerTest {
 
-  private final FakeEmbedder embedder = new FakeEmbedder("fake-model");
+  private static final int DIMENSION = 384;
+
+  private final FakeEmbedder embedder = new FakeEmbedder("fake-model", DIMENSION);
   private final TokenCounter tokens = FakeTokenCounter.perWord(1);
   private final PostIndexer indexer =
       new PostIndexer(ChunkingPolicy.standard(), PassageComposition.standard(), tokens, embedder);
@@ -75,7 +77,7 @@ class PostIndexerTest {
 
   @Test
   void each_chunk_gets_the_embedding_of_its_passage() {
-    Embedding chosen = Vectors.axis(7);
+    Embedding chosen = Vectors.axis(DIMENSION, 7);
     embedder.assign("Records in Java 25\n" + String.join(" ", Words.range(251, 550)), chosen);
 
     IndexedPost indexed = indexer.index(post);

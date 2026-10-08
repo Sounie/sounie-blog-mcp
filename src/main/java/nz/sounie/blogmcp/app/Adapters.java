@@ -6,7 +6,7 @@ import nz.sounie.blogmcp.catalog.adapter.out.BlogSources;
 import nz.sounie.blogmcp.catalog.application.BlogSource;
 import nz.sounie.blogmcp.catalog.domain.site.Platform;
 import nz.sounie.blogmcp.search.adapter.out.BgeTokenCounter;
-import nz.sounie.blogmcp.search.adapter.out.OnnxEmbedder;
+import nz.sounie.blogmcp.search.adapter.out.Gemma2Embedder;
 import nz.sounie.blogmcp.search.application.QueryEmbedder;
 import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
 import nz.sounie.blogmcp.search.domain.text.TokenCounter;
@@ -23,11 +23,12 @@ public record Adapters(
     Clock clock) {
 
   /**
-   * The real blog sources over the JDK HTTP client, the ONNX embedder, the BGE tokenizer and the
+   * The real blog sources over the JDK HTTP client, the embedder, the tokenizer and the
    * system clock.
    */
   public static Adapters production() {
-    OnnxEmbedder model = new OnnxEmbedder();
+//    OnnxEmbedder model = new OnnxEmbedder();
+    Gemma2Embedder model = new Gemma2Embedder();
     return new Adapters(
         BlogSources.overHttp(), model, model, new BgeTokenCounter(), Clock.systemUTC());
   }

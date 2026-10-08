@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 
 class ReconcileIndexTest {
 
-  private final SearchContext search = new SearchContext(new FakeEmbedder("model-r1"));
+  private final SearchContext search = new SearchContext(new FakeEmbedder("model-r1", 384));
 
   private void alreadyIndexed(PostToIndex post) {
     search.index.save(search.indexer.index(post));
@@ -85,7 +85,7 @@ class ReconcileIndexTest {
     alreadyIndexed(b);
     search.catalog.holding(a, b);
 
-    ReconcileReport report = search.reconcileWith(new FakeEmbedder("model-r2")).run();
+    ReconcileReport report = search.reconcileWith(new FakeEmbedder("model-r2", 384)).run();
 
     assertThat(report.outcomes())
         .isEqualTo(Map.of(a.id(), IndexOutcome.RE_EMBEDDED, b.id(), IndexOutcome.RE_EMBEDDED));

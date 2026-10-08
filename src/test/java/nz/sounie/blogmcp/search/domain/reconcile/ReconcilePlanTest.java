@@ -31,7 +31,7 @@ class ReconcilePlanTest {
         indexed(
             post,
             ContentFingerprint.of(recipe, post.title(), WordSequence.of(post.body())),
-            Vectors.axis(1)));
+            Vectors.axis(384, 1)));
   }
 
   private static List<CatalogEntry> readable(PostToIndex... posts) {
