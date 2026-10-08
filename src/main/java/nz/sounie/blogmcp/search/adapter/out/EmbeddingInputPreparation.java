@@ -8,18 +8,19 @@ final class EmbeddingInputPreparation {
   private EmbeddingInputPreparation() {}
 
   static String onnxQuery(QueryText query) {
-    throw new UnsupportedOperationException("ONNX query preparation is not implemented");
+    return "Represent this sentence for searching relevant passages: " + query.value();
   }
 
   static String onnxPassage(String canonicalPassage) {
-    throw new UnsupportedOperationException("ONNX passage preparation is not implemented");
+    return canonicalPassage;
   }
 
   static String gemma2Query(QueryText query) {
-    throw new UnsupportedOperationException("Gemma2 query preparation is not implemented");
+    return "task: search result | query: " + query.value();
   }
 
   static String gemma2Passage(String title, String content) {
-    throw new UnsupportedOperationException("Gemma2 passage preparation is not implemented");
+    String effectiveTitle = title == null || title.isBlank() ? "none" : title;
+    return "title: " + effectiveTitle + " | text: " + content;
   }
 }

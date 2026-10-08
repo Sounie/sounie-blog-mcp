@@ -33,7 +33,12 @@ class IndexDecisionTest {
 
   private final PostToIndex post = aPost().id("sounie-wp:1").words(700).build();
   private final IndexedPost existing =
-      indexed(post, fingerprint('z'), Vectors.axis(DIMENSION, 1), Vectors.axis(DIMENSION, 2), Vectors.axis(DIMENSION, 3));
+      indexed(
+          post,
+          fingerprint('z'),
+          Vectors.axis(DIMENSION, 1),
+          Vectors.axis(DIMENSION, 2),
+          Vectors.axis(DIMENSION, 3));
 
   @Test
   void for_absent_is_add_and_remove_is_remove() {

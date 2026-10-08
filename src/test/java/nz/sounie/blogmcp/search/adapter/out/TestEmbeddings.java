@@ -14,13 +14,17 @@ final class TestEmbeddings {
    * lossy encoding would show.
    */
   static Embedding irregular(long seed) {
+    return irregular(seed, 384);
+  }
+
+  static Embedding irregular(long seed, int dimension) {
     Random random = new Random(seed);
-    float[] values = new float[384];
+    float[] values = new float[dimension];
     IntStream.range(0, values.length).forEach(i -> values[i] = (float) random.nextGaussian());
     values[1] = -0.0f;
     values[2] = 1.0e-40f;
     values[3] = Float.MIN_NORMAL;
-    return new Embedding(384, values);
+    return new Embedding(dimension, values);
   }
 
   /** The raw IEEE-754 bits of every value, for bit-exact comparison. */

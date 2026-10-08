@@ -41,9 +41,12 @@ class FileVectorIndexTest extends VectorIndexContract {
 
   private static final int DIMENSION = 384;
   private static final String MODEL = "model-r1";
+  private static final String PROFILE_ONNX = "onnx-bge-small-en-v1.5-q-v1";
+  private static final String PROFILE_GEMMA = "gemma2-914f7f89-v1";
 
   /** Recipe R1: the standard chunking, under model-r1. */
-  private static final PostIndexer INDEXER_R1 = SearchContext.indexerWith(new FakeEmbedder(MODEL, DIMENSION));
+  private static final PostIndexer INDEXER_R1 =
+      SearchContext.indexerWith(new FakeEmbedder(MODEL, DIMENSION));
 
   /** Recipe R2: the same model, with different chunking. */
   private static final PostIndexer INDEXER_R2 =
@@ -73,6 +76,19 @@ class FileVectorIndexTest extends VectorIndexContract {
         .resolve("index")
         .resolve(id.siteId().value())
         .resolve(FileKey.of(id.external()).value() + ".json");
+  }
+
+  private Path fileOf(String profileKey, PostId id) {
+    return dataDirectory
+        .resolve("search")
+        .resolve("index")
+        .resolve(profileKey)
+        .resolve(id.siteId().value())
+        .resolve(FileKey.of(id.external()).value() + ".json");
+  }
+
+  private FileVectorIndex profileIndex(String profileKey) {
+    return FileVectorIndex.open(dataDirectory, profileKey, MODEL, INDEXER_R1.recipe(), errors);
   }
 
   private List<String> errorLines() {
@@ -251,6 +267,65 @@ class FileVectorIndexTest extends VectorIndexContract {
     assertThat(report.outcomes())
         .isEqualTo(Map.of(a.id(), IndexOutcome.ADDED, b.id(), IndexOutcome.ADDED));
     assertThat(storedField(fileOf(a.id()), "modelId")).isEqualTo("model-r2");
+  }
+
+  @Test
+  @DisplayName("AC-APP-47, AC-SRCH-50: a restart with the same profile key reuses its own entries")
+  void profile_keyed_index_reuses_entries_after_restart() {
+    IndexedPost entry = variedEntries().getFirst();
+    FileVectorIndex onnx = profileIndex(PROFILE_ONNX);
+    onnx.save(entry);
+
+    FileVectorIndex restarted = profileIndex(PROFILE_ONNX);
+
+    assertThat(fileOf(PROFILE_ONNX, entry.id())).isRegularFile();
+    assertSameEntry(restarted.find(entry.id()), entry);
+    assertThat(restarted.ids()).containsExactly(entry.id());
+  }
+
+  @Test
+  @DisplayName("AC-APP-25: the 768-dimension provider profile survives a bit-exact restart")
+  void profile_with_768_dimensions_survives_a_bit_exact_restart() {
+    IndexedPost entry =
+        indexed(
+            aPost().id("sounie-wp:768").title("768-dimensional provider").build(),
+            fingerprint('h'),
+            TestEmbeddings.irregular(77, 768));
+    FileVectorIndex gemma = profileIndex(PROFILE_GEMMA);
+    gemma.save(entry);
+
+    IndexedPost reopened = profileIndex(PROFILE_GEMMA).find(entry.id()).orElseThrow();
+
+    assertThat(reopened).usingRecursiveComparison().isEqualTo(entry);
+    assertThat(TestEmbeddings.rawBits(reopened.chunks().getFirst().embedding()))
+        .containsExactly(TestEmbeddings.rawBits(entry.chunks().getFirst().embedding()));
+  }
+
+  @Test
+  @DisplayName(
+      "AC-SRCH-45, AC-APP-47, AC-SRCH-50: switching profiles neither loads nor mutates the other subtree")
+  void switching_profile_keys_isolates_loads_saves_and_deletes() throws IOException {
+    IndexedPost onnxEntry = variedEntries().getFirst();
+    FileVectorIndex onnx = profileIndex(PROFILE_ONNX);
+    onnx.save(onnxEntry);
+    byte[] onnxBytes = Files.readAllBytes(fileOf(PROFILE_ONNX, onnxEntry.id()));
+
+    FileVectorIndex gemma = profileIndex(PROFILE_GEMMA);
+
+    assertThat(gemma.ids()).isEmpty();
+    assertThat(gemma.find(onnxEntry.id())).isEmpty();
+    IndexedPost gemmaEntry =
+        indexed(
+            aPost().id(onnxEntry.id().external()).title("Gemma profile").build(),
+            fingerprint('g'),
+            TestEmbeddings.irregular(9));
+    gemma.save(gemmaEntry);
+    gemma.remove(gemmaEntry.id());
+
+    assertThat(fileOf(PROFILE_ONNX, onnxEntry.id())).isRegularFile();
+    assertThat(Files.readAllBytes(fileOf(PROFILE_ONNX, onnxEntry.id()))).containsExactly(onnxBytes);
+    assertThat(fileOf(PROFILE_GEMMA, gemmaEntry.id())).doesNotExist();
+    assertThat(errorLines()).isEmpty();
   }
 
   @Test

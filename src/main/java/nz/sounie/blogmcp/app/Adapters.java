@@ -5,9 +5,8 @@ import java.util.Map;
 import nz.sounie.blogmcp.catalog.adapter.out.BlogSources;
 import nz.sounie.blogmcp.catalog.application.BlogSource;
 import nz.sounie.blogmcp.catalog.domain.site.Platform;
-import nz.sounie.blogmcp.search.adapter.out.BgeTokenCounter;
-import nz.sounie.blogmcp.search.adapter.out.Gemma2Embedder;
 import nz.sounie.blogmcp.search.application.QueryEmbedder;
+import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
 import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
 import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 
@@ -23,22 +22,17 @@ public record Adapters(
     Clock clock) {
 
   /**
-   * The real blog sources over the JDK HTTP client, the embedder, the tokenizer and the
-   * system clock.
+   * The real blog sources over the JDK HTTP client, the selected provider instance, the tokenizer
+   * and the system clock.
    */
   public static Adapters production() {
-//    OnnxEmbedder model = new OnnxEmbedder();
-    Gemma2Embedder model = new Gemma2Embedder();
+    EmbeddingProvider provider =
+        EmbeddingProviderDiscovery.discover(Thread.currentThread().getContextClassLoader());
     return new Adapters(
-        BlogSources.overHttp(), model, model, new BgeTokenCounter(), Clock.systemUTC());
-  }
-
-  public static Adapters production(EmbeddingProviderSelection selection) {
-    throw new UnsupportedOperationException("Provider-selected adapter wiring is not implemented");
-  }
-
-  public static Adapters production(
-      EmbeddingProviderSelection selection, Gemma2EmbeddingProfile gemma2Profile) {
-    throw new UnsupportedOperationException("Provider-selected adapter wiring is not implemented");
+        BlogSources.overHttp(),
+        provider,
+        provider,
+        provider.tokenCounter(),
+        java.time.Clock.systemUTC());
   }
 }

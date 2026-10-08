@@ -28,9 +28,16 @@ final class IndexFileLoader {
   private final List<Rule> rules;
 
   IndexFileLoader(String currentModelId) {
+    this(currentModelId, currentModelId);
+  }
+
+  IndexFileLoader(String currentModelId, String indexProfileKey) {
     this.rules =
         List.of(
-            IndexFileLoader::knownFormat, IndexFileLoader::namedModel, builtWith(currentModelId));
+            IndexFileLoader::knownFormat,
+            IndexFileLoader::namedModel,
+            dimensionMatches(currentModelId, indexProfileKey),
+            builtWith(currentModelId));
   }
 
   /** Never throws: anything wrong with the content is {@link IndexFileLoad.Unreadable}. */
@@ -84,6 +91,33 @@ final class IndexFileLoader {
     return file.modelId() == null
         ? Optional.of(new IndexFileLoad.Unreadable("No model ID"))
         : Optional.empty();
+  }
+
+  private static Rule dimensionMatches(String currentModelId, String indexProfileKey) {
+    int expected = expectedDimension(currentModelId, indexProfileKey);
+    return file -> {
+      for (IndexFile.Chunk chunk : file.chunks()) {
+        try {
+          float[] values = VectorCodec.decode(chunk.vector());
+          if (values.length != expected) {
+            return Optional.of(
+                new IndexFileLoad.Unreadable(
+                    "Chunk " + chunk.index() + " has a " + values.length
+                        + "-value vector, expected " + expected));
+          }
+        } catch (RuntimeException unreadable) {
+          return Optional.of(new IndexFileLoad.Unreadable(StoredFiles.reasonFor(unreadable)));
+        }
+      }
+      return Optional.empty();
+    };
+  }
+
+  private static int expectedDimension(String currentModelId, String indexProfileKey) {
+    return "gemma2-914f7f89-v1".equals(indexProfileKey)
+        || (currentModelId != null && currentModelId.toLowerCase().contains("gemma"))
+            ? 768
+            : 384;
   }
 
   private static Rule builtWith(String currentModelId) {

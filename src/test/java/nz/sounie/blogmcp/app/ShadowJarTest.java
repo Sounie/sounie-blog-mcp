@@ -23,7 +23,6 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -36,17 +35,15 @@ import nz.sounie.blogmcp.catalog.domain.site.SiteDefinition;
 import nz.sounie.blogmcp.catalog.domain.site.SiteId;
 import nz.sounie.blogmcp.catalog.domain.sync.ChangeOrder;
 import nz.sounie.blogmcp.catalog.domain.sync.SourceEntry;
-import nz.sounie.blogmcp.search.adapter.out.BgeTokenCounter;
-import nz.sounie.blogmcp.search.adapter.out.OnnxEmbedder;
+import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * AC-APP-12: the shadow jar runs as an MCP server under the real client and exits when stdin
- * closes. Runs only in the {@code jarTest} Gradle task, after {@code shadowJar}; uses the real
- * model.
+ * AC-APP-12: the selected-provider distribution runs as an MCP server under the real client and
+ * exits when stdin closes. Runs only after provider-specific distribution assembly.
  */
 @Tag("jar")
 @Tag("model")
@@ -58,16 +55,16 @@ class ShadowJarTest {
 
   @TempDir Path dir;
 
-  private static Path jar() {
-    String jar = System.getProperty("blogmcp.shadowJar");
-    assertThat(jar).as("system property blogmcp.shadowJar (set by the jarTest task)").isNotNull();
-    return Path.of(jar);
+  private static String launcher() {
+    String launcher = System.getProperty("blogmcp.distributionLauncher");
+    assertThat(launcher)
+        .as("system property blogmcp.distributionLauncher (generated selected-provider launcher)")
+        .isNotBlank();
+    return launcher;
   }
 
-  private static List<String> jarArguments() {
-    List<String> args = new ArrayList<>(ServerProcess.sandboxOptions());
-    args.addAll(List.of("-jar", jar().toString()));
-    return args;
+  private static List<String> launcherArguments() {
+    return List.of();
   }
 
   private Path config() throws IOException {
@@ -78,7 +75,7 @@ class ShadowJarTest {
         """);
   }
 
-  /** A fixture post and its index entry, written by the real stack with the real model. */
+  /** A fixture post and its index entry, written with the one discovered provider. */
   private Path dataWithFixturePost() {
     Path data = dir.resolve("data");
     Site site =
@@ -99,7 +96,8 @@ class ShadowJarTest {
                     .publishedAt(Instant.parse("2026-09-01T00:00:00Z"))
                     .updatedAt(Instant.parse("2026-09-01T00:00:00Z"))
                     .build())));
-    OnnxEmbedder model = new OnnxEmbedder();
+    EmbeddingProvider model =
+        EmbeddingProviderDiscovery.discover(Thread.currentThread().getContextClassLoader());
     Wiring.assemble(
             data,
             FixedSiteDirectory.of(UNREACHABLE),
@@ -107,7 +105,7 @@ class ShadowJarTest {
                 Map.of(Platform.WORDPRESS, source, Platform.BLOGGER, source),
                 model,
                 model,
-                new BgeTokenCounter(),
+                model.tokenCounter(),
                 Clock.systemUTC()),
             new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
         .job()
@@ -123,7 +121,8 @@ class ShadowJarTest {
     List<String> stderr = new CopyOnWriteArrayList<>();
     StdioClientTransport transport =
         new StdioClientTransport(
-            ServerProcess.parameters(jarArguments(), config, data), McpJsonDefaults.getMapper());
+            ServerProcess.parameters(launcher(), launcherArguments(), config, data),
+            McpJsonDefaults.getMapper());
     transport.setStdErrorHandler(stderr::add);
 
     try (McpSyncClient client =
@@ -155,7 +154,8 @@ class ShadowJarTest {
   @Test
   @DisplayName("AC-APP-12: the jar exits with status 0 within a few seconds when stdin closes")
   void the_jar_exits_cleanly_when_stdin_closes() throws Exception {
-    Process server = ServerProcess.start(jarArguments(), config(), dir.resolve("data"));
+    Process server =
+        ServerProcess.start(launcher(), launcherArguments(), config(), dir.resolve("data"));
     ServerProcess.collectLines(server.getInputStream());
     List<String> stderr = ServerProcess.collectLines(server.getErrorStream());
 

@@ -67,6 +67,8 @@ final class ServerProcess {
         config.toString(),
         "BLOG_MCP_DATA",
         data.toString(),
+        "BLOG_MCP_EMBEDDING_PROVIDER",
+        "unsupported-runtime-selector",
         "JAVA_TOOL_OPTIONS",
         "");
   }
@@ -76,12 +78,22 @@ final class ServerProcess {
     return ServerParameters.builder(java()).args(args).env(environment(config, data)).build();
   }
 
+  /** For the generated distribution launcher, with its selected provider JARs. */
+  static ServerParameters parameters(String command, List<String> args, Path config, Path data) {
+    return ServerParameters.builder(command).args(args).env(environment(config, data)).build();
+  }
+
   /** A raw subprocess, for tests that must see every byte on stdout. */
   static Process start(List<String> args, Path config, Path data) {
-    List<String> command = new ArrayList<>();
-    command.add(java());
-    command.addAll(args);
-    ProcessBuilder builder = new ProcessBuilder(command);
+    return start(java(), args, config, data);
+  }
+
+  /** Starts a generated distribution launcher directly. */
+  static Process start(String command, List<String> args, Path config, Path data) {
+    List<String> commandLine = new ArrayList<>();
+    commandLine.add(command);
+    commandLine.addAll(args);
+    ProcessBuilder builder = new ProcessBuilder(commandLine);
     builder.environment().putAll(environment(config, data));
     builder.environment().remove("JAVA_TOOL_OPTIONS");
     try {
