@@ -1,13 +1,12 @@
 package nz.sounie.blogmcp.search.adapter.out;
 
-import java.util.List;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Function;
-
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.model.output.Response;
+import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 import nz.sounie.blogmcp.search.application.QueryEmbedder;
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
@@ -16,7 +15,10 @@ import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.text.Passage;
 
-/** Trying out Google DeepMind's Gemma 2 embedding model, running locally behind an OpenAI-compatible API. */
+/**
+ * Trying out Google DeepMind's Gemma 2 embedding model, running locally behind an OpenAI-compatible
+ * API.
+ */
 public class Gemma2Embedder implements PassageEmbedder, QueryEmbedder {
 
   private static final String MODEL_ID = "text-embedding-embeddinggemma-2";
@@ -24,8 +26,10 @@ public class Gemma2Embedder implements PassageEmbedder, QueryEmbedder {
 
   /** Loaded by the JVM on first access to {@link #INSTANCE}, so the model loads lazily. */
   private static final class Model {
-    // This is a local server that proxies to the real Gemma 2 model, so we can run tests without an API key.
-    static final EmbeddingModel INSTANCE = OpenAiEmbeddingModel.builder()
+    // This is a local server that proxies to the real Gemma 2 model, so we can run tests without an
+    // API key.
+    static final EmbeddingModel INSTANCE =
+        OpenAiEmbeddingModel.builder()
             .baseUrl("http://localhost:1234/v1")
             .modelName(MODEL_ID)
             .build();
@@ -35,7 +39,8 @@ public class Gemma2Embedder implements PassageEmbedder, QueryEmbedder {
 
   @Override
   public Embedding embedQuery(QueryPassage query) {
-    Response<dev.langchain4j.data.embedding.Embedding> response = Model.INSTANCE.embed(query.text());
+    Response<dev.langchain4j.data.embedding.Embedding> response =
+        Model.INSTANCE.embed(query.text());
 
     return toEmbedding(response.content());
   }

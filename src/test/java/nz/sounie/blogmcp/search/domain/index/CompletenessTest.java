@@ -32,7 +32,9 @@ class CompletenessTest {
     Optional<IndexedPost> entryFor(PostToIndex post) {
       PostToIndex stored = this == METADATA_DIFFERS ? withOtherTags(post) : post;
       ContentFingerprint fp = this == FINGERPRINT_DIFFERS ? fingerprint('b') : CURRENT;
-      return this == ABSENT ? Optional.empty() : Optional.of(indexed(stored, fp, Vectors.axis(DIMENSION, 1)));
+      return this == ABSENT
+          ? Optional.empty()
+          : Optional.of(indexed(stored, fp, Vectors.axis(DIMENSION, 1)));
     }
 
     private static PostToIndex withOtherTags(PostToIndex post) {

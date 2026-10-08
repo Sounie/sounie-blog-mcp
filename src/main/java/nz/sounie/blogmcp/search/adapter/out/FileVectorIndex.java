@@ -61,6 +61,24 @@ public final class FileVectorIndex implements VectorIndex {
     return index;
   }
 
+  /** Opens only the stable subtree belonging to one embedding profile. */
+  public static FileVectorIndex open(
+      Path dataDirectory,
+      String indexProfileKey,
+      String modelId,
+      IndexRecipe recipe,
+      PrintStream errors) {
+    FileVectorIndex index =
+        new FileVectorIndex(
+            dataDirectory.resolve("search").resolve("index").resolve(indexProfileKey),
+            modelId,
+            recipe);
+    IndexFileLoader loader = new IndexFileLoader(modelId, indexProfileKey);
+    StoredFiles.jsonFilesAfterSweep(index.directory)
+        .forEach(file -> index.accept(file, loader.read(file, index::fileOf), errors));
+    return index;
+  }
+
   private void accept(Path file, IndexFileLoad load, PrintStream errors) {
     switch (load) {
       case IndexFileLoad.Loaded loaded ->

@@ -33,6 +33,14 @@ public record IndexRecipe(String id) {
       PassageComposition composition,
       String passagePreparationVersion,
       PassageTokenBudget budget) {
-    throw new UnsupportedOperationException("Provider passage profiles are not in the recipe yet");
+    budget.validate();
+    return new IndexRecipe(
+        String.join(
+            "/",
+            modelId,
+            chunking.recipePart(),
+            composition.recipePart(),
+            "prep-" + passagePreparationVersion,
+            "b-" + budget.bodyTokens() + "-o-" + budget.overlapTokens() + "-t-" + budget.titleTokens() + "-p-" + budget.preparedPassageTokens() + "-c-" + budget.supportedContextTokens()));
   }
 }

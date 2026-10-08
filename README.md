@@ -4,9 +4,9 @@ A local, read-only [MCP](https://modelcontextprotocol.io) server that lets any M
 and read my blog posts.
 
 It syncs posts from WordPress and Blogger sites, stores them as plain text on disk, and indexes them with a
-local embedding model (BGE-small-en-v1.5, quantised ONNX, bundled in the jar). Search runs entirely on your
-machine: no API keys, and no calls to hosted models. The only network traffic is fetching the blogs' public
-feeds.
+provider-selected local embedding model. The application is built with exactly one embedding provider on the runtime classpath,
+chosen at build time; provider details stay outside the core search domain. Search runs entirely on your machine:
+no API keys, and no calls to hosted models. The only network traffic is fetching the blogs' public feeds.
 
 ## Tools
 
@@ -24,11 +24,16 @@ instructions.
 
 ## Build
 
+Choose exactly one embedding provider at build time:
+
 ```sh
-./gw shadowJar
+./gw shadowJar -PembeddingProvider=onnx
+# or
+./gw shadowJar -PembeddingProvider=gemma2
 ```
 
-This produces `build/libs/blog-mcp-all.jar` (about 130 MB, most of it the embedding model).
+This produces the selected-provider distribution jar under `build/libs/`; the result includes the chosen provider and its runtime
+classpath, not a runtime selector. The base app is not built with multiple providers at once.
 
 ## Configure
 
@@ -56,13 +61,15 @@ Create `~/.config/blog-mcp/sites.json`:
 ## Connect an MCP client
 
 The server uses the stdio transport: the client starts it as a subprocess and talks to it over stdin and
-stdout. Any client that supports local stdio servers can use it. Point the client at this command:
+stdout. Any client that supports local stdio servers can use it. Point the client at the generated
+selected-provider launcher or distribution jar:
 
 ```sh
-java -jar /path/to/blog-mcp-all.jar
+java -jar /path/to/blog-mcp-<provider>.jar
 ```
 
-Set `BLOG_MCP_CONFIG` and `BLOG_MCP_DATA` in the server's environment if you don't want the defaults.
+Use the jar built for the provider you selected above. Set `BLOG_MCP_CONFIG` and `BLOG_MCP_DATA` in the
+server's environment if you don't want the defaults.
 
 Many clients take a JSON configuration in this shape. Check your client's documentation for the file's name
 and location:
@@ -72,7 +79,7 @@ and location:
   "mcpServers": {
     "blog-mcp": {
       "command": "java",
-      "args": ["-jar", "/path/to/blog-mcp-all.jar"],
+      "args": ["-jar", "/path/to/blog-mcp-onnx.jar"],
       "env": { "BLOG_MCP_CONFIG": "/path/to/sites.json" }
     }
   }
@@ -83,7 +90,7 @@ For example, with Claude Code:
 
 ```sh
 claude mcp add --env BLOG_MCP_CONFIG=/path/to/sites.json --transport stdio blog-mcp -- \
-  java -jar /path/to/blog-mcp-all.jar
+  java -jar /path/to/blog-mcp-onnx.jar
 ```
 
 Keep another option, such as `--transport stdio`, between `--env` and the server name.
@@ -105,8 +112,8 @@ Keep another option, such as `--transport stdio`, between `--env` and the server
 - **Later starts:** the stored index is served immediately. A background sync and reconcile job then runs, and
   repeats every `syncEveryHours`.
 - **Storage:** one JSON file per post, checkpoint and indexed post, each written atomically. An unreadable file
-  is renamed to `*.corrupt` and fetched again rather than crashing the server. If the embedding model changes,
-  the affected entries are re-embedded automatically.
+  is renamed to `*.corrupt` and fetched again rather than crashing the server. If the embedding provider/profile
+  changes, the affected entries are re-embedded automatically.
 - **Logs** go to stderr, which most clients show in their MCP logs. Stdout carries only the protocol.
 - The server exits when the client closes its stdin.
 
@@ -134,5 +141,4 @@ Gradle checks every dependency against `gradle/verification-metadata.xml` (ADR 0
 
 ## License
 
-[MIT](LICENSE). Bundled dependencies keep their own licenses, all permissive (Apache-2.0, MIT or MIT-0). The
-bundled embedding model, [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5), is MIT.
+[MIT](LICENSE). Bundled dependencies keep their own licenses, all permissive (Apache-2.0, MIT or MIT-0). Provider-specific models and tokenizer assets keep their own licenses and attribution requirements; the selected provider artifact is responsible for preserving those notices.

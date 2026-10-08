@@ -15,7 +15,7 @@ public record Embedding(int dimension, float[] values) {
     values = unitLength(dimension, withDimension(dimension, values));
   }
 
-  private static float[] withDimension(int dimension,  float[] values) {
+  private static float[] withDimension(int dimension, float[] values) {
     if (values == null || values.length != dimension) {
       throw new InvalidEmbedding("An embedding needs exactly " + dimension + " values");
     }

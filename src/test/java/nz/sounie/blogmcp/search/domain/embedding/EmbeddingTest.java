@@ -59,7 +59,8 @@ class EmbeddingTest {
   @Test
   @DisplayName("AC-SRCH-9: orthogonal embeddings have similarity 0")
   void orthogonal_similarity_is_zero() {
-    assertThat(Vectors.axis(384, 0).similarityTo(Vectors.axis(384, 1)).value()).isCloseTo(0.0, within(1e-6));
+    assertThat(Vectors.axis(384, 0).similarityTo(Vectors.axis(384, 1)).value())
+        .isCloseTo(0.0, within(1e-6));
   }
 
   @Test
@@ -98,8 +99,12 @@ class EmbeddingTest {
 
   @Test
   void embeddings_with_the_same_values_are_equal() {
-    assertThat(Vectors.axis(384, 0)).isEqualTo(Vectors.axis(384, 0)).hasSameHashCodeAs(Vectors.axis(384, 0));
-    assertThat(Vectors.axis(384, 0)).isNotEqualTo(Vectors.axis(384, 1)).isNotEqualTo("not an embedding");
+    assertThat(Vectors.axis(384, 0))
+        .isEqualTo(Vectors.axis(384, 0))
+        .hasSameHashCodeAs(Vectors.axis(384, 0));
+    assertThat(Vectors.axis(384, 0))
+        .isNotEqualTo(Vectors.axis(384, 1))
+        .isNotEqualTo("not an embedding");
     assertThat(Vectors.axis(384, 0).hashCode()).isNotEqualTo(Vectors.axis(384, 1).hashCode());
   }
 }

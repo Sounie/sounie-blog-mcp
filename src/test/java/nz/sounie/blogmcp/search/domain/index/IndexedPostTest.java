@@ -23,7 +23,8 @@ class IndexedPostTest {
 
   private static final ContentFingerprint STORED = fingerprint('a');
   private final PostToIndex post = aPost().id("sounie-wp:1").tags("Java").build();
-  private final IndexedPost entry = indexed(post, STORED, Vectors.axis(DIMENSION, 1), Vectors.axis(DIMENSION, 2));
+  private final IndexedPost entry =
+      indexed(post, STORED, Vectors.axis(DIMENSION, 1), Vectors.axis(DIMENSION, 2));
 
   @Nested
   class DecideFor {
@@ -79,7 +80,11 @@ class IndexedPostTest {
     @DisplayName("AC-SRCH-23: the score is the best chunk's similarity and the snippet its text")
     void picks_the_most_similar_chunk() {
       IndexedPost a =
-          indexed(post, STORED, Vectors.atSimilarity(DIMENSION, 0.80, 1), Vectors.atSimilarity(DIMENSION, 0.90, 2));
+          indexed(
+              post,
+              STORED,
+              Vectors.atSimilarity(DIMENSION, 0.80, 1),
+              Vectors.atSimilarity(DIMENSION, 0.90, 2));
 
       PostMatch match = a.bestMatch(Vectors.query()).orElseThrow();
 
