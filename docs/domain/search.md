@@ -1,6 +1,9 @@
 # Search bounded context
 
-Status: approved by the owner on 2026-10-02 (decisions recorded in section 9)
+Status: Existing model decisions approved by the owner on 2026-10-02; embedding-provider selection
+and the local alias identity confirmed by the owner on 2026-10-08. The EmbeddingGemma 2
+revision-specific tokenizer and passage-budget profile remain at the model-approval checkpoint
+(section 9).
 Package: `nz.sounie.blogmcp.search`
 Feature tag for acceptance criteria: `SRCH`
 
@@ -14,8 +17,8 @@ Search is responsible for:
 - indexing only posts whose body is the **full** text. Posts the catalog holds only as a `SUMMARY`
   are excluded (owner decision, Q7);
 - splitting each post into overlapping **chunks** that stay safely under the embedding model's input limit;
-- turning each chunk, together with the post title, into an **embedding** with the local BGE-small model
-  (nothing leaves the machine);
+- turning each chunk, together with the post title, into an **embedding** with the selected provider:
+  ONNX BGE by default or the owner-confirmed local Google EmbeddingGemma 2 provider;
 - keeping the index in step with the catalog: reacting to the catalog's integration events, and
   **reconciling** against the catalog's current posts to repair missed events or a changed recipe;
 - answering a **search query** with optional site and published-date filters and a clamped limit.
@@ -35,6 +38,7 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 
 | Term | Meaning | Code name |
 |---|---|---|
+| Invalid provider configuration | A present provider-selection value that is blank or names no supported provider. It prevents application startup rather than silently selecting a different model. | `StartupFailure` (reported by `Main`) |
 | Post ID | Search's own copy of the catalog's post identity, in the external form `<siteId>:<sourcePostId>`. Parsed from the published language, and never shared as a catalog type. | `PostId` (search.domain) |
 | Site ID | The site part of a post ID (`[a-z0-9-]{1,40}`). It is used for the site filter. | `SiteId` (search.domain) |
 | Completeness | Whether the catalog has the `FULL` post text or only a `SUMMARY`. It is also the **indexability rule**: `FULL` posts go through the normal index decision, and `SUMMARY` posts are always excluded (owner decision, Q7). It is not stored in the index and not shown in results, because everything indexed is `FULL`. | `Completeness` (enum with behaviour `decide(...)`) |
@@ -43,22 +47,26 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Post metadata | Everything about an indexed post that search stores but does **not** embed: site ID, canonical URL, title, tags, published at and updated at. A difference in metadata alone never triggers re-embedding. | `PostMetadata` |
 | Word sequence | The post body after **text normalisation**, as an ordered list of words. Any run of Unicode whitespace (spaces, tabs, newlines, no-break space U+00A0) separates words. Any **overlong word** is split into pieces. | `WordSequence` |
 | Overlong word | A whitespace-free run longer than 64 characters, such as a URL, base64 data or minified code. It is split into consecutive pieces of at most 64 characters, which then count as separate words. | `WordSequence` (rule `MAX_WORD_CHARS = 64`) |
-| Token | One unit of the embedding model's WordPiece vocabulary. One model pass takes at most **510 content tokens** (512 including `[CLS]` and `[SEP]`). | (model concept) |
-| Partition | LangChain4j's handling of input over 510 content tokens. It does **not** truncate. It splits the input into pieces of at most 510 tokens, embeds each one, and averages the results weighted by length. Search keeps every passage within **one** partition, so this averaging never happens (3.4). | (LangChain4j behaviour, `OnnxBertBiEncoder.MAX_SEQUENCE_LENGTH = 510`) |
-| Token counter | Port that says how many model tokens one word costs. It is additive over words (see 3.4). It is implemented by `BgeTokenCounter`, which loads the model's own tokenizer file (`bge-small-en-v1.5-q-tokenizer.json`, bundled in the LangChain4j jar) with DJL's `HuggingFaceTokenizer`. | `TokenCounter` (domain port), `BgeTokenCounter` (adapter.out) |
-| Query instruction | The fixed prefix `Represent this sentence for searching relevant passages: `, which the BGE v1.5 model card recommends for short-query-to-passage retrieval. It is put in front of **queries only**, never passages (lead decision). | `QueryPassage.INSTRUCTION` |
-| Query passage | The exact text embedded for a query: the query instruction followed by the query text. It is built from a `QueryText`, so the prefix is applied in exactly one place. | `QueryPassage` |
+| Token | One unit counted by the selected provider's configured tokenizer. Tokenization and context limits are provider-specific; a provider-neutral budget must be selected with the provider. | `TokenCounter` (domain port) |
+| Passage token budget | Provider-selected, provider-neutral limits for chunk body tokens, title tokens and total prepared passage tokens. It is applied with the selected provider's tokenizer; vendor/model details stay outside the domain. | `PassageTokenBudget` (domain policy/configuration, proposed) |
+| Token counter | Port that counts the selected provider's actual tokens. The adapter must use the tokenizer for the loaded model revision; an OpenAI-compatible endpoint alone does not identify one. | `TokenCounter` (domain port), provider adapter (`search.adapter.out`) |
+| Embedding provider | One selected implementation that embeds both passages for indexing and queries for search. Supported selections are ONNX BGE and the local OpenAI-compatible provider, whose `text-embedding-embeddinggemma-2` alias the owner confirmed serves Google EmbeddingGemma 2. | Provider adapter (`search.adapter.out`) |
+| Embedding provider selection | The application-composition choice read once at startup from `BLOG_MCP_EMBEDDING_PROVIDER`; unset selects `onnx`, while `onnx` and `gemma2` explicitly select the supported providers. A blank or unknown value is invalid, not a request for the default. | `EmbeddingProviderSelection` (`app`, proposed) |
+| Provider model identity | The explicitly configured model and pinned revision identity, exposed through the passage-embedding port and included in the index recipe. For `gemma2`, the owner-confirmed alias maps to Google EmbeddingGemma 2; its tokenizer assets must match the pinned revision. | `PassageEmbedder.modelId()` |
+| Shared provider instance | The one selected adapter instance supplied through both consumer-owned embedding ports, so passage and query vectors inhabit the same model space. | `Adapters` composition (`app`) |
+| Query preparation | Provider-selected transformation of the raw `QueryText` into the exact query input the model expects. It is separate from query validation and from passage preparation; the selected adapter applies it, so query text in the domain carries no provider-specific prefix. | Query-preparation strategy at the selected adapter boundary (proposed) |
+| Passage preparation | Provider-selected transformation of canonical passage content into the exact model input, including any required instruction/template. Its version and budget affect the index recipe; its implementation remains in the adapter. | Passage-preparation strategy at the selected adapter boundary (proposed) |
 | Chunk | A contiguous window of the word sequence that is embedded as one unit. A chunk has a zero-based **chunk index** in body order, and its text is its words joined by single spaces. | `Chunk` |
-| Chunking policy | The rule that decides chunk boundaries and overlap: a target of 300 words, at most 400 body tokens per chunk, and an overlap of up to 50 words and 100 tokens. | `ChunkingPolicy` |
+| Chunking policy | The provider-neutral rule that decides chunk boundaries and overlap. Its token limits come from the selected `PassageTokenBudget`; they are not assumed to be shared by different providers. | `ChunkingPolicy` |
 | Overlap | The trailing words of one chunk that are repeated at the start of the next, so that a sentence crossing a boundary appears whole in at least one chunk. | `ChunkingPolicy` |
-| Passage | The exact text sent to the model for one chunk: the **title line**, a newline, and then the chunk text. If the title is blank, the passage is the chunk text alone. | `Passage` |
-| Title line | The normalised title, cut to the longest whole-word prefix that fits in 64 tokens. | `PassageComposition` |
+| Passage | Canonical content for one chunk: title and chunk text. The selected provider's passage-preparation strategy converts it to exact model input. | `Passage` |
+| Title line | The canonical title content, limited according to the selected `PassageTokenBudget`; the adapter may apply its provider's passage template afterward. | `PassageComposition` |
 | Passage composition | The rule that builds passages from a title and chunks. | `PassageComposition` |
-| Embed | Turn a passage or a query passage into an embedding using the local model. | `PassageEmbedder.embedPassages(...)`, `QueryEmbedder.embedQuery(QueryPassage)` |
-| Embedder | The local embedding model, seen through two ports split by consumer (ADR 0006): the **passage embedder** (`modelId()` and `embedPassages(List<Passage>)`, used by indexing) and the **query embedder** (`embedQuery(QueryPassage)`, used by search). The only production implementation of both is `OnnxEmbedder`, the only class that touches LangChain4j. | `PassageEmbedder` (`search.domain.embedding`), `QueryEmbedder` (`search.application`) |
-| Embedding | A vector of exactly 384 finite floats, normalised to unit length when it is created. The model already uses CLS pooling with L2 normalisation, so in practice this is a defensive no-op. | `Embedding` |
+| Embed | Turn canonical passage content or raw query text into an embedding through the selected provider and its input-preparation strategies. | `PassageEmbedder.embedPassages(...)`, `QueryEmbedder.embedQuery(QueryText)` (proposed signature) |
+| Embedder | The selected embedding provider, seen through two ports split by consumer (ADR 0006): the **passage embedder** (`modelId()` and `embedPassages(List<Passage>)`, used by indexing) and the **query embedder** (used by search). The same selected instance implements both ports and applies provider-specific preparation. | `PassageEmbedder` (`search.domain.embedding`), `QueryEmbedder` (`search.application`) |
+| Embedding | A vector whose dimension matches the explicitly configured model, with finite values and unit length. | `Embedding` |
 | Similarity | The cosine similarity of two embeddings. Because embeddings are unit length, this is their dot product. Its range is [-1, 1], and higher means more related. | `Similarity` |
-| Index recipe | The identity of the method used to build an index entry: model ID, chunking policy parameters and passage composition version, e.g. `bge-small-en-v1.5-q/w300-t400-o50-oc100-c64/tt64-p1` (model ID; target words, body tokens, overlap words, overlap token cap, maximum word characters; title tokens and composition version). Changing any part makes every entry stale. | `IndexRecipe` |
+| Index recipe | The identity of the method used to build an index entry: selected model/revision identity, chunking and selected passage-budget parameters, and passage-preparation/template version. Query preparation is excluded because it does not change stored passages. Changing an indexing-relevant part makes every entry stale. | `IndexRecipe` |
 | Content fingerprint | SHA-256 over the index recipe, the normalised title and the normalised body. If two posts have the same fingerprint, they produce the same passages. Tags and other metadata are **not** included. | `ContentFingerprint` |
 | Indexed post | The aggregate: one post's metadata, its content fingerprint and its indexed chunks. | `IndexedPost` |
 | Indexed chunk | A chunk's index and text together with its embedding. | `IndexedChunk` |
@@ -125,8 +133,11 @@ Invariants:
 2. **Chunks**: the chunk indexes are exactly `0..n-1`, in body order. A post has zero chunks
    **only** when both its normalised title and its normalised body are empty. Such a post is still recorded,
    so that reconciles do not keep re-adding it, but it never matches a query.
-3. **Embeddings**: one per chunk, each 384-dimensional and unit length, all made under the same index
-   recipe as the fingerprint.
+3. **Embeddings**: one per chunk, each with the selected provider's configured dimension and unit
+   length, all made under the same index
+   recipe as the fingerprint. The composition root selects one embedding provider and supplies the
+   same provider instance through both `PassageEmbedder` and `QueryEmbedder`; therefore search queries
+   are embedded in the vector space used by the index.
 4. **Fingerprint integrity**: the fingerprint is the one computed from the content the chunks were built
    from. `withMetadata` cannot change content, and new content always goes through `PostIndexer`.
 5. **Whole replacement**: an entry is saved and replaced as a whole. A search never sees a mixture of
@@ -144,8 +155,9 @@ Invariants:
 **File persistence is out of scope for this slice and belongs to slice 3**, next to the catalog's
 file repositories. Until then, a restart starts with an empty index and the startup reconcile rebuilds it.
 
-Search is a brute-force scan: about 1–2k chunks × 384 dimensions per query, which is well under a
-millisecond of arithmetic. No approximate-nearest-neighbour structure is needed (ADR 0005).
+Search is a brute-force scan: about 1–2k chunks × 384 dimensions for ONNX BGE; the selected
+alternative's configured dimension determines its arithmetic cost. No
+approximate-nearest-neighbour structure is needed (ADR 0005).
 
 ### 3.3 Value objects and the type that owns each decision
 
@@ -155,13 +167,16 @@ millisecond of arithmetic. No approximate-nearest-neighbour structure is needed 
 | Text normalisation: whitespace runs (incl. U+00A0, tabs, newlines) separate words, and leading or trailing whitespace is dropped | `WordSequence` | The title uses the same rule. |
 | Splitting overlong words into pieces of at most 64 characters | `WordSequence` | Joining the pieces with no separator gives back the original word. In a snippet the pieces appear separated by spaces. |
 | Chunk boundaries and overlap | `ChunkingPolicy` | See 3.4. |
-| Token cost of a word | `TokenCounter` port (adapter: `BgeTokenCounter` over DJL `HuggingFaceTokenizer` and the bundled tokenizer file; tests: deterministic fake) | This is the model's exact tokenizer, so no estimate is needed. |
-| Passage = title line + newline + chunk text; title cut to 64 tokens; blank title omitted | `PassageComposition` | |
+| Token cost of a word | `TokenCounter` port supplied by the selected provider profile; tests: deterministic fake | It must count with the tokenizer matching the loaded model revision. The domain does not select a tokenizer. |
+| Provider-specific body/title/total token limits | `PassageTokenBudget` (provider-neutral domain policy/configuration, proposed) | Selected at composition with the provider. Concrete tokenizer and context-limit configuration stay outside the domain. |
+| Canonical passage content from title and chunk | `PassageComposition` | Provider-specific passage preparation is applied by the selected adapter, not by the domain. |
 | Whether a post may be indexed at all | `Completeness.decide(...)` (`FULL` delegates to the normal decision; `SUMMARY` always gives `Exclude`) | Owner decision, Q7. It is reached only through `IndexDecision.forPost`, so events and reconciles share it. |
 | What changes re-embedding | `ContentFingerprint.of(IndexRecipe, title, WordSequence)` | Tags, URL and dates are excluded. Completeness is decided before the fingerprint matters. |
-| Recipe identity | `IndexRecipe` | Derived from the `ChunkingPolicy` parameters, the composition version and `PassageEmbedder.modelId()`. |
+| Recipe identity | `IndexRecipe` | Derived from selected model/revision identity, `ChunkingPolicy` and passage-budget parameters, and passage-preparation version. Query preparation is excluded. |
+| Provider selection, environment parsing and composition | `EmbeddingProviderSelection` in `app` (proposed) | Reads `BLOG_MCP_EMBEDDING_PROVIDER` once, defaults only when it is absent, rejects blank or unknown values, and selects one adapter instance for both consumer-owned ports. The application composition root owns this runtime choice; it is not a search-domain aggregate or a shared port. |
 | Dimension check, finiteness, non-zero norm, normalisation, cosine | `Embedding` | It throws `InvalidEmbedding`. |
-| Query instruction prefix (queries only) | `QueryPassage.of(QueryText)` | It is a domain value, so the asymmetry is testable without the model (AC-SRCH-32). Queries and passages go through separate ports, `QueryEmbedder.embedQuery(QueryPassage)` and `PassageEmbedder.embedPassages(List<Passage>)`, so there is no flag parameter, and a passage can never get the prefix by type. The prefix is not part of `IndexRecipe`, because it never affects stored passages. |
+| Query validation | `QueryText` | It stores trimmed, validated raw text. Provider-specific query preparation is not a domain rule; the selected adapter applies its configured strategy. |
+| Query versus passage preparation | Separate `QueryEmbedder` and `PassageEmbedder` consumer-owned ports; selected adapter's preparation strategies | No boolean flag or provider-specific prefix in the domain. Query preparation is not part of `IndexRecipe`; passage preparation is. |
 | Upsert vs remove per event kind | `CatalogEventTranslation` (adapter.in) maps each event type to an `IndexChange` variant; `IndexChange.applyTo(IndexWork)` is polymorphic | Publish and revise **both** become `Upsert`, so duplicate or missed deliveries heal themselves. The pattern switch has one delegating arm per event type. |
 | Add / re-embed / refresh / keep / exclude / remove | `IndexDecision` (sealed), produced by the single entry point `IndexDecision.forPost` (for upserts) or `IndexDecision.remove(PostId)` (for withdrawals and orphans). Each variant has `apply(IndexWork)` returning an `IndexOutcome`. | The same type is used by `IndexPost` and `ReconcileIndex`. |
 | Reconcile plan (missing, stale, metadata, summary-only, malformed, orphan) | `ReconcilePlan.between(List<CatalogEntry> catalog, VectorIndex snapshot, IndexRecipe)` | It produces a list of `IndexDecision`s and an orphan-removal verdict. Each variant contributes through its own method (polymorphism on `CatalogEntry`, not an if-chain):<br>• `Readable` goes through `IndexDecision.forPost`;<br>• `Unreadable` gives `IndexDecision.Unreadable(PostId)`, which never touches the index and reports `FAILED` with the reason. Its ID counts as current;<br>• `Unidentified` contributes no decision, but suppresses all orphan removals in the run.<br>A post ID listed more than once in the catalog becomes **one** `IndexDecision.Unreadable` whose reason mentions "duplicate". Its existing entry stays, it is reported `FAILED`, and the other posts are still planned: a duplicate never aborts the reconcile. A summary-only or malformed catalog post is *not* an orphan. The plan is pure and tested without an embedder. |
@@ -175,53 +190,55 @@ millisecond of arithmetic. No approximate-nearest-neighbour structure is needed 
 
 ### 3.4 Chunking policy (numbers and why)
 
-Parameters: `TARGET_WORDS = 300`, `BODY_TOKEN_BUDGET = 400`, `OVERLAP_WORDS = 50`,
-`OVERLAP_TOKEN_CAP = 100`, `MAX_WORD_CHARS = 64`; in `PassageComposition`, `TITLE_TOKEN_BUDGET = 64`.
+Provider-neutral parameters: `TARGET_WORDS = 300`, `OVERLAP_WORDS = 50`,
+`MAX_WORD_CHARS = 64`. The selected `PassageTokenBudget` supplies the body-token budget, overlap-token
+cap, title-token budget and total prepared-passage budget. The existing ONNX BGE profile retains
+`BODY_TOKEN_BUDGET = 400`, `OVERLAP_TOKEN_CAP = 100`, `TITLE_TOKEN_BUDGET = 64` and its 465-token
+worst-case passage target below; these numbers are not defaults for another provider.
 
 Algorithm (deterministic):
 1. A chunk starts at word `s` and grows one word at a time. It **closes before** a word that would make it
-   exceed 300 words or 400 body tokens.
+   exceed 300 words or the selected profile's body-token budget.
 2. The next chunk starts at the longest suffix of the previous chunk that has at most 50 words **and**
-   at most 100 tokens, but always at least one word after the previous start, so every chunk adds at least one new word.
-   The overlap also leaves room in the 400-token budget for the next word. With words of at most 64 tokens this never
-   binds, but after an unusually expensive word it shrinks the overlap instead of producing a chunk that is only overlap.
+   at most the selected profile's overlap-token cap, but always at least one word after the previous start, so every chunk adds at least one new word.
+   The overlap also leaves room in that profile's body-token budget for the next word. If the overlap would leave no room for
+   a new word under the selected budget, it shrinks instead of producing a chunk that is only overlap. Each profile must
+   budget enough tokens for at least one split word.
 3. Chunking stops when the chunk just closed contains the last word. No chunk consists only of overlap.
-4. An empty word sequence gives **one** chunk with empty text, so the passage is the title alone.
+4. An empty word sequence gives **one** chunk with empty text, so canonical passage content is the title alone.
    If the title is also empty, the result is **zero** chunks.
 
 Why these numbers:
 - **300 words** is the size the plan asked for. It is about one topical section of a blog post: big enough to carry
-  meaning, and small enough that one strong paragraph is not diluted by a whole post. English prose
+  meaning, and small enough that one strong paragraph is not diluted by a whole post. For ONNX BGE, English prose
   costs about 1.3 WordPiece tokens per word, so about 390 tokens.
-- **400 body tokens** is the hard guarantee. Technical posts contain code, identifiers and punctuation that cost
+- For ONNX BGE, **400 body tokens** is the hard guarantee. Technical posts contain code, identifiers and punctuation that cost
   2–3 tokens per "word", so a word count alone cannot keep a chunk within the model's input.
   LangChain4j does not truncate long input. It splits anything over **510 content tokens** into
   partitions and averages their embeddings weighted by length, which would blur a chunk's meaning. So
   the goal is that **every passage fits in a single partition**. The worst case is 64 (title) + 400 (body) +
   1 (the newline adds no WordPiece token, but is counted conservatively) = **465 content tokens ≤ 510**
   (467 ≤ 512 with `[CLS]`/`[SEP]`). That leaves a margin of 45 tokens for any non-additivity in the tokenizer.
-- **50 words of overlap (about 17%)** is two or three sentences. The 100-token cap stops a code-heavy overlap
-  from eating the next chunk's budget. With overlap ≤ 100 tokens and any single (split) word far below
-  the remaining 300 tokens, every chunk can always add a new word, so chunking always terminates.
-- **64-character pieces**: the budgets are enforced by exact counting with the model's tokenizer
-  (`BgeTokenCounter`), not by a characters-per-token bound. A "one token per character" bound would not
+- **50 words of overlap (about 17%)** is two or three sentences. For ONNX BGE the 100-token cap stops a code-heavy overlap
+  from eating the next chunk's budget. Each profile's cap must leave room for at least one new (split) word, so chunking terminates.
+- **64-character pieces**: each selected profile's budgets are enforced by exact counting with its configured tokenizer,
+  not by a characters-per-token bound. A "one token per character" bound would not
   hold anyway: the tokenizer's NFD normalisation can expand one Hangul syllable into 2–3 jamo. The
-  64-character pieces keep any single word far below the 400-token body budget, so a single word can
+  64-character pieces keep any single word within the configured body budget, so a single word can
   never fill a chunk on its own. AC-SRCH-8's input includes a Hangul fragment for this reason.
 - Expected volume: 229 posts, mostly 300–1,500 words, gives roughly 700–1,500 chunks.
 
 How "one partition" is ensured:
-- LangChain4j keeps its token methods package-private, so `BgeTokenCounter` loads the same
+- For ONNX BGE, LangChain4j keeps its token methods package-private, so `BgeTokenCounter` loads the same
   `bge-small-en-v1.5-q-tokenizer.json` that the model uses, through DJL's `HuggingFaceTokenizer`. DJL is
   already a transitive dependency, so this is the exact tokenizer and not an estimate.
 - BERT's pre-tokenizer splits on whitespace and punctuation before WordPiece, so the cost of a text is
   the sum of the costs of its words (additive). The budget is checked word by word while chunking.
 - AC-SRCH-8 checks the result against the real tokenizer.
 
-Queries: a query passage is the query instruction (about 10 tokens) plus at most 1,000 characters of
-query text. 1,000 characters cost at most about 1,000 tokens in the worst case (one per character), but
-fewer than 300 for normal text. An extreme query could therefore be partitioned. That is acceptable for
-a query, and Q6 bears on it.
+Queries: query validation and provider-specific query preparation are separate. The query preparation
+strategy and any provider-specific query budget are selected with the provider; a configured OpenAI-
+compatible endpoint does not supply either. Query limits do not determine passage chunk limits.
 
 ### 3.5 Ranking choice
 
@@ -255,12 +272,23 @@ Index mutations (`IndexPost` and `ReconcileIndex`) are serialised by a single lo
 application layer, so that a decision and its save cannot interleave with another mutation of the same post.
 Searches do not take that lock.
 
-**Model access.** LangChain4j shares one ONNX session and one tokenizer per model, and its own
+**Embedding providers and model access.** `OnnxEmbedder` (ONNX BGE) and the configured local
+OpenAI-compatible embedding adapter each implement both consumer-owned ports. The composition root
+reads `BLOG_MCP_EMBEDDING_PROVIDER` once and supplies the same selected adapter instance as the
+passage and query embedder. The selected profile also supplies provider-specific query and passage
+preparation strategies, a matching tokenizer, and its explicit passage-token budget. These are
+provider-neutral behavior/configuration boundaries: model-specific instructions, tokenizers and
+context facts remain in adapters/configuration, not the domain. Passage vectors used by the index and
+query vectors used for search must be generated by the same configured model/revision. The configured
+model/revision identity, passage preparation and budget contribute to `IndexRecipe`; changing an
+indexing-relevant value makes entries stale and the next reconcile re-embeds them (AC-SRCH-45–47).
+
+For ONNX BGE, LangChain4j shares one ONNX session and one tokenizer per model, and its own
 `embedAll` already calls them from a thread pool sized to `availableProcessors()`. That suggests
 concurrent use is intended, but nothing documents it. Because searches do not take the index lock, a
-query embedding can run at the same time as an indexing embedding. **Recommendation (adopted in ADR 0005):**
-`OnnxEmbedder` serialises its own public calls (`embedPassages` for one post, `embedQuery`) with one
-lock, rather than relying on that undocumented assumption.
+query embedding can run at the same time as an indexing embedding. **Recommendation (adopted in ADR
+0005):** `OnnxEmbedder` serialises its own public calls (`embedPassages` for one post,
+`embedQuery`) with one lock, rather than relying on that undocumented assumption.
 - The cost is bounded. One post's passages take about 0.1–0.5 s (an estimate). A query waits at most
   that long, even during a reconcile, because reconciles call the embedder once per post.
 - LangChain4j's parallelism *within* one `embedAll` call is left alone, because that is its own
@@ -268,7 +296,8 @@ lock, rather than relying on that undocumented assumption.
 
 ### 4.2 Published
 
-None. No other context needs to know about indexing. Outcomes are returned as results
+None. Provider selection is resolved once during application startup, not published as a domain
+event. No other context needs to know about indexing. Outcomes are returned as results
 (`IndexOutcome`, `ReconcileReport`, `SearchResults`) rather than raised as events.
 
 ## 5. Reconcile and rebuild (resolves catalog.md Q8; see ADR 0005)
@@ -314,14 +343,15 @@ None. No other context needs to know about indexing. Outcomes are returned as re
   and `SharedCatalogPosts`) into `PostToIndex`. The pull side wraps each post in a `CatalogEntry`, so
   malformed states stay visible. Neither `search.domain` nor `search.application` sees
   `shared` types.
-- **search to LangChain4j / ONNX Runtime / DJL (conformist, wrapped)**: two classes in `search.adapter.out`:
-  - `OnnxEmbedder` implements both `PassageEmbedder` and `QueryEmbedder`. It is the only class that imports `dev.langchain4j..`, which
-    also brings Jackson 2 in transitively (our code stays on Jackson 3; ArchUnit `no_jackson_2`).
-  - `BgeTokenCounter` implements `TokenCounter`. It imports only `ai.djl.huggingface.tokenizers..`, and
-    reads the tokenizer file as a classpath resource.
-
-  The model and tokenizer files are bundled in the LangChain4j jar, so nothing is downloaded at runtime.
-  The model loads lazily on first use, so the first embedding call is slow.
+- **search to embedding providers (conformist, wrapped)**: the ONNX BGE adapter and configured local
+  OpenAI-compatible adapter in `search.adapter.out` each implement both consumer-owned ports.
+  `EmbeddingProviderSelection` in `app` chooses one once at startup; the composition root supplies
+  that same adapter instance to both ports and selects its query/passage strategies and passage-token
+  budget. Provider tokenizers and model-specific preparation remain outside the domain; the selected
+  tokenizer implements the separate `TokenCounter` port.
+  The ONNX model and tokenizer files are bundled in the LangChain4j jar, so nothing is downloaded
+  at runtime. ONNX loads lazily; the local endpoint's availability and startup behavior depend on its
+  explicit configuration.
 - **search to mcp (slice 3)**: the `search_posts` tool calls `SearchPosts` and maps its arguments with
   `SearchQuery`'s factories (`ResultLimit.defaultLimit()` when `limit` is absent,
   `PublishedDateRange.unbounded()` when both dates are absent, and so on).
@@ -334,23 +364,23 @@ None. No other context needs to know about indexing. Outcomes are returned as re
 | Sub-package | Depends on | Types |
 |---|---|---|
 | `post` | (nothing) | `PostId`, `SiteId`, `PostMetadata`, `MalformedCatalogPost` |
-| `text` | (nothing) | `WordSequence`, `WordCosts`, `ChunkingPolicy`, `Chunk`, `Passage`, `PassageComposition`, `TokenCounter` (port) |
+| `text` | (nothing) | `WordSequence`, `WordCosts`, `ChunkingPolicy`, `PassageTokenBudget`, `Chunk`, `Passage`, `PassageComposition`, `TokenCounter` (port) |
 | `embedding` | `text` | `Embedding`, `Similarity`, `InvalidEmbedding`, `EmbedderUnavailable`, `PassageEmbedder` (port) |
 | `index` | `embedding`, `post`, `text` | `IndexedPost`, `IndexedChunk`, `PostIndexer`, `PostToIndex`, `Completeness`, `PostMatch`, `ChunkHit`, `ContentFingerprint`, `IndexRecipe`, `IndexChange`, `IndexDecision`, `IndexOutcome`, `IndexWork`, `InvalidIndexedPost`, `VectorIndex` (port) |
-| `query` | `index`, `post`, `text` | `SearchQuery`, `QueryText`, `QueryPassage`, `InvalidSearchQuery`, `ResultLimit`, `PublishedDateRange`, `SiteFilter`, `SearchFilters`, `SearchResults` |
+| `query` | `index`, `post`, `text` | `SearchQuery`, `QueryText`, `InvalidSearchQuery`, `ResultLimit`, `PublishedDateRange`, `SiteFilter`, `SearchFilters`, `SearchResults` |
 | `reconcile` | `index`, `post` | `CatalogEntry`, `ReconcilePlan` |
 
 Nothing in the domain depends on `query`. `PostToIndex`, `Completeness` and `PostMatch` live in `index`,
 not in `post` or `query`, to keep this graph acyclic.
 Outside the domain:
 - `PostCatalog` and `QueryEmbedder` (ports used only by use cases), `ReconcileReport` and the use cases live in `search.application`;
-- `OnnxEmbedder`, `BgeTokenCounter`, `InMemoryVectorIndex` and `SharedCatalogPosts` live in `search.adapter.out`;
+- provider adapters, their preparation strategies/tokenizers, `InMemoryVectorIndex` and `SharedCatalogPosts` live in `search.adapter.out`;
 - `CatalogEventListener` and `CatalogEventTranslation` live in `search.adapter.in`.
 
 ## 7. Application use cases (`search.application`)
 
 - `IndexPost.apply(IndexChange)` returns an `IndexOutcome`. It reads as a straight line: decide, then apply the decision.
-- `SearchPosts.search(SearchQuery)` returns `SearchResults`: `embedQuery(QueryPassage.of(query.text()))`, then `index.all()`, filtered
+- `SearchPosts.search(SearchQuery)` returns `SearchResults`: `embedQuery(query.text())` (the selected adapter prepares it), then `index.all()`, filtered
   by `SearchFilters`, then `bestMatch` for each post, then `SearchResults.rank(limit)`.
   A `PostMatch` carries the post ID, site ID, canonical URL, title, tags, published at, updated at, score and
   snippet. It has **no completeness**, because every indexed post is `FULL`.
@@ -378,12 +408,12 @@ When it is chunked,
 Then there are 3 chunks covering `w1..w300`, `w251..w550` and `w501..w700`, and consecutive chunks share exactly 50 words.
 And given a body of 301 words, there are 2 chunks covering `w1..w300` and `w251..w301`.
 
-**AC-SRCH-3: The token budget closes a chunk early, and the overlap is token-capped.**
-Given a fake `TokenCounter` that costs 2 tokens per word, and a body of 500 words,
+**AC-SRCH-3: The selected passage-token budget closes a chunk early, and the overlap is token-capped.**
+Given the selected test profile declares a 400-token body budget and a 100-token overlap cap, and a fake `TokenCounter` that costs 2 tokens per word with a body of 500 words,
 When it is chunked,
 Then the first chunk is `w1..w200` (400 tokens), and the next one starts at `w151` (50 words = 100 tokens).
 And given a counter costing 4 tokens per word, the overlap is 25 words (the 100-token cap), not 50.
-And with any counter, no chunk exceeds 400 body tokens, and every chunk contains at least one word not in the previous chunk.
+And with any selected profile and counter, no chunk exceeds that profile's body-token budget, and every chunk contains at least one word not in the previous chunk. These 400/100 limits are the ONNX BGE profile values, not universal defaults.
 
 **AC-SRCH-4: An empty body is indexed by its title alone. An empty post has no chunks.**
 Given a post titled `Hello` whose body is empty (or only whitespace),
@@ -402,38 +432,93 @@ When it is normalised,
 Then the word sequence is `a b c d e`.
 And given two versions of a post that differ only in whitespace, their content fingerprints are equal.
 
-**AC-SRCH-7: The title is part of every passage.**
+**AC-SRCH-7: The title is part of every passage and obeys the selected profile's title budget.**
 Given a post titled `Records in Java 25` with a 700-word body,
 When its passages are composed,
 Then each of the 3 passages is `Records in Java 25`, a newline, and then that chunk's text.
-And given a title longer than 64 tokens, the title line is its longest whole-word prefix of at most 64 tokens.
+And given a title longer than the selected profile's title-token budget, the canonical title content is its longest whole-word prefix within that budget (64 tokens for the ONNX BGE profile).
 And given a blank title, the passage is the chunk text alone.
 
-**AC-SRCH-8: Every passage fits in one model partition (adapter test, real tokenizer).**
+**AC-SRCH-8: Every ONNX BGE passage fits in one model partition (adapter test, real tokenizer).**
 Given a pathological body of 3,000 "words" mixing Java code, long identifiers, punctuation runs, URLs, a 2,000-character string with no whitespace, and a run of Hangul syllables with no whitespace (which NFD normalisation expands into jamo, so it costs more than one token per character), and a 120-word title,
-When it is chunked and composed with the real `BgeTokenCounter` as `TokenCounter`,
+When it is chunked and composed under the ONNX BGE profile with the real `BgeTokenCounter` as `TokenCounter`,
 Then every passage, encoded as a whole by the model's tokenizer (`bge-small-en-v1.5-q-tokenizer.json` through DJL), has at most 465 content tokens. That is within LangChain4j's single-partition limit of 510, so no passage is split and averaged.
 (The test JVM must point DJL's cache at a writable directory; see ADR 0005.)
 
 ### Embedding
 
 **AC-SRCH-9: The `Embedding` value object.**
-Given a vector of length 383 or 385, one containing `NaN` or infinity, or the all-zero vector,
-When an `Embedding` is created,
+Given a selected provider dimension, a vector whose length does not equal that dimension, one containing `NaN` or infinity, or the all-zero vector,
+When an `Embedding` is created for that dimension,
 Then `InvalidEmbedding` is raised.
-And given a valid 384-dimensional vector of length 3.0, the embedding has unit length (to within 1e-6), its similarity with itself is 1.0, and its similarity with an orthogonal embedding is 0.0.
+And given a valid vector of the selected dimension with length 3.0, the embedding has unit length (to within 1e-6), its similarity with itself is 1.0, and its similarity with an orthogonal embedding of the same dimension is 0.0. Provider dimensions come from confirmed model configuration, not from the local server alias.
 
 **AC-SRCH-10: The real model ranks related text above unrelated text (one adapter test).**
 Given the real `OnnxEmbedder`, the query `how do I configure a Gradle build for Java`, a related passage about writing a `build.gradle.kts` for a Java project, and an unrelated passage about baking sourdough bread,
-When the query is embedded as a `QueryPassage` (with the instruction) and both passages are embedded as passages,
+When the raw query is passed to the ONNX BGE query-preparation strategy and both passages are prepared and embedded by the ONNX BGE passage strategy,
 Then all embeddings have dimension 384 and unit length, and the related passage's similarity to the query is strictly greater than the unrelated one's. Only the relative order is asserted, never an absolute score (BGE scores cluster in about [0.6, 1]).
 
-**AC-SRCH-32: Only queries carry the query instruction.**
-Given the query text `records in java`,
+**AC-SRCH-32: Provider-specific preparation is separate from query validation and passage composition.**
+Given the raw query text `records in java`,
 When a `SearchQuery` is searched,
-Then the `QueryEmbedder` receives exactly `Represent this sentence for searching relevant passages: records in java` as its query passage.
-And when a post is indexed, no passage given to `PassageEmbedder.embedPassages` starts with the instruction.
-And changing the instruction does not change any `IndexRecipe` or `ContentFingerprint`.
+Then the `QueryEmbedder` receives the validated raw `QueryText`, and the selected provider's query-preparation strategy is applied at the adapter boundary.
+And when a post is indexed, the selected provider's passage-preparation strategy is applied independently; query preparation is never applied to passages.
+And changing query preparation does not change any `IndexRecipe` or `ContentFingerprint`, while changing passage preparation does change the `IndexRecipe`.
+
+### Embedding provider selection
+
+The agreed configuration key is `BLOG_MCP_EMBEDDING_PROVIDER`. Its accepted values are the
+lowercase strings `onnx` and `gemma2`; surrounding whitespace is trimmed. An unset variable selects
+the default. A blank or unknown value fails startup rather than falling back. Each provider selection also
+selects its own query-preparation strategy, passage-preparation strategy, tokenizer and passage-token
+budget. The owner confirmed that the local `text-embedding-embeddinggemma-2` alias is Google
+EmbeddingGemma 2; the exact model revision and matching tokenizer assets must be pinned together.
+
+**AC-SRCH-40: An unset provider selection defaults to ONNX BGE.**
+Given `BLOG_MCP_EMBEDDING_PROVIDER` is absent,
+When the application assembles search,
+Then `OnnxEmbedder` is selected, its `modelId()` is `bge-small-en-v1.5-q`, and the index recipe uses that model ID.
+
+**AC-SRCH-41: ONNX BGE can be selected explicitly.**
+Given `BLOG_MCP_EMBEDDING_PROVIDER` is `onnx`,
+When the application assembles search,
+Then `OnnxEmbedder` is selected for passage and query embedding.
+
+**AC-SRCH-42: The Gemma2-compatible provider can be selected explicitly.**
+Given `BLOG_MCP_EMBEDDING_PROVIDER` is `gemma2`,
+When the application assembles search,
+Then the configured local OpenAI-compatible embedding adapter is selected for both embedding ports, and the index recipe records Google EmbeddingGemma 2 with its exact pinned model revision.
+And the tokenizer assets used by that provider match the pinned model revision; the alias alone is not used as the revision or tokenizer identity.
+
+**AC-SRCH-43: Blank and unknown provider selections fail startup.**
+Given the provider variable is present but empty, whitespace-only, or contains a value other than the exact lowercase strings `onnx` or `gemma2` after trimming,
+When the application resolves its provider selection,
+Then it reports an invalid provider configuration and does not silently fall back to ONNX or start search.
+
+**AC-SRCH-44: Both embedding ports use the same selected provider instance.**
+Given either supported provider selection,
+When the application assembles search,
+Then one selected adapter instance is supplied as both `PassageEmbedder` and `QueryEmbedder`; the consumer-owned ports remain `PassageEmbedder` in `search.domain.embedding` and `QueryEmbedder` in `search.application`.
+And passages are indexed and queries are embedded by the same provider and model.
+
+**AC-SRCH-45: The selected provider keeps the index recipe and search vectors compatible.**
+Given indexed entries were created with ONNX BGE and the application is restarted with `gemma2` selected (or vice versa),
+When the current recipe is built and reconciliation runs,
+Then the current recipe contains the selected provider's configured model/revision identity and indexing profile and differs from the old recipe, incompatible old-model entries are not compared with new query vectors, and each catalog post is searchable only after it has been embedded by the selected provider that also embeds its queries.
+
+**AC-SRCH-46: Query and passage preparation are selected per provider.**
+Given a provider is selected,
+When a query and a passage are embedded,
+Then the selected provider applies its configured query-preparation strategy only to the raw query and its independently configured passage-preparation strategy only to canonical passage content.
+And tests for each configured provider verify the exact prepared inputs; no provider-specific prefix or template is asserted as shared domain behavior.
+And for the owner-confirmed local Google EmbeddingGemma 2 provider, its query input uses `task: search result | query: ` and its document input uses `title: {title} | text: {content}` (with `title: none` for an absent title), as documented by that model card.
+
+**AC-SRCH-47: Each provider uses an explicit matching tokenizer and context-derived token budget.**
+Given a provider profile is selected,
+When passages are split and prepared,
+Then the selected `TokenCounter` uses the tokenizer matching the configured model revision, the provider-specific `PassageTokenBudget` keeps the fully prepared passage within the explicitly configured supported context, and the profile—not a shared BGE assumption—determines body, title and overlap-token limits.
+And the local profile pins tokenizer assets to the exact served model revision and uses a supported context limit established from that revision's model/tokenizer configuration.
+And its configured body, overlap, title and fully prepared passage budgets are explicit profile values; the fully prepared input stays within that supported context. Do not assume numeric limits from an alias, another model revision, or the ONNX BGE profile.
 
 ### Index maintenance
 
@@ -623,12 +708,28 @@ Model decisions (approved with the model by the owner on 2026-10-02):
 - A post is ranked by its best chunk (max-pooling), and the snippet is that chunk.
 - Publish and revise are both upserts. Indexing is idempotent.
 - `IndexPost` embeds before it changes the index, so a failure keeps the old entry. The listener swallows and logs failures.
-- Queries get the BGE query instruction and passages do not (lead decision, 2026-10-02; AC-SRCH-32).
+- ONNX BGE queries use the BGE query instruction, while ONNX BGE passages do not. This is a
+  provider-specific strategy, not shared behavior for every embedding provider (AC-SRCH-32, 46).
 - A malformed catalog post never causes an index removal during a reconcile (lead decision, review loop 1, B1; AC-SRCH-38):
   - one with a readable ID is `IndexDecision.Unreadable`: its entry is kept and it is reported `FAILED` with its reason;
   - one with an unreadable ID suppresses every orphan removal in that run (`ORPHAN_REMOVAL_SUPPRESSED`).
-- Every passage fits in one model partition (at most 465 of 510 content tokens), counted with the model's exact tokenizer (AC-SRCH-8).
+- Every ONNX BGE passage fits in one model partition (at most 465 of 510 content tokens), counted
+  with its exact tokenizer (AC-SRCH-8). Other providers require their own verified tokenizer and
+  context-derived budget (AC-SRCH-47).
 - `OnnxEmbedder` serialises model access with one lock (section 4.1).
+
+Embedding-provider decisions (AC-SRCH-40–47; provider selection and alias identity confirmed by
+the owner on 2026-10-08; the EmbeddingGemma 2 model profile remains for approval):
+- Provider selection belongs to the `app` composition root, not to a new search-domain aggregate or a merged embedding port. The consumer-owned ports remain `PassageEmbedder` and `QueryEmbedder`.
+- `EmbeddingProviderSelection` parses `BLOG_MCP_EMBEDDING_PROVIDER` once: unset selects ONNX BGE; trimmed lowercase `onnx` or `gemma2` selects the named provider; blank or unknown values fail startup.
+- The composition root creates one selected adapter instance and supplies it to both ports. It selects that provider's independent query-preparation and passage-preparation strategies, tokenizer and explicit passage-token budget.
+- Provider-neutral behavior and budget boundaries belong in search; provider instructions, tokenizer assets and model/context facts do not. The selected tokenizer must match the exact configured model revision, and the configured budget must fit the prepared input within the context limit.
+- The `gemma2` provider is the owner-confirmed local alias `text-embedding-embeddinggemma-2` for Google EmbeddingGemma 2. Configure and pin the exact served model revision, and provision tokenizer assets from that same revision.
+- Configured model/revision identity, passage preparation and passage budget remain part of `IndexRecipe`. Changing provider changes recipe identity, so reconcile re-embeds existing catalog posts before search uses the new provider's query vectors. Query-only preparation does not affect the index recipe.
+- No domain event is emitted for a startup composition choice, and no aggregate changes.
+
+Remaining model-approval checkpoint:
+- Pin the exact served EmbeddingGemma 2 revision and matching tokenizer assets, then approve its supported context limit and provider-specific passage-budget values (body, overlap, title and fully prepared passage). Set these from the pinned model/tokenizer configuration and validation, not from the alias or by inheriting ONNX BGE's limits. Query and passage preparation remain separate provider strategies; their model-specific inputs are verified against the pinned profile.
 
 Owner decisions (all resolved 2026-10-02, owner):
 - **Q1 (resolved): the catalog change is in this slice.** It adds `shared.query.CatalogPosts` / `CatalogPostState` and
