@@ -8,6 +8,7 @@ import nz.sounie.blogmcp.search.adapter.out.FakeEmbedder;
 import nz.sounie.blogmcp.search.domain.index.IndexOutcome;
 import nz.sounie.blogmcp.search.domain.index.PostToIndex;
 import nz.sounie.blogmcp.search.domain.post.PostId;
+import nz.sounie.blogmcp.search.domain.query.SearchResults;
 import nz.sounie.blogmcp.search.domain.reconcile.CatalogEntry;
 import nz.sounie.blogmcp.search.domain.text.Passage;
 import org.junit.jupiter.api.DisplayName;
@@ -89,6 +90,39 @@ class ReconcileIndexTest {
 
     assertThat(report.outcomes())
         .isEqualTo(Map.of(a.id(), IndexOutcome.RE_EMBEDDED, b.id(), IndexOutcome.RE_EMBEDDED));
+  }
+
+  @Test
+  @DisplayName(
+      "AC-SRCH-45: a new provider re-embeds old vectors before its query is compared with the index")
+  void provider_change_reembeds_before_search_uses_the_selected_query_embedder() {
+    PostToIndex post =
+        aPost()
+            .id("sounie-wp:1")
+            .title("Provider compatibility")
+            .body("vectors must share a model space")
+            .build();
+    alreadyIndexed(post);
+    search.catalog.holding(post);
+    FakeEmbedder selectedProvider = new FakeEmbedder("google-embeddinggemma-2@fixture-r1", 384);
+
+    ReconcileReport report = search.reconcileWith(selectedProvider).run();
+
+    assertThat(report.outcomes()).containsEntry(post.id(), IndexOutcome.RE_EMBEDDED);
+    assertThat(selectedProvider.passageCallCount()).isEqualTo(1);
+    assertThat(search.index.find(post.id()))
+        .hasValueSatisfying(
+            indexed ->
+                assertThat(indexed.fingerprint())
+                    .isEqualTo(SearchContext.indexerWith(selectedProvider).fingerprintOf(post)));
+
+    SearchResults results =
+        new nz.sounie.blogmcp.search.application.SearchPosts(search.index, selectedProvider)
+            .search(
+                nz.sounie.blogmcp.search.domain.query.SearchQueryBuilder.aQuery("vectors").build());
+
+    assertThat(selectedProvider.queries()).hasSize(1);
+    assertThat(results.matches()).extracting(match -> match.postId()).containsExactly(post.id());
   }
 
   @Test
