@@ -31,6 +31,7 @@ import nz.sounie.blogmcp.search.domain.post.PostId;
 import nz.sounie.blogmcp.search.domain.text.ChunkingPolicy;
 import nz.sounie.blogmcp.search.domain.text.PassageComposition;
 import nz.sounie.blogmcp.shared.storage.FileKey;
+import nz.sounie.blogmcp.shared.storage.StoredFiles;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -76,6 +77,10 @@ class FileVectorIndexTest extends VectorIndexContract {
         .resolve("index")
         .resolve(id.siteId().value())
         .resolve(FileKey.of(id.external()).value() + ".json");
+  }
+
+  private Path legacyFileOf(PostId id) {
+    return fileOf(id);
   }
 
   private Path fileOf(String profileKey, PostId id) {
@@ -281,6 +286,59 @@ class FileVectorIndexTest extends VectorIndexContract {
     assertThat(fileOf(PROFILE_ONNX, entry.id())).isRegularFile();
     assertSameEntry(restarted.find(entry.id()), entry);
     assertThat(restarted.ids()).containsExactly(entry.id());
+  }
+
+  @Test
+  @DisplayName("AC-APP-47: the first ONNX open atomically adopts legacy index files")
+  void onnx_profile_adopts_legacy_entries_once() {
+    IndexedPost entry = variedEntries().getFirst();
+    FileVectorIndex legacy =
+        FileVectorIndex.open(dataDirectory, MODEL, INDEXER_R1.recipe(), errors);
+    legacy.save(entry);
+
+    FileVectorIndex adopted = profileIndex(PROFILE_ONNX);
+
+    assertThat(legacyFileOf(entry.id())).doesNotExist();
+    assertThat(fileOf(PROFILE_ONNX, entry.id())).isRegularFile();
+    assertSameEntry(adopted.find(entry.id()), entry);
+    assertThat(errorLines()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("AC-SRCH-50: Gemma2 does not inspect or move legacy ONNX files")
+  void gemma_profile_leaves_legacy_onnx_files_untouched() {
+    IndexedPost entry = variedEntries().getFirst();
+    FileVectorIndex legacy =
+        FileVectorIndex.open(dataDirectory, MODEL, INDEXER_R1.recipe(), errors);
+    legacy.save(entry);
+    byte[] legacyBytes = StoredFiles.read(legacyFileOf(entry.id()));
+
+    FileVectorIndex gemma = profileIndex(PROFILE_GEMMA);
+
+    assertThat(legacyFileOf(entry.id())).isRegularFile();
+    assertThat(StoredFiles.read(legacyFileOf(entry.id()))).containsExactly(legacyBytes);
+    assertThat(gemma.find(entry.id())).isEmpty();
+    assertThat(errorLines()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("AC-APP-47: legacy adoption never overwrites an existing ONNX profile entry")
+  void onnx_adoption_keeps_an_existing_profile_entry() throws IOException {
+    IndexedPost entry = variedEntries().getFirst();
+    FileVectorIndex legacy =
+        FileVectorIndex.open(dataDirectory, MODEL, INDEXER_R1.recipe(), errors);
+    legacy.save(entry);
+    Path target = fileOf(PROFILE_ONNX, entry.id());
+    Files.createDirectories(target.getParent());
+    Files.writeString(target, Files.readString(legacyFileOf(entry.id())) + " \n");
+    byte[] targetBytes = Files.readAllBytes(target);
+
+    FileVectorIndex onnx = profileIndex(PROFILE_ONNX);
+
+    assertThat(legacyFileOf(entry.id())).isRegularFile();
+    assertThat(Files.readAllBytes(target)).containsExactly(targetBytes);
+    assertSameEntry(onnx.find(entry.id()), entry);
+    assertThat(errorLines()).singleElement().asString().contains("target already exists");
   }
 
   @Test

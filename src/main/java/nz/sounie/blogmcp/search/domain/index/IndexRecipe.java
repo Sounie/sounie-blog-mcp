@@ -41,6 +41,15 @@ public record IndexRecipe(String id) {
             chunking.recipePart(),
             composition.recipePart(),
             "prep-" + passagePreparationVersion,
-            "b-" + budget.bodyTokens() + "-o-" + budget.overlapTokens() + "-t-" + budget.titleTokens() + "-p-" + budget.preparedPassageTokens() + "-c-" + budget.supportedContextTokens()));
+            "b-"
+                + budget.bodyTokens()
+                + "-o-"
+                + budget.overlapTokens()
+                + "-t-"
+                + budget.titleTokens()
+                + "-p-"
+                + budget.preparedPassageTokens()
+                + "-c-"
+                + budget.supportedContextTokens()));
   }
 }

@@ -6,12 +6,16 @@ import dev.langchain4j.model.embedding.onnx.bgesmallenv15q.BgeSmallEnV15Quantize
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
-import nz.sounie.blogmcp.search.application.QueryEmbedder;
+import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
+import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProviderProfile;
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
-import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
+import nz.sounie.blogmcp.search.domain.query.QueryText;
 import nz.sounie.blogmcp.search.domain.text.Passage;
+import nz.sounie.blogmcp.search.domain.text.PassageFormatter;
+import nz.sounie.blogmcp.search.domain.text.PassageTokenBudget;
+import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 
 /**
  * The local BGE-small-en-v1.5 (quantised) model through LangChain4j. The only class that touches
@@ -20,11 +24,14 @@ import nz.sounie.blogmcp.search.domain.text.Passage;
  * <p>The model is one per process (it is about 34 MB and its ONNX session is shared), so the lock
  * is too. LangChain4j's own parallelism within one {@code embedAll} call is left alone (ADR 0005).
  */
-public final class OnnxEmbedder implements PassageEmbedder, QueryEmbedder {
+public final class OnnxEmbedder implements EmbeddingProvider {
 
   public static final String MODEL_ID = "bge-small-en-v1.5-q";
+  private static final String MODEL_REVISION = "onnx-bge-small-en-v1.5-q-v1";
+  private static final PassageTokenBudget BUDGET = new PassageTokenBudget(400, 100, 64, 465, 512);
 
   private static final ReentrantLock MODEL_LOCK = new ReentrantLock();
+  private final BgeTokenCounter tokens = new BgeTokenCounter();
 
   /** Loaded by the JVM on first access to {@link #INSTANCE}, so the model loads lazily. */
   private static final class Model {
@@ -36,6 +43,27 @@ public final class OnnxEmbedder implements PassageEmbedder, QueryEmbedder {
   @Override
   public String modelId() {
     return MODEL_ID;
+  }
+
+  @Override
+  public EmbeddingProviderProfile profile() {
+    return new EmbeddingProviderProfile(
+        MODEL_REVISION, MODEL_REVISION, MODEL_REVISION, 384, 512, BUDGET, tokens);
+  }
+
+  @Override
+  public TokenCounter tokenCounter() {
+    return tokens;
+  }
+
+  @Override
+  public String prepareQuery(QueryText query) {
+    return EmbeddingInputPreparation.onnxQuery(query);
+  }
+
+  @Override
+  public String preparePassage(String title, Passage passage) {
+    return PassageFormatter.standard().format(title, passage.text()).text();
   }
 
   @Override

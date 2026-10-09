@@ -143,40 +143,40 @@ class LayeringTest {
           .resideInAnyPackage("dev.langchain4j..", "ai.onnxruntime..", "ai.djl..")
           .allowEmptyShould(true);
 
-  // ADR 0005: OnnxEmbedder is the only class that touches LangChain4j (and ONNX Runtime).
+  // ADR 0005: only the known provider adapters may touch LangChain4j (and ONNX Runtime).
   @ArchTest
-  static final ArchRule only_onnx_embedder_uses_langchain4j =
+  static final ArchRule only_known_embedding_adapters_use_model_libraries =
       noClasses()
           .that()
           .resideInAPackage("nz.sounie.blogmcp..")
           .and()
           .haveNameNotMatching(
-              "nz\\.sounie\\.blogmcp\\.search\\.adapter\\.out\\.OnnxEmbedder(\\$.*)?")
+              "nz\\.sounie\\.blogmcp\\.search\\.adapter\\.out\\.(OnnxEmbedder|Gemma2Embedder)(\\$.*)?")
           .should()
           .dependOnClassesThat()
           .resideInAnyPackage("dev.langchain4j..", "ai.onnxruntime..")
           .allowEmptyShould(true);
 
-  // ADR 0005: BgeTokenCounter is the only class that touches DJL, and only its tokenizers.
+  // ADR 0005 and ADR 0009: provider token counters are the only classes that touch DJL.
   @ArchTest
-  static final ArchRule only_bge_token_counter_uses_djl =
+  static final ArchRule only_provider_token_counters_use_djl =
       noClasses()
           .that()
           .resideInAPackage("nz.sounie.blogmcp..")
           .and()
           .haveNameNotMatching(
-              "nz\\.sounie\\.blogmcp\\.search\\.adapter\\.out\\.BgeTokenCounter(\\$.*)?")
+              "nz\\.sounie\\.blogmcp\\.search\\.adapter\\.out\\.(BgeTokenCounter|Gemma2TokenCounter)(\\$.*)?")
           .should()
           .dependOnClassesThat()
           .resideInAPackage("ai.djl..")
           .allowEmptyShould(true);
 
   @ArchTest
-  static final ArchRule bge_token_counter_uses_only_djl_tokenizers =
+  static final ArchRule provider_token_counters_use_only_djl_tokenizers =
       noClasses()
           .that()
           .haveNameMatching(
-              "nz\\.sounie\\.blogmcp\\.search\\.adapter\\.out\\.BgeTokenCounter(\\$.*)?")
+              "nz\\.sounie\\.blogmcp\\.search\\.adapter\\.out\\.(BgeTokenCounter|Gemma2TokenCounter)(\\$.*)?")
           .should()
           .dependOnClassesThat(
               resideInAPackage("ai.djl..")

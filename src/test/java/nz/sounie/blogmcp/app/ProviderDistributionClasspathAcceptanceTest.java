@@ -4,10 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
+import java.io.UncheckedIOException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarFile;
@@ -20,60 +26,87 @@ import org.junit.jupiter.api.Test;
 @Tag("jar")
 class ProviderDistributionClasspathAcceptanceTest {
 
+  private static final String GEMMA2_TOKENIZER_SHA256 =
+      "4d777ef5bdc1aa36227abdfb77c3e49e7b9c892d16e1b6bda41c393504828be4";
+
   @Test
-  @DisplayName("AC-SRCH-40, 43; AC-APP-12: distribution has one separate selected provider JAR")
-  void distribution_contains_only_the_selected_provider_artifact() throws IOException {
-    Path libraries = Path.of(System.getProperty("blogmcp.distributionLibraries"));
-    String selected = System.getProperty("blogmcp.embeddingProvider");
+  @DisplayName("AC-SRCH-40, 43; AC-APP-12: distribution is one fat jar for the selected provider")
+  void distribution_is_one_fat_jar_for_the_selected_provider() throws IOException {
+    String selected = selectedProvider();
+    Path distribution = distributionJar();
 
-    List<String> jars;
-    try (var files = Files.list(libraries)) {
-      jars =
-          files
-              .filter(path -> path.toString().endsWith(".jar"))
-              .map(path -> path.getFileName().toString())
-              .toList();
+    assertThat(distribution.getFileName().toString()).isEqualTo("blog-mcp-" + selected + ".jar");
+    try (JarFile jar = new JarFile(distribution.toFile())) {
+      assertThat(jar.getEntry("nz/sounie/blogmcp/app/Main.class")).isNotNull();
+      String servicePath = "META-INF/services/" + EmbeddingProvider.class.getName();
+      assertThat(jar.stream().filter(entry -> entry.getName().equals(servicePath)).count())
+          .isEqualTo(1L);
+      String selectedClass =
+          "nz.sounie.blogmcp.search.adapter.out."
+              + (selected.equals("onnx") ? "OnnxEmbedder" : "Gemma2Embedder");
+      String excludedClass =
+          "nz.sounie.blogmcp.search.adapter.out."
+              + (selected.equals("onnx") ? "Gemma2Embedder" : "OnnxEmbedder");
+      try (InputStream service = jar.getInputStream(jar.getJarEntry(servicePath))) {
+        assertThat(
+                new String(service.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
+                    .lines()
+                    .toList())
+            .containsExactly(selectedClass);
+      }
+      String selectedCounter = selected.equals("onnx") ? "BgeTokenCounter" : "Gemma2TokenCounter";
+      String excludedCounter = selected.equals("onnx") ? "Gemma2TokenCounter" : "BgeTokenCounter";
+      assertThat(jar.getEntry("nz/sounie/blogmcp/search/adapter/out/" + selectedCounter + ".class"))
+          .isNotNull();
+      assertThat(jar.getEntry("nz/sounie/blogmcp/search/adapter/out/" + excludedCounter + ".class"))
+          .isNull();
+      assertThat(
+              jar.stream()
+                  .map(java.util.jar.JarEntry::getName)
+                  .filter(
+                      name ->
+                          name.startsWith("nz/sounie/blogmcp/search/adapter/out/")
+                              && (name.contains("OnnxEmbedder") || name.contains("Gemma2Embedder")))
+                  .toList())
+          .anyMatch(
+              name -> name.contains(selectedClass.substring(selectedClass.lastIndexOf('.') + 1)))
+          .noneMatch(
+              name -> name.contains(excludedClass.substring(excludedClass.lastIndexOf('.') + 1)));
     }
-
-    assertThat(selected).isIn("onnx", "gemma2");
-    assertThat(jars)
-        .anyMatch(name -> name.contains("blog-mcp"))
-        .anyMatch(name -> name.contains("embedding-provider-" + selected));
-    assertThat(jars.stream().filter(name -> name.contains("embedding-provider-"))).hasSize(1);
-    assertThat(jars.stream().filter(name -> name.contains("embedding-provider-")))
-        .noneMatch(name -> name.contains("embedding-provider-" + otherProvider(selected)));
   }
 
   @Test
   @DisplayName("AC-SRCH-42: selected distribution discovers exactly its one provider service")
-  void discovers_provider_from_selected_distribution_classpath() {
-    EmbeddingProvider provider =
-        EmbeddingProviderDiscovery.discover(Thread.currentThread().getContextClassLoader());
-
-    assertThat(provider.profile().indexProfileKey())
-        .isEqualTo(
-            System.getProperty("blogmcp.embeddingProvider").equals("onnx")
-                ? "onnx-bge-small-en-v1.5-q-v1"
-                : "gemma2-914f7f89-v1");
+  void discovers_provider_from_selected_distribution_classpath() throws IOException {
+    try (URLClassLoader distributionLoader = distributionClassLoader()) {
+      EmbeddingProvider provider = EmbeddingProviderDiscovery.discover(distributionLoader);
+      assertThat(provider.profile().indexProfileKey())
+          .isEqualTo(
+              selectedProvider().equals("onnx")
+                  ? "onnx-bge-small-en-v1.5-q-v1"
+                  : "gemma2-914f7f89-v1");
+    }
   }
 
   @Test
   @DisplayName("AC-SRCH-48: the Gemma2 artifact preserves its pinned tokenizer and Apache license")
   void gemma2_artifact_contains_tokenizer_and_license_notice() throws IOException {
     Assumptions.assumeTrue("gemma2".equals(System.getProperty("blogmcp.embeddingProvider")));
-    Path libraries = Path.of(System.getProperty("blogmcp.distributionLibraries"));
-    Path gemmaJar;
-    try (var files = Files.list(libraries)) {
-      gemmaJar =
-          files
-              .filter(path -> path.getFileName().toString().contains("embedding-provider-gemma2"))
-              .findFirst()
-              .orElseThrow();
-    }
-
-    try (JarFile jar = new JarFile(gemmaJar.toFile())) {
-      List<String> entries = jar.stream().map(entry -> entry.getName()).toList();
-      assertThat(entries).anyMatch(name -> name.endsWith("tokenizer.json"));
+    try (JarFile jar = new JarFile(distributionJar().toFile())) {
+      List<String> tokenizerHashes =
+          jar.stream()
+              .filter(entry -> entry.getName().endsWith("tokenizer.json"))
+              .map(
+                  entry -> {
+                    try {
+                      return sha256(jar, entry.getName());
+                    } catch (IOException e) {
+                      throw new UncheckedIOException(e);
+                    }
+                  })
+              .toList();
+      assertThat(tokenizerHashes).contains(GEMMA2_TOKENIZER_SHA256);
+      List<String> entries = jar.stream().map(java.util.jar.JarEntry::getName).toList();
       List<String> notices =
           entries.stream()
               .filter(
@@ -152,7 +185,38 @@ class ProviderDistributionClasspathAcceptanceTest {
 
   private record GradleResult(int exitCode, String output) {}
 
-  private static String otherProvider(String selected) {
-    return selected.equals("onnx") ? "gemma2" : "onnx";
+  private static String selectedProvider() {
+    String selected = System.getProperty("blogmcp.embeddingProvider");
+    assertThat(selected)
+        .as("set from the required -PembeddingProvider build property")
+        .isIn("onnx", "gemma2");
+    return selected;
+  }
+
+  private static Path distributionJar() {
+    String path = System.getProperty("blogmcp.distributionJar");
+    assertThat(path).as("set to the selected-provider fat jar by jarTest").isNotBlank();
+    return Path.of(path);
+  }
+
+  static URLClassLoader distributionClassLoader() throws IOException {
+    String service = "META-INF/services/" + EmbeddingProvider.class.getName();
+    return new URLClassLoader(
+        new URL[] {distributionJar().toUri().toURL()},
+        Thread.currentThread().getContextClassLoader()) {
+      @Override
+      public Enumeration<URL> getResources(String name) throws IOException {
+        return service.equals(name) ? findResources(name) : super.getResources(name);
+      }
+    };
+  }
+
+  private static String sha256(JarFile jar, String entryName) throws IOException {
+    try (InputStream input = jar.getInputStream(jar.getJarEntry(entryName))) {
+      return HexFormat.of()
+          .formatHex(MessageDigest.getInstance("SHA-256").digest(input.readAllBytes()));
+    } catch (NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 is unavailable", e);
+    }
   }
 }

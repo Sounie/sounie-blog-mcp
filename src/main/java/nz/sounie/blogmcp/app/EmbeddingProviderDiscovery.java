@@ -11,7 +11,8 @@ public final class EmbeddingProviderDiscovery {
   private EmbeddingProviderDiscovery() {}
 
   public static EmbeddingProvider discover(ClassLoader classLoader) {
-    return requireExactlyOne(serviceLoader(classLoader).stream().map(ServiceLoader.Provider::get).toList());
+    return requireExactlyOne(
+        serviceLoader(classLoader).stream().map(ServiceLoader.Provider::get).toList());
   }
 
   static EmbeddingProvider requireExactlyOne(Iterable<EmbeddingProvider> providers) {

@@ -32,7 +32,10 @@ public record PassageTokenBudget(
     }
     if (titleTokens > preparedPassageTokens) {
       throw new IllegalArgumentException(
-          "titleTokens must be <= preparedPassageTokens: " + titleTokens + " > " + preparedPassageTokens);
+          "titleTokens must be <= preparedPassageTokens: "
+              + titleTokens
+              + " > "
+              + preparedPassageTokens);
     }
     if (preparedPassageTokens > supportedContextTokens) {
       throw new IllegalArgumentException(

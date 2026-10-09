@@ -19,10 +19,10 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The vector index on disk: one JSON file per post at {@code
- * <data>/search/index/<siteId>/<FileKey(postId external form)>.json}, whose vectors are base64
- * little-endian float32 ({@link VectorCodec}). Every file is loaded when opened; then the index is
- * write-through, with lookups served from memory. {@link IndexedPost} is immutable, so entries are
- * shared as they are.
+ * <data>/search/index/<profile>/<siteId>/<FileKey(postId external form)>.json}, whose vectors are
+ * base64 little-endian float32 ({@link VectorCodec}). Every file is loaded when opened; then the
+ * index is write-through, with lookups served from memory. {@link IndexedPost} is immutable, so
+ * entries are shared as they are.
  *
  * <p>On open, an unreadable file is quarantined and logged; a file built with a different model is
  * deleted and logged ({@link IndexFileLoader}). The next reconcile re-adds both.
@@ -45,7 +45,7 @@ public final class FileVectorIndex implements VectorIndex {
   }
 
   /**
-   * Loads every compatible index file under the data directory.
+   * Loads every compatible legacy index file under the index directory.
    *
    * @param modelId the current model ID ({@code PassageEmbedder.modelId()}); written to each file
    *     and compared on load
@@ -68,6 +68,7 @@ public final class FileVectorIndex implements VectorIndex {
       String modelId,
       IndexRecipe recipe,
       PrintStream errors) {
+    LegacyOnnxIndexAdoption.adopt(dataDirectory, indexProfileKey, errors);
     FileVectorIndex index =
         new FileVectorIndex(
             dataDirectory.resolve("search").resolve("index").resolve(indexProfileKey),

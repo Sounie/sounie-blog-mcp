@@ -5,24 +5,36 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.model.output.Response;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
-import nz.sounie.blogmcp.search.application.QueryEmbedder;
+import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
+import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProviderProfile;
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
 import nz.sounie.blogmcp.search.domain.embedding.EmbeddingFactory;
-import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
+import nz.sounie.blogmcp.search.domain.query.QueryText;
 import nz.sounie.blogmcp.search.domain.text.Passage;
+import nz.sounie.blogmcp.search.domain.text.PassageTokenBudget;
+import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 
 /**
  * Trying out Google DeepMind's Gemma 2 embedding model, running locally behind an OpenAI-compatible
  * API.
  */
-public class Gemma2Embedder implements PassageEmbedder, QueryEmbedder {
+public final class Gemma2Embedder implements EmbeddingProvider {
 
   private static final String MODEL_ID = "text-embedding-embeddinggemma-2";
+  private static final String REVISION = "914f7f89142e33e77833254d9c9b90c3cef7303b";
+  private static final String PROFILE_KEY = "gemma2-914f7f89-v1";
+  private static final PassageTokenBudget BUDGET =
+      new PassageTokenBudget(3000, 256, 128, 4096, 8192);
   private static final ReentrantLock MODEL_LOCK = new ReentrantLock();
+
+  private static final class Tokenizer {
+    static final Gemma2TokenCounter INSTANCE = new Gemma2TokenCounter();
+  }
 
   /** Loaded by the JVM on first access to {@link #INSTANCE}, so the model loads lazily. */
   private static final class Model {
@@ -30,7 +42,10 @@ public class Gemma2Embedder implements PassageEmbedder, QueryEmbedder {
     // API key.
     static final EmbeddingModel INSTANCE =
         OpenAiEmbeddingModel.builder()
-            .baseUrl("http://localhost:1234/v1")
+            .baseUrl(
+                Optional.ofNullable(System.getenv("BLOG_MCP_EMBEDDING_ENDPOINT"))
+                    .filter(value -> !value.isBlank())
+                    .orElse("http://localhost:1234/v1"))
             .modelName(MODEL_ID)
             .build();
 
@@ -47,7 +62,39 @@ public class Gemma2Embedder implements PassageEmbedder, QueryEmbedder {
 
   @Override
   public String modelId() {
-    return "text-embedding-embeddinggemma-2";
+    return MODEL_ID;
+  }
+
+  @Override
+  public EmbeddingProviderProfile profile() {
+    Gemma2TokenCounter tokenizer = Tokenizer.INSTANCE;
+    return new EmbeddingProviderProfile(
+        REVISION, REVISION, PROFILE_KEY, 768, 8192, BUDGET, tokenizer);
+  }
+
+  @Override
+  public TokenCounter tokenCounter() {
+    return Tokenizer.INSTANCE;
+  }
+
+  @Override
+  public String prepareQuery(QueryText query) {
+    return EmbeddingInputPreparation.gemma2Query(query);
+  }
+
+  @Override
+  public String preparePassage(String title, Passage passage) {
+    String prepared = EmbeddingInputPreparation.gemma2Passage(title, passage.text());
+    int tokens = Tokenizer.INSTANCE.countTokens(prepared);
+    if (tokens > BUDGET.preparedPassageTokens()) {
+      throw new IllegalArgumentException(
+          "Prepared Gemma2 passage has "
+              + tokens
+              + " tokens, exceeding the "
+              + BUDGET.preparedPassageTokens()
+              + "-token budget");
+    }
+    return prepared;
   }
 
   @Override

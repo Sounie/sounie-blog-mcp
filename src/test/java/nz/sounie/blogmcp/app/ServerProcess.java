@@ -6,13 +6,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 
@@ -46,14 +49,56 @@ final class ServerProcess {
     return options;
   }
 
-  /** Arguments that run {@code Main} from the main runtime classpath (set by the test task). */
+  /**
+   * Runs {@code Main} with production runtime dependencies and the test-scoped provider fixture.
+   */
   static List<String> mainArguments() {
-    String classpath =
+    String mainClasspath =
         Objects.requireNonNullElse(
             System.getProperty("blogmcp.runtimeClasspath"), System.getProperty("java.class.path"));
+    Set<String> classpathEntries = new LinkedHashSet<>();
+    classpathEntries.add(mainClasspath);
+    classpathEntries.add(testProviderClasses());
+    classpathEntries.add(testProviderServices());
     List<String> args = new ArrayList<>(sandboxOptions());
-    args.addAll(List.of("--enable-native-access=ALL-UNNAMED", "-cp", classpath, MAIN_CLASS));
+    args.addAll(
+        List.of(
+            "--enable-native-access=ALL-UNNAMED",
+            "-cp",
+            String.join(java.io.File.pathSeparator, classpathEntries),
+            MAIN_CLASS));
     return args;
+  }
+
+  private static String testProviderClasses() {
+    try {
+      return Path.of(
+              EmbeddingProviderDiscoveryTest.TestProvider.class
+                  .getProtectionDomain()
+                  .getCodeSource()
+                  .getLocation()
+                  .toURI())
+          .toString();
+    } catch (URISyntaxException e) {
+      throw new IllegalStateException("Cannot locate test embedding provider classes", e);
+    }
+  }
+
+  private static String testProviderServices() {
+    String service =
+        "META-INF/services/nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider";
+    try {
+      Path descriptor =
+          Path.of(
+              Objects.requireNonNull(
+                      ServerProcess.class.getClassLoader().getResource(service),
+                      "Missing test embedding provider service registration")
+                  .toURI());
+      return descriptor.getParent().getParent().getParent().toString();
+    } catch (URISyntaxException e) {
+      throw new IllegalStateException(
+          "Cannot locate test embedding provider service registration", e);
+    }
   }
 
   /**
