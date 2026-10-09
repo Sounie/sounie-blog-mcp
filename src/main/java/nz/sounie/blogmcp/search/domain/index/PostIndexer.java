@@ -9,6 +9,8 @@ import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
 import nz.sounie.blogmcp.search.domain.text.Chunk;
 import nz.sounie.blogmcp.search.domain.text.ChunkingPolicy;
 import nz.sounie.blogmcp.search.domain.text.PassageComposition;
+import nz.sounie.blogmcp.search.domain.text.PassageFormatter;
+import nz.sounie.blogmcp.search.domain.text.PassageTokenBudget;
 import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 import nz.sounie.blogmcp.search.domain.text.WordSequence;
 
@@ -22,21 +24,56 @@ public final class PostIndexer {
   private final PassageComposition composition;
   private final TokenCounter tokens;
   private final PassageEmbedder embedder;
+  private final PassageFormatter formatter;
+  private final IndexRecipe recipe;
 
   public PostIndexer(
       ChunkingPolicy chunking,
       PassageComposition composition,
       TokenCounter tokens,
       PassageEmbedder embedder) {
+    this(chunking, composition, tokens, embedder, PassageFormatter.standard());
+  }
+
+  public PostIndexer(
+      ChunkingPolicy chunking,
+      PassageComposition composition,
+      TokenCounter tokens,
+      PassageEmbedder embedder,
+      PassageFormatter formatter) {
     this.chunking = Objects.requireNonNull(chunking, "chunking");
     this.composition = Objects.requireNonNull(composition, "composition");
     this.tokens = Objects.requireNonNull(tokens, "tokens");
     this.embedder = Objects.requireNonNull(embedder, "embedder");
+    this.formatter = Objects.requireNonNull(formatter, "formatter");
+    this.recipe = IndexRecipe.of(embedder.modelId(), chunking, composition);
+  }
+
+  public PostIndexer(
+      ChunkingPolicy chunking,
+      PassageComposition composition,
+      TokenCounter tokens,
+      PassageEmbedder embedder,
+      PassageFormatter formatter,
+      String preparationVersion,
+      PassageTokenBudget budget) {
+    this.chunking = Objects.requireNonNull(chunking, "chunking");
+    this.composition = Objects.requireNonNull(composition, "composition");
+    this.tokens = Objects.requireNonNull(tokens, "tokens");
+    this.embedder = Objects.requireNonNull(embedder, "embedder");
+    this.formatter = Objects.requireNonNull(formatter, "formatter");
+    this.recipe =
+        IndexRecipe.of(
+            embedder.modelId(),
+            chunking,
+            composition,
+            Objects.requireNonNull(preparationVersion, "preparationVersion"),
+            Objects.requireNonNull(budget, "budget"));
   }
 
   /** The current index recipe: model ID, chunking parameters and composition version. */
   public IndexRecipe recipe() {
-    return IndexRecipe.of(embedder.modelId(), chunking, composition);
+    return recipe;
   }
 
   /** The content fingerprint of the post under the current recipe. */
@@ -65,7 +102,7 @@ public final class PostIndexer {
    */
   private List<Embedding> embeddingsFor(PostToIndex post, List<Chunk> chunks) {
     List<Embedding> embeddings =
-        embedder.embedPassages(composition.compose(post.title(), chunks, tokens));
+        embedder.embedPassages(composition.compose(post.title(), chunks, tokens, formatter));
     if (embeddings.size() != chunks.size()) {
       throw new EmbedderUnavailable(
           "The embedder returned "

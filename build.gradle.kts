@@ -1,3 +1,7 @@
+import java.net.URI
+import java.security.MessageDigest
+import java.util.HexFormat
+
 plugins {
     java
     jacoco
@@ -10,6 +14,13 @@ plugins {
 group = "nz.sounie"
 version = "0.1.0"
 
+val embeddingProvider =
+    providers.gradleProperty("embeddingProvider").orNull?.trim()?.also { selection ->
+        require(selection == "onnx" || selection == "gemma2") {
+            "embeddingProvider must be exactly 'onnx' or 'gemma2', but was '$selection'"
+        }
+    } ?: error("Required Gradle property embeddingProvider must be 'onnx' or 'gemma2'")
+
 java {
     toolchain { languageVersion = JavaLanguageVersion.of(25) }
 }
@@ -19,9 +30,15 @@ repositories { mavenCentral() }
 dependencies {
     implementation(libs.jackson.databind)
     implementation(libs.jsoup)
-    implementation(libs.langchain4j.embeddings.bge.small.en.v15.q)
-    // Gemma Embeddings via LM Studio
-    implementation(libs.langchain4j.openai)
+    compileOnly(libs.langchain4j.embeddings.bge.small.en.v15.q)
+    compileOnly(libs.langchain4j.openai)
+    compileOnly("ai.djl.huggingface:tokenizers:0.36.0")
+    if (embeddingProvider == "onnx") {
+        runtimeOnly(libs.langchain4j.embeddings.bge.small.en.v15.q)
+    } else {
+        runtimeOnly(libs.langchain4j.openai)
+        runtimeOnly("ai.djl.huggingface:tokenizers:0.36.0")
+    }
 
     // langchain4j-core brings Jackson 2 transitively. Declaring its BOM lifts it to a patched version
     // and gives Dependabot a declared version to update for future advisories.
@@ -35,7 +52,67 @@ dependencies {
     testImplementation(libs.assertj.core)
     testImplementation(libs.archunit.junit5)
     testImplementation(libs.wiremock.standalone)
+    testImplementation(libs.langchain4j.embeddings.bge.small.en.v15.q)
+    testImplementation(libs.langchain4j.openai)
     testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+val generatedProviderResources = layout.buildDirectory.dir("generated/embedding-provider-resources")
+val generateProviderResources =
+    tasks.register("generateProviderResources") {
+    outputs.dir(generatedProviderResources)
+    inputs.property("embeddingProvider", embeddingProvider)
+    inputs.files(
+        "src/provider/gemma2/LICENSE-EmbeddingGemma-2.0.txt",
+        "src/provider/gemma2/NOTICE-EmbeddingGemma.txt",
+    )
+    doLast {
+        val output = generatedProviderResources.get().asFile
+        output.deleteRecursively()
+        val serviceFile =
+            output.resolve("META-INF/services/nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider")
+        serviceFile.parentFile.mkdirs()
+        serviceFile.writeText(
+            if (embeddingProvider == "onnx") {
+                "nz.sounie.blogmcp.search.adapter.out.OnnxEmbedder\n"
+            } else {
+                "nz.sounie.blogmcp.search.adapter.out.Gemma2Embedder\n"
+            },
+        )
+        if (embeddingProvider == "gemma2") {
+            val tokenizer =
+                URI(
+                        "https://huggingface.co/google/embeddinggemma-2/resolve/914f7f89142e33e77833254d9c9b90c3cef7303b/tokenizer.json",
+                    )
+                    .toURL()
+                    .openStream()
+                    .use { it.readAllBytes() }
+            val actualHash =
+                HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(tokenizer))
+            check(
+                actualHash == "4d777ef5bdc1aa36227abdfb77c3e49e7b9c892d16e1b6bda41c393504828be4",
+            ) {
+                "Pinned Gemma2 tokenizer checksum mismatch: $actualHash"
+            }
+            output.resolve("embeddinggemma-2/tokenizer.json").apply {
+                parentFile.mkdirs()
+                writeBytes(tokenizer)
+            }
+            val license = file("src/provider/gemma2/LICENSE-EmbeddingGemma-2.0.txt").readBytes()
+            val licenseText = String(license, Charsets.UTF_8)
+            check(licenseText.contains("Apache License") && licenseText.contains("Version 2.0")) {
+                "The pinned EmbeddingGemma license is not Apache 2.0"
+            }
+            output.resolve("META-INF/licenses/LICENSE-EmbeddingGemma-2.0.txt").apply {
+                parentFile.mkdirs()
+                writeBytes(license)
+            }
+            output.resolve("META-INF/NOTICE-EmbeddingGemma.txt").apply {
+                parentFile.mkdirs()
+                writeBytes(file("src/provider/gemma2/NOTICE-EmbeddingGemma.txt").readBytes())
+            }
+        }
+    }
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -58,11 +135,29 @@ tasks.test {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
-// app.md 3.5: one runnable jar, build/libs/blog-mcp-all.jar.
+tasks.processResources {
+    dependsOn(generateProviderResources)
+    from(generatedProviderResources) { exclude("META-INF/services/**") }
+}
+
+// One runnable jar, named for its selected provider.
 tasks.shadowJar {
-    archiveBaseName = "blog-mcp"
-    archiveClassifier = "all"
+    archiveBaseName = "blog-mcp-$embeddingProvider"
+    archiveClassifier = ""
     archiveVersion = ""
+    dependsOn(generateProviderResources)
+    from(generatedProviderResources) { include("META-INF/services/**") }
+    if (embeddingProvider == "onnx") {
+        exclude(
+            "nz/sounie/blogmcp/search/adapter/out/Gemma2Embedder*.class",
+            "nz/sounie/blogmcp/search/adapter/out/Gemma2TokenCounter.class",
+        )
+    } else {
+        exclude(
+            "nz/sounie/blogmcp/search/adapter/out/OnnxEmbedder*.class",
+            "nz/sounie/blogmcp/search/adapter/out/BgeTokenCounter.class",
+        )
+    }
     // Required: McpJsonDefaults finds mcp-json-jackson3 through ServiceLoader.
     mergeServiceFiles()
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
@@ -93,7 +188,16 @@ val jarTest by tasks.registering(Test::class) {
         layout.buildDirectory.dir("djl-cache").get().asFile.absolutePath,
     )
     jvmArgs("--enable-native-access=ALL-UNNAMED")
-    doFirst { systemProperty("blogmcp.shadowJar", shadowJarFile.get().asFile.absolutePath) }
+    doFirst {
+        val distributionJar = shadowJarFile.get().asFile.absolutePath
+        systemProperty("blogmcp.shadowJar", distributionJar)
+        systemProperty("blogmcp.distributionJar", distributionJar)
+        systemProperty(
+            "blogmcp.distributionLauncher",
+            layout.projectDirectory.file("${System.getProperty("java.home")}/bin/java").asFile.absolutePath,
+        )
+        systemProperty("blogmcp.embeddingProvider", embeddingProvider)
+    }
 }
 
 // Complexity budget (ADR 0004): keeps execution paths per method small, so each type needs few

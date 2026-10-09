@@ -123,7 +123,10 @@ class WiringTest {
     assertThat(wiring.getPost().byId("sounie-wp:1")).isPresent();
     assertThat(jsonFilesIn(dataDirectory.resolve("catalog/posts/sounie-wp"))).isEqualTo(1);
     assertThat(dataDirectory.resolve("catalog/checkpoints/sounie-wp.json")).isRegularFile();
-    assertThat(jsonFilesIn(dataDirectory.resolve("search/index/sounie-wp"))).isEqualTo(1);
+    assertThat(
+            jsonFilesIn(
+                dataDirectory.resolve("search/index/onnx-bge-small-en-v1.5-q-v1/sounie-wp")))
+        .isEqualTo(1);
   }
 
   @Test

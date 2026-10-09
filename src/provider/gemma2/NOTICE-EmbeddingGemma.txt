@@ -1,0 +1,5 @@
+EmbeddingGemma 2 tokenizer
+Copyright Google LLC. Licensed under the Apache License, Version 2.0.
+Model revision: 914f7f89142e33e77833254d9c9b90c3cef7303b
+The tokenizer is distributed under the Apache License, Version 2.0.
+See META-INF/licenses/LICENSE-EmbeddingGemma-2.0.txt.

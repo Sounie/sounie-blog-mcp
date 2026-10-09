@@ -35,18 +35,21 @@ public final class Main {
     SitesConfiguration configuration = load(sites);
     createDataDirectory(paths.dataDirectory());
 
-    Wiring wiring =
-        Wiring.assemble(paths.dataDirectory(), sites, Adapters.production(), System.err);
-    BlogMcpTools tools =
-        new BlogMcpTools(
-            wiring.searchPosts(), wiring.getPost(), siteChoices(configuration), System.err);
-    EndOfInputWatch input = EndOfInputWatch.wrap(System.in);
-    BlogMcpServer server = BlogMcpServer.start(input.stream(), protocol, version(), tools);
-    try (ExecutorJobTimer timer = new ExecutorJobTimer()) {
-      wiring.schedule(timer, configuration.syncInterval());
-      input.awaitEnd();
-    } finally {
-      server.close();
+    try (DataDirectoryLock lock = DataDirectoryLock.acquire(paths.dataDirectory())) {
+      lock.assertHeld();
+      Wiring wiring =
+          Wiring.assemble(paths.dataDirectory(), sites, Adapters.production(), System.err);
+      BlogMcpTools tools =
+          new BlogMcpTools(
+              wiring.searchPosts(), wiring.getPost(), siteChoices(configuration), System.err);
+      EndOfInputWatch input = EndOfInputWatch.wrap(System.in);
+      BlogMcpServer server = BlogMcpServer.start(input.stream(), protocol, version(), tools);
+      try (ExecutorJobTimer timer = new ExecutorJobTimer()) {
+        wiring.schedule(timer, configuration.syncInterval());
+        input.awaitEnd();
+      } finally {
+        server.close();
+      }
     }
   }
 

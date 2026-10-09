@@ -49,15 +49,31 @@ public final class Wiring {
     FilePostRepository posts = FilePostRepository.open(dataDirectory, errors);
     FileSyncCheckpointRepository checkpoints =
         FileSyncCheckpointRepository.open(dataDirectory, errors);
+    var budget = adapters.profile().passageTokenBudget();
+    ChunkingPolicy chunking =
+        new ChunkingPolicy(
+            ChunkingPolicy.TARGET_WORDS,
+            budget.bodyTokens(),
+            ChunkingPolicy.OVERLAP_WORDS,
+            budget.overlapTokens());
+    PassageComposition composition =
+        new PassageComposition(budget.titleTokens(), PassageComposition.VERSION);
     PostIndexer indexer =
         new PostIndexer(
-            ChunkingPolicy.standard(),
-            PassageComposition.standard(),
+            chunking,
+            composition,
             adapters.tokenCounter(),
-            adapters.passageEmbedder());
+            adapters.passageEmbedder(),
+            adapters.passageFormatter(),
+            adapters.passagePreparationVersion(),
+            budget);
     FileVectorIndex index =
         FileVectorIndex.open(
-            dataDirectory, adapters.passageEmbedder().modelId(), indexer.recipe(), errors);
+            dataDirectory,
+            adapters.profile().indexProfileKey(),
+            adapters.passageEmbedder().modelId(),
+            indexer.recipe(),
+            errors);
     IndexWriteLock lock = new IndexWriteLock();
 
     InProcessEventBus bus = new InProcessEventBus();
@@ -83,7 +99,10 @@ public final class Wiring {
             errors);
 
     return new Wiring(
-        new SearchPosts(index, adapters.queryEmbedder()), new GetPost(posts), posts.health(), job);
+        new SearchPosts(index, adapters.queryEmbedder(), adapters.queryPreparation()),
+        new GetPost(posts),
+        posts.health(),
+        job);
   }
 
   public SearchPosts searchPosts() {

@@ -95,29 +95,36 @@ final class IndexFileLoader {
 
   private static Rule dimensionMatches(String currentModelId, String indexProfileKey) {
     int expected = expectedDimension(currentModelId, indexProfileKey);
-    return file -> {
-      for (IndexFile.Chunk chunk : file.chunks()) {
-        try {
-          float[] values = VectorCodec.decode(chunk.vector());
-          if (values.length != expected) {
-            return Optional.of(
-                new IndexFileLoad.Unreadable(
-                    "Chunk " + chunk.index() + " has a " + values.length
-                        + "-value vector, expected " + expected));
-          }
-        } catch (RuntimeException unreadable) {
-          return Optional.of(new IndexFileLoad.Unreadable(StoredFiles.reasonFor(unreadable)));
-        }
-      }
-      return Optional.empty();
-    };
+    return file ->
+        file.chunks().stream()
+            .map(chunk -> dimensionIssue(chunk, expected))
+            .flatMap(Optional::stream)
+            .findFirst();
+  }
+
+  private static Optional<IndexFileLoad> dimensionIssue(IndexFile.Chunk chunk, int expected) {
+    try {
+      int actual = VectorCodec.decode(chunk.vector()).length;
+      return actual == expected
+          ? Optional.empty()
+          : Optional.of(
+              new IndexFileLoad.Unreadable(
+                  "Chunk "
+                      + chunk.index()
+                      + " has a "
+                      + actual
+                      + "-value vector, expected "
+                      + expected));
+    } catch (RuntimeException unreadable) {
+      return Optional.of(new IndexFileLoad.Unreadable(StoredFiles.reasonFor(unreadable)));
+    }
   }
 
   private static int expectedDimension(String currentModelId, String indexProfileKey) {
     return "gemma2-914f7f89-v1".equals(indexProfileKey)
-        || (currentModelId != null && currentModelId.toLowerCase().contains("gemma"))
-            ? 768
-            : 384;
+            || (currentModelId != null && currentModelId.toLowerCase().contains("gemma"))
+        ? 768
+        : 384;
   }
 
   private static Rule builtWith(String currentModelId) {

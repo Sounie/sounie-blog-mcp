@@ -1,8 +1,6 @@
 package nz.sounie.blogmcp.search.domain.text;
 
 import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * Builds passages: the title line, a newline, then the chunk text. The title line is the normalised
@@ -25,21 +23,19 @@ public record PassageComposition(int titleTokenBudget, int version) {
 
   /** One passage per chunk, in chunk order. */
   public List<Passage> compose(String title, List<Chunk> chunks, TokenCounter tokens) {
+    return compose(title, chunks, tokens, PassageFormatter.standard());
+  }
+
+  /** One prepared passage per chunk, using the selected provider's formatting strategy. */
+  public List<Passage> compose(
+      String title, List<Chunk> chunks, TokenCounter tokens, PassageFormatter formatter) {
     String titleLine = titleLine(title, tokens);
-    return chunks.stream().map(chunk -> passage(titleLine, chunk)).toList();
+    return chunks.stream().map(chunk -> formatter.format(titleLine, chunk.text())).toList();
   }
 
   private String titleLine(String title, TokenCounter tokens) {
     List<String> words = WordSequence.of(title).words();
     int fitting = WordCosts.of(words, tokens).fittingFrom(0, words.size(), titleTokenBudget);
     return String.join(" ", words.subList(0, fitting));
-  }
-
-  /** The non-empty parts of title line and chunk text, separated by a newline. */
-  private static Passage passage(String titleLine, Chunk chunk) {
-    return new Passage(
-        Stream.of(titleLine, chunk.text())
-            .filter(part -> !part.isEmpty())
-            .collect(Collectors.joining("\n")));
   }
 }

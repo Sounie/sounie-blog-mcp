@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.Map;
+import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingTokenizer;
 import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 
 /**
@@ -12,7 +13,7 @@ import nz.sounie.blogmcp.search.domain.text.TokenCounter;
  * in the LangChain4j jar) through DJL's {@code HuggingFaceTokenizer}, without special tokens and
  * without truncation.
  */
-public final class BgeTokenCounter implements TokenCounter {
+public final class BgeTokenCounter implements TokenCounter, EmbeddingTokenizer {
 
   /** Classpath location of the tokenizer file. */
   public static final String TOKENIZER_RESOURCE = "/bge-small-en-v1.5-q-tokenizer.json";
@@ -40,6 +41,11 @@ public final class BgeTokenCounter implements TokenCounter {
 
   @Override
   public int tokensIn(String word) {
-    return tokenizer.encode(word, false, false).getIds().length;
+    return countTokens(word);
+  }
+
+  @Override
+  public int countTokens(String preparedInput) {
+    return tokenizer.encode(preparedInput, false, false).getIds().length;
   }
 }

@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.URI;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -50,6 +51,7 @@ import org.junit.jupiter.api.io.TempDir;
 class ShadowJarTest {
 
   private static final Duration TIMEOUT = Duration.ofSeconds(120);
+  private static final Duration INITIALIZATION_TIMEOUT = Duration.ofSeconds(15);
   private static final SiteDefinition UNREACHABLE =
       new SiteDefinition("sounie-wp", "WORDPRESS", "https://localhost:1");
 
@@ -64,19 +66,19 @@ class ShadowJarTest {
   }
 
   private static List<String> launcherArguments() {
-    return List.of();
+    return List.of("-jar", System.getProperty("blogmcp.distributionJar"));
   }
 
   private Path config() throws IOException {
     return Files.writeString(
         dir.resolve("sites.json"),
         """
-        {"sites": [{"id": "sounie-wp", "platform": "WORDPRESS", "baseUrl": "https://localhost:1"}]}
-        """);
+                        {"sites": [{"id": "sounie-wp", "platform": "WORDPRESS", "baseUrl": "https://localhost:1"}]}
+                        """);
   }
 
   /** A fixture post and its index entry, written with the one discovered provider. */
-  private Path dataWithFixturePost() {
+  private Path dataWithFixturePost() throws IOException {
     Path data = dir.resolve("data");
     Site site =
         new Site(new SiteId("sounie-wp"), Platform.WORDPRESS, URI.create(UNREACHABLE.baseUrl()));
@@ -96,20 +98,20 @@ class ShadowJarTest {
                     .publishedAt(Instant.parse("2026-09-01T00:00:00Z"))
                     .updatedAt(Instant.parse("2026-09-01T00:00:00Z"))
                     .build())));
-    EmbeddingProvider model =
-        EmbeddingProviderDiscovery.discover(Thread.currentThread().getContextClassLoader());
-    Wiring.assemble(
-            data,
-            FixedSiteDirectory.of(UNREACHABLE),
-            new Adapters(
-                Map.of(Platform.WORDPRESS, source, Platform.BLOGGER, source),
-                model,
-                model,
-                model.tokenCounter(),
-                Clock.systemUTC()),
-            new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
-        .job()
-        .run();
+    try (URLClassLoader distributionLoader =
+        ProviderDistributionClasspathAcceptanceTest.distributionClassLoader()) {
+      EmbeddingProvider model = EmbeddingProviderDiscovery.discover(distributionLoader);
+      Wiring.assemble(
+              data,
+              FixedSiteDirectory.of(UNREACHABLE),
+              Adapters.withProvider(
+                  Map.of(Platform.WORDPRESS, source, Platform.BLOGGER, source),
+                  model,
+                  Clock.systemUTC()),
+              new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8))
+          .job()
+          .run();
+    }
     return data;
   }
 
@@ -126,7 +128,10 @@ class ShadowJarTest {
     transport.setStdErrorHandler(stderr::add);
 
     try (McpSyncClient client =
-        McpClient.sync(transport).requestTimeout(TIMEOUT).initializationTimeout(TIMEOUT).build()) {
+        McpClient.sync(transport)
+            .requestTimeout(TIMEOUT)
+            .initializationTimeout(INITIALIZATION_TIMEOUT)
+            .build()) {
       client.initialize();
       assertThat(client.listTools().tools())
           .extracting(Tool::name)

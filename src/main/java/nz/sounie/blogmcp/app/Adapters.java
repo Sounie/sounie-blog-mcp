@@ -2,12 +2,19 @@ package nz.sounie.blogmcp.app;
 
 import java.time.Clock;
 import java.util.Map;
+import java.util.function.Function;
 import nz.sounie.blogmcp.catalog.adapter.out.BlogSources;
 import nz.sounie.blogmcp.catalog.application.BlogSource;
 import nz.sounie.blogmcp.catalog.domain.site.Platform;
 import nz.sounie.blogmcp.search.application.QueryEmbedder;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
+import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProviderProfile;
 import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
+import nz.sounie.blogmcp.search.domain.query.QueryPassage;
+import nz.sounie.blogmcp.search.domain.query.QueryText;
+import nz.sounie.blogmcp.search.domain.text.Passage;
+import nz.sounie.blogmcp.search.domain.text.PassageFormatter;
+import nz.sounie.blogmcp.search.domain.text.PassageTokenBudget;
 import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 
 /**
@@ -19,7 +26,29 @@ public record Adapters(
     PassageEmbedder passageEmbedder,
     QueryEmbedder queryEmbedder,
     TokenCounter tokenCounter,
-    Clock clock) {
+    Clock clock,
+    EmbeddingProviderProfile profile,
+    Function<QueryText, QueryPassage> queryPreparation,
+    PassageFormatter passageFormatter,
+    String passagePreparationVersion) {
+
+  public Adapters(
+      Map<Platform, BlogSource> sources,
+      PassageEmbedder passageEmbedder,
+      QueryEmbedder queryEmbedder,
+      TokenCounter tokenCounter,
+      Clock clock) {
+    this(
+        sources,
+        passageEmbedder,
+        queryEmbedder,
+        tokenCounter,
+        clock,
+        legacyProfile(tokenCounter),
+        QueryPassage::of,
+        PassageFormatter.standard(),
+        "canonical-v1");
+  }
 
   /**
    * The real blog sources over the JDK HTTP client, the selected provider instance, the tokenizer
@@ -28,11 +57,35 @@ public record Adapters(
   public static Adapters production() {
     EmbeddingProvider provider =
         EmbeddingProviderDiscovery.discover(Thread.currentThread().getContextClassLoader());
+    return withProvider(BlogSources.overHttp(), provider, java.time.Clock.systemUTC());
+  }
+
+  static Adapters withProvider(
+      Map<Platform, BlogSource> sources, EmbeddingProvider provider, Clock clock) {
+    EmbeddingProviderProfile profile = provider.profile();
     return new Adapters(
-        BlogSources.overHttp(),
+        sources,
         provider,
         provider,
         provider.tokenCounter(),
-        java.time.Clock.systemUTC());
+        clock,
+        profile,
+        query -> new QueryPassage(provider.prepareQuery(query)),
+        (title, content) -> new Passage(provider.preparePassage(title, new Passage(content))),
+        profile.indexProfileKey().startsWith("gemma2-")
+            ? "gemma2-document-template-v1"
+            : "onnx-bge-document-v1");
+  }
+
+  private static EmbeddingProviderProfile legacyProfile(TokenCounter tokens) {
+    PassageTokenBudget budget = new PassageTokenBudget(400, 100, 64, 465, 512);
+    return new EmbeddingProviderProfile(
+        "onnx-bge-small-en-v1.5-q-v1",
+        "onnx-bge-small-en-v1.5-q-v1",
+        "onnx-bge-small-en-v1.5-q-v1",
+        384,
+        512,
+        budget,
+        tokens::tokensIn);
   }
 }
