@@ -98,6 +98,14 @@ The app must run on Linux and Windows as well as macOS.
    - The owner plans to move it to an HTTP service later, and concurrency will be designed then.
    - Until then, different profiles are isolated by their subtrees, and catalog files are written
      atomically.
+8. **Profile subtrees live under `search/indexes/`.** This replaces the paths in ADR 0009
+   decision 7.
+   - Binaries from before ADR 0009 scan `search/index/` at any depth, and would quarantine
+     profile-keyed files found there as misplaced (review #4).
+   - Legacy adoption still moves the old `search/index/<site>/` ONNX files, now into
+     `search/indexes/onnx-bge-small-en-v1.5-q-v1/`.
+   - An older binary run afterwards finds only its emptied legacy folder and rebuilds there, without
+     touching the profile subtrees.
 
 ## Spike results (2026-10-11, macOS arm64, Java 25)
 

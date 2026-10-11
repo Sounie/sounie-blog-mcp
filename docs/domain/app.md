@@ -130,17 +130,20 @@ misspelt argument (e.g. `date_from`) is not silently ignored.
 ```
 catalog/posts/<siteId>/<FileKey(sourcePostId)>.json
 catalog/checkpoints/<siteId>.json
-search/index/<indexProfileKey>/<siteId>/<FileKey(postId external form)>.json
+search/indexes/<indexProfileKey>/<siteId>/<FileKey(postId external form)>.json
 cache/djl/
 ```
 
 **Each file repository owns its own sub-directory** (lead decision, 3a). It is opened on the data directory, and resolves
-`catalog/posts`, `catalog/checkpoints` or `search/index` itself, so the composition root passes only the data directory.
-**Proposed provider-keyed search layout (ADR 0009, awaiting approval):**
+`catalog/posts`, `catalog/checkpoints` or `search/indexes` itself, so the composition root passes only the data directory.
+**Provider-keyed search layout (ADR 0009; root moved by ADR 0010):**
 ```
-search/index/onnx-bge-small-en-v1.5-q-v1/<siteId>/<FileKey(postId external form)>.json
-search/index/gemma2-914f7f89-v1/<siteId>/<FileKey(postId external form)>.json
+search/indexes/onnx-bge-small-en-v1.5-q-v1/<siteId>/<FileKey(postId external form)>.json
+search/indexes/gemma2-onnx-q8-daa72c51-v1/<siteId>/<FileKey(postId external form)>.json
+search/indexes/gemma2-914f7f89-v1/<siteId>/<FileKey(postId external form)>.json
 ```
+The profile subtrees sit outside the former `search/index/`, which binaries from before ADR 0009 scan at any depth: running such
+a binary on the same data directory leaves them untouched.
 The stable key identifies the provider/model revision and embedding-affecting profile version; it is not an environment setting.
 The default data directory remains `~/.local/share/blog-mcp` (or the existing `BLOG_MCP_DATA` override), with no new path variable.
 `FileVectorIndex.open(dataDirectory, indexProfileKey, modelId, recipe)` opens only the selected profile subtree. The composition
@@ -486,7 +489,7 @@ Then that file is quarantined, or skipped with one stderr line if it cannot even
 Given the data directory is `~/.local/share/blog-mcp` and the selected profile key is
 `onnx-bge-small-en-v1.5-q-v1` or `gemma2-914f7f89-v1`,
 When `FileVectorIndex` opens and writes an indexed post,
-Then its file is under `search/index/<indexProfileKey>/<siteId>/<FileKey(postId)>.json`.
+Then its file is under `search/indexes/<indexProfileKey>/<siteId>/<FileKey(postId)>.json`.
 And the key is obtained from the one provider instance discovered on the build-selected runtime classpath, not another environment variable.
 And reopening with the same key loads the existing entries from that subtree without rebuilding them
 solely because the process restarted.

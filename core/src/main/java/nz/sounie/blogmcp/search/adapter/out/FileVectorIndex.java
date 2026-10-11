@@ -19,7 +19,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The vector index on disk: one JSON file per post at {@code
- * <data>/search/index/<profile>/<siteId>/<FileKey(postId external form)>.json}, whose vectors are
+ * <data>/search/indexes/<profile>/<siteId>/<FileKey(postId external form)>.json}, whose vectors are
  * base64 little-endian float32 ({@link VectorCodec}). Every file is loaded when opened; then the
  * index is write-through, with lookups served from memory. {@link IndexedPost} is immutable, so
  * entries are shared as they are.
@@ -61,6 +61,14 @@ public final class FileVectorIndex implements VectorIndex {
     return index;
   }
 
+  /**
+   * Where profile subtrees live. Review #4: not under {@code search/index}, which binaries from
+   * before ADR 0009 scan at any depth and whose files they would quarantine.
+   */
+  static Path profileRoot(Path dataDirectory) {
+    return dataDirectory.resolve("search").resolve("indexes");
+  }
+
   /** Opens only the stable subtree belonging to one embedding profile. */
   public static FileVectorIndex open(
       Path dataDirectory,
@@ -70,10 +78,7 @@ public final class FileVectorIndex implements VectorIndex {
       PrintStream errors) {
     LegacyOnnxIndexAdoption.adopt(dataDirectory, indexProfileKey, errors);
     FileVectorIndex index =
-        new FileVectorIndex(
-            dataDirectory.resolve("search").resolve("index").resolve(indexProfileKey),
-            modelId,
-            recipe);
+        new FileVectorIndex(profileRoot(dataDirectory).resolve(indexProfileKey), modelId, recipe);
     IndexFileLoader loader = new IndexFileLoader(modelId, indexProfileKey);
     StoredFiles.jsonFilesAfterSweep(index.directory)
         .forEach(file -> index.accept(file, loader.read(file, index::fileOf), errors));

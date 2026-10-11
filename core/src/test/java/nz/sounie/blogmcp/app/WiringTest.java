@@ -125,7 +125,7 @@ class WiringTest {
     assertThat(dataDirectory.resolve("catalog/checkpoints/sounie-wp.json")).isRegularFile();
     assertThat(
             jsonFilesIn(
-                dataDirectory.resolve("search/index/onnx-bge-small-en-v1.5-q-v1/sounie-wp")))
+                dataDirectory.resolve("search/indexes/onnx-bge-small-en-v1.5-q-v1/sounie-wp")))
         .isEqualTo(1);
   }
 
