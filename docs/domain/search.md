@@ -549,9 +549,10 @@ And its index lives under the `gemma2-onnx-q8-daa72c51-v1` subtree, separate fro
 And it uses the same query and passage templates, tokenizer and budget as the LM Studio provider (AC-SRCH-46, AC-SRCH-47).
 
 **AC-SRCH-52: The distributions run on Linux, Windows and macOS.**
-Given CI runners on Linux x64, Windows x64 and macOS arm64,
+Given a Linux x64 CI runner,
 When `check` and `jarTest` run for every provider module,
-Then they pass on each platform. Linux arm64 is supported through the bundled natives but not tested in CI.
+Then they pass.
+And the jars bundle native libraries for Linux x64 and arm64, Windows x64 and macOS arm64. Only Linux x64 is tested in CI; macOS arm64 is the development platform.
 
 ### Index maintenance
 

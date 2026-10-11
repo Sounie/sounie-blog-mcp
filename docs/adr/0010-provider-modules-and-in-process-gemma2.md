@@ -89,8 +89,9 @@ The app must run on Linux and Windows as well as macOS.
 
    | Platform | Status |
    |---|---|
-   | Linux x64, Windows x64, macOS arm64 | Tested in a CI matrix |
-   | Linux arm64 | Supported by the natives above, not tested in CI |
+   | Linux x64 | Tested in CI (the owner chose Linux-only CI) |
+   | macOS arm64 | The development platform; tested locally |
+   | Windows x64, Linux arm64 | Supported by the natives above, not tested |
 
 7. **No data-directory lock for now.** This replaces ADR 0009 decision 10.
    - The server is stdio-based, with one per MCP client.
