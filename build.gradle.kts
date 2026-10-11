@@ -123,8 +123,9 @@ tasks.withType<JavaCompile>().configureEach {
 val mainRuntimeClasspath: FileCollection = sourceSets.main.get().runtimeClasspath
 
 tasks.test {
-    // AC-APP-12's jar tests need the shadow jar; they run in `jarTest` instead.
-    useJUnitPlatform { excludeTags("jar") }
+    // AC-APP-12's jar tests need the shadow jar; they run in `jarTest` instead. Tests that need a
+    // locally running model server run in `localServerTest`.
+    useJUnitPlatform { excludeTags("jar", "local-server") }
     finalizedBy(tasks.jacocoTestReport)
     doFirst { systemProperty("blogmcp.runtimeClasspath", mainRuntimeClasspath.asPath) }
     // ADR 0005: DJL extracts its native tokenizer library to ~/.djl.ai by default, which the sandbox
@@ -198,6 +199,20 @@ val jarTest by tasks.registering(Test::class) {
         )
         systemProperty("blogmcp.embeddingProvider", embeddingProvider)
     }
+}
+
+// Opt-in: the Gemma2 adapter against the real model served by LM Studio on localhost:1234.
+val localServerTest by tasks.registering(Test::class) {
+    group = "verification"
+    description = "Runs the tests that need a local OpenAI-compatible model server (LM Studio)."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("local-server") }
+    systemProperty(
+        "DJL_CACHE_DIR",
+        layout.buildDirectory.dir("djl-cache").get().asFile.absolutePath,
+    )
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
 // Complexity budget (ADR 0004): keeps execution paths per method small, so each type needs few
