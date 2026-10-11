@@ -1,7 +1,5 @@
 package nz.sounie.blogmcp.architecture;
 
-import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
-import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideOutsideOfPackage;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
@@ -132,56 +130,16 @@ class LayeringTest {
               "tools.jackson..", "com.fasterxml.jackson..", "org.jsoup..", "java.net.http..")
           .allowEmptyShould(true);
 
-  // ADR 0005: the local model libraries are wrapped by search's outbound adapters only.
+  // ADR 0010 (AC-SRCH-43): core uses no embedding-model library; each provider module brings its
+  // own. The build already keeps them off core's classpath; this states the rule where it is read.
   @ArchTest
-  static final ArchRule model_libraries_only_in_search_outbound_adapters =
-      noClasses()
-          .that()
-          .resideOutsideOfPackage("nz.sounie.blogmcp.search.adapter.out..")
-          .should()
-          .dependOnClassesThat()
-          .resideInAnyPackage("dev.langchain4j..", "ai.onnxruntime..", "ai.djl..")
-          .allowEmptyShould(true);
-
-  // ADR 0005: only the known provider adapters may touch LangChain4j (and ONNX Runtime).
-  @ArchTest
-  static final ArchRule only_known_embedding_adapters_use_model_libraries =
+  static final ArchRule core_uses_no_model_library =
       noClasses()
           .that()
           .resideInAPackage("nz.sounie.blogmcp..")
-          .and()
-          .haveNameNotMatching(
-              "nz\\.sounie\\.blogmcp\\.search\\.adapter\\.out\\.(OnnxEmbedder|Gemma2Embedder)(\\$.*)?")
           .should()
           .dependOnClassesThat()
-          .resideInAnyPackage("dev.langchain4j..", "ai.onnxruntime..")
-          .allowEmptyShould(true);
-
-  // ADR 0005 and ADR 0009: provider token counters are the only classes that touch DJL.
-  @ArchTest
-  static final ArchRule only_provider_token_counters_use_djl =
-      noClasses()
-          .that()
-          .resideInAPackage("nz.sounie.blogmcp..")
-          .and()
-          .haveNameNotMatching(
-              "nz\\.sounie\\.blogmcp\\.search\\.adapter\\.out\\.(BgeTokenCounter|Gemma2TokenCounter)(\\$.*)?")
-          .should()
-          .dependOnClassesThat()
-          .resideInAPackage("ai.djl..")
-          .allowEmptyShould(true);
-
-  @ArchTest
-  static final ArchRule provider_token_counters_use_only_djl_tokenizers =
-      noClasses()
-          .that()
-          .haveNameMatching(
-              "nz\\.sounie\\.blogmcp\\.search\\.adapter\\.out\\.(BgeTokenCounter|Gemma2TokenCounter)(\\$.*)?")
-          .should()
-          .dependOnClassesThat(
-              resideInAPackage("ai.djl..")
-                  .and(resideOutsideOfPackage("ai.djl.huggingface.tokenizers..")))
-          .allowEmptyShould(true);
+          .resideInAnyPackage("dev.langchain4j..", "ai.onnxruntime..", "ai.djl..");
 
   // ADR 0005: the shared query contract uses JDK types only.
   @ArchTest
