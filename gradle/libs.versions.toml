@@ -13,11 +13,11 @@ wiremock = "3.13.2"
 pmd = "7.28.0"
 langchain4j-embeddings-bge-small-en-v15-q = "1.21.0-beta31"
 langchain4j = "1.21.0"
-djl = "0.36.0"
+djl = "0.38.0"
 # ADR 0010: the q8 EmbeddingGemma 2 graph needs 1.31+ (1.20, via LangChain4j, rejects it).
 onnxruntime = "1.31.0"
 mcp = "2.0.1"
-slf4j = "2.0.18"
+slf4j = "2.0.20"
 spotbugs = "4.10.4"
 findsecbugs = "1.14.0"
 
