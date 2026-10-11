@@ -4,8 +4,9 @@ Java 25 / Gradle project built by an agent team using domain-driven design (DDD)
 
 ## Commands
 Always build with `./gw`, not `./gradlew`. `./gw` passes the Claude Code sandbox's network proxy and temp dir to the JVM; outside the sandbox it behaves exactly like `./gradlew`.
-Every build needs an explicit provider (ADR 0009): add `-PembeddingProvider=onnx` (CI's choice) or `-PembeddingProvider=gemma2` to each command below.
-- `./gw localServerTest` — opt-in tests that need LM Studio serving the Gemma2 model on localhost:1234.
+Modules (ADR 0010): `core` (the app) and one per embedding provider under `providers/`. Pinned model files come from huggingface.co, which the sandbox blocks: add `-PhuggingFaceMirror=<dir>` pointing at a local copy with the same `<org>/<repo>/resolve/<revision>/…` layout.
+- `./gw shadowJar` — one runnable jar per provider, in `providers/<name>/build/libs/`. `./gw jarTest` runs each jar under a real MCP client.
+- `./gw :providers:gemma2-server:localServerTest` — opt-in tests that need LM Studio serving the Gemma2 model on localhost:1234.
 - `./gw check` — compile (`-Werror`), Spotless, tests, ArchUnit, JaCoCo gate, PMD complexity budget, SpotBugs + FindSecBugs security scan (ADR 0008). Must be green before any handoff.
 - `./gw pmdComplexity` — just the complexity budget (ADR 0004): per production method NPath ≤ 16, cyclomatic ≤ 5, cognitive ≤ 7.
 - `./gw pitest` — mutation testing on `domain` packages (threshold 80%). Report: `build/reports/pitest/index.html`.

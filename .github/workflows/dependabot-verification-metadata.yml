@@ -37,7 +37,7 @@ jobs:
       # The same tasks as scripts/update-verification-metadata, so every configuration is resolved.
       - name: Regenerate verification metadata
         run: >-
-          ./gradlew -PembeddingProvider=onnx --write-verification-metadata sha256 --refresh-dependencies
+          ./gradlew --write-verification-metadata sha256 --refresh-dependencies
           check pitest shadowJar jarTest
       - name: Guard checksums that were already verified
         run: scripts/verification-checksum-guard "$RUNNER_TEMP/old.xml" gradle/verification-metadata.xml
