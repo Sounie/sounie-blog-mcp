@@ -21,13 +21,18 @@ public final class Gemma2TokenCounter implements TokenCounter, EmbeddingTokenize
    * @throws IllegalStateException if the tokenizer resource is missing
    */
   public Gemma2TokenCounter() {
-    try (InputStream json = Gemma2TokenCounter.class.getResourceAsStream(TOKENIZER_RESOURCE)) {
+    this(TOKENIZER_RESOURCE);
+  }
+
+  /** Loads the tokenizer from {@code resource} on the classpath. */
+  Gemma2TokenCounter(String resource) {
+    try (InputStream json = Gemma2TokenCounter.class.getResourceAsStream(resource)) {
       if (json == null) {
-        throw new IllegalStateException("Missing pinned Gemma2 tokenizer " + TOKENIZER_RESOURCE);
+        throw new IllegalStateException("Missing pinned Gemma2 tokenizer " + resource);
       }
       tokenizer = HuggingFaceTokenizer.newInstance(json, OPTIONS);
     } catch (IOException e) {
-      throw new UncheckedIOException("Cannot load " + TOKENIZER_RESOURCE, e);
+      throw new UncheckedIOException("Cannot load " + resource, e);
     }
   }
 

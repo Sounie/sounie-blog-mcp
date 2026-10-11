@@ -40,8 +40,13 @@ final class ServerProcess {
    * must be writable (as in the test task itself).
    */
   static List<String> sandboxOptions() {
+    return sandboxOptions(Path.of(System.getProperty("java.io.tmpdir")));
+  }
+
+  /** As {@link #sandboxOptions()}, with the subprocess's temp directory at {@code tmpdir}. */
+  static List<String> sandboxOptions(Path tmpdir) {
     List<String> options = new ArrayList<>();
-    options.add("-Djava.io.tmpdir=" + System.getProperty("java.io.tmpdir"));
+    options.add("-Djava.io.tmpdir=" + tmpdir);
     String djlCache = System.getProperty("DJL_CACHE_DIR");
     if (djlCache != null) {
       options.add("-DDJL_CACHE_DIR=" + djlCache);
