@@ -33,6 +33,7 @@ This builds one runnable jar per embedding provider. You choose a provider by ch
 | Jar | Embedding model |
 |---|---|
 | `providers/onnx/build/libs/blog-mcp-onnx.jar` | BGE-small-en-v1.5 (quantised), in process |
+| `providers/gemma2/build/libs/blog-mcp-gemma2.jar` | EmbeddingGemma 2 (q8 ONNX), in process; about 370 MB, and needs no model server |
 | `providers/gemma2-server/build/libs/blog-mcp-gemma2-server.jar` | EmbeddingGemma 2 via LM Studio, which must be serving `text-embedding-embeddinggemma-2` on `http://localhost:1234/v1` (override with `BLOG_MCP_EMBEDDING_ENDPOINT`) |
 
 Each provider keeps its own search index in the data directory. The first run of a jar builds that

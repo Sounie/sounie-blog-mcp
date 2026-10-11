@@ -32,8 +32,13 @@ val huggingFace: URI =
 val catalog = libs
 
 val javaProjects =
-    listOf(":core", ":providers:onnx", ":providers:gemma2-common", ":providers:gemma2-server")
-        .map(::project)
+    listOf(
+        ":core",
+        ":providers:onnx",
+        ":providers:gemma2-common",
+        ":providers:gemma2",
+        ":providers:gemma2-server",
+    ).map(::project)
 
 configure(javaProjects) {
     apply(plugin = "java")
@@ -177,6 +182,13 @@ val distributions =
                 provider = "$embedding.onnx.OnnxEmbedder",
                 providerPackages = listOf("$embedding.onnx"),
                 profileKey = "onnx-bge-small-en-v1.5-q-v1",
+            ),
+        ":providers:gemma2" to
+            Distribution(
+                jarName = "blog-mcp-gemma2",
+                provider = "$embedding.gemma2.onnx.Gemma2OnnxEmbedder",
+                providerPackages = listOf("$embedding.gemma2", "$embedding.gemma2.onnx"),
+                profileKey = "gemma2-onnx-q8-daa72c51-v1",
             ),
         ":providers:gemma2-server" to
             Distribution(

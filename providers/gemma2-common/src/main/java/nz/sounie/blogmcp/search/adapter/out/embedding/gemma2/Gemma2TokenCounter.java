@@ -40,4 +40,9 @@ public final class Gemma2TokenCounter implements TokenCounter, EmbeddingTokenize
   public int countTokens(String preparedInput) {
     return tokenizer.encode(preparedInput, false, false).getIds().length;
   }
+
+  /** The model's input IDs for prepared text: {@code <bos>}, its tokens, {@code <eos>}. */
+  public long[] modelInputIds(String preparedInput) {
+    return tokenizer.encode(preparedInput, true, false).getIds();
+  }
 }

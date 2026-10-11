@@ -70,9 +70,12 @@ The app must run on Linux and Windows as well as macOS.
    - If the graph declares any other input, loading fails as `EmbedderUnavailable`.
    - The module pins ONNX Runtime 1.31.0 or later.
    - It makes no network calls at runtime.
-   - The weights travel inside the jar. On first use they are extracted to
-     `<data>/cache/models/<profileKey>/`, because ONNX external data must sit beside the graph as a
-     file. Each file's SHA-256 is checked on extraction, and extracted files are reused.
+   - The weights travel inside the jar. ONNX external data must sit beside the graph as a file, so
+     on first use each process copies both files into its own new temporary directory. The
+     directory is readable only by its user and deleted when the JVM exits. Nothing is shared or
+     reused between processes, so there is no checksum-and-reuse logic, and no other process can
+     replace the files. The SPI is unchanged: providers still get no data directory. The cost is
+     about a second of copying on the first embed.
 4. **Pinned model files are Gradle dependencies.** They are resolved through an Ivy repository on
    huggingface.co that is pinned to revisions and limited to those files. Gradle caches them, they
    work `--offline`, and their checksums are verified by `verification-metadata.xml` (ADR 0008). This
@@ -151,8 +154,9 @@ LFS id:
   restated per module. `CLAUDE.md` commands need no property.
 - **Size:** `blog-mcp-gemma2.jar` is about 400 MB. A cold CI cache downloads about 350 MB of model
   files once; setup-gradle caches them afterwards.
-- **Disk:** the first start of the in-process Gemma2 provider writes about 314 MB under
-  `<data>/cache/models/`.
+- **Disk:** each running in-process Gemma2 server holds about 314 MB in a temporary directory,
+  removed at exit. On Windows, files still open at exit may be left behind for the OS's
+  temp-folder cleanup.
 - **Licence:** both pinned repos declare Apache-2.0 and neither is gated. Their licence link goes to
   Google's "Gemma 4 license" page, which holds the Apache License 2.0 text. Neither repo ships a
   LICENSE or NOTICE file. The jar therefore ships:

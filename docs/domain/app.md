@@ -244,8 +244,8 @@ existing index embeds many chunks; a previously built profile reuses its own per
 - **Provider modules (ADR 0010):** `core` holds the app. Each provider module (`providers/onnx`,
   `providers/gemma2`, `providers/gemma2-server`) builds its own runnable jar containing `core`, that
   provider and its dependencies. No build property selects a provider, and none is the default.
-  The in-process Gemma2 provider extracts its bundled model to `<data>/cache/models/<profileKey>/`
-  on first use.
+  The in-process Gemma2 provider extracts its bundled model into a private temporary directory on
+  first use, removed at exit; it writes nothing to the data directory.
 - **Proposed classpath discovery/assembly:** the selected provider artifact advertises its implementation
   through the `search.application` provider SPI. The app discovers exactly one provider using
   `ServiceLoader`; missing or duplicate implementations fail startup. The distribution should retain
