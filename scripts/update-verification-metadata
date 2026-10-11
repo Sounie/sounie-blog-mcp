@@ -68,7 +68,7 @@ restore() {
 # The tasks CI runs, plus the shadow jar and its test, so every configuration is resolved.
 # --refresh-dependencies: metadata Gradle serves from its cache (e.g. plugin BOMs) is otherwise
 # left out, and a clean CI cache would then fail verification.
-if ! ./gw --write-verification-metadata sha256 --refresh-dependencies \
+if ! ./gw -PembeddingProvider=onnx --write-verification-metadata sha256 --refresh-dependencies \
   check pitest shadowJar jarTest; then
   restore
   echo "Build failed; $metadata restored, nothing committed" >&2

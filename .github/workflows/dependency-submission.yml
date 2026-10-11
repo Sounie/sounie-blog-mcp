@@ -25,3 +25,6 @@ jobs:
       # v5, not v6: v6 requires accepting Gradle's Terms of Use (see ci.yml).
       # May fail on Gradle 9.8.0: https://github.com/gradle/actions/issues/1088
       - uses: gradle/actions/dependency-submission@v5
+        env:
+          # The build requires an explicit provider (ADR 0009); onnx also resolves gemma2's deps.
+          ORG_GRADLE_PROJECT_embeddingProvider: onnx

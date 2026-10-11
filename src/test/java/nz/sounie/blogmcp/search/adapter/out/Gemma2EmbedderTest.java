@@ -12,8 +12,12 @@ import nz.sounie.blogmcp.search.domain.text.Passage;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-/** The real Gemma2 model through LangChain4j; no test doubles. */
+/**
+ * The real Gemma2 model through LangChain4j; no test doubles. Needs LM Studio serving the model on
+ * localhost:1234, so it runs only in {@code ./gw localServerTest}, not in {@code check}.
+ */
 @Tag("model")
+@Tag("local-server")
 class Gemma2EmbedderTest {
   private static final String QUERY = "how do I configure a Gradle build for Java";
   private static final Passage RELATED =

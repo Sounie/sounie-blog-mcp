@@ -23,7 +23,7 @@ jobs:
       # staying on v5 until the owner decides.
       - uses: gradle/actions/setup-gradle@v5
       - name: Check (tests, ArchUnit, coverage, formatting)
-        run: ./gradlew check pitest
+        run: ./gradlew -PembeddingProvider=onnx check pitest
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v7
