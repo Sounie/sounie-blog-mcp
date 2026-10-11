@@ -83,10 +83,11 @@ class FileVectorIndexTest extends VectorIndexContract {
     return fileOf(id);
   }
 
+  /** Review #4: outside {@code search/index}, which older binaries scan at any depth. */
   private Path fileOf(String profileKey, PostId id) {
     return dataDirectory
         .resolve("search")
-        .resolve("index")
+        .resolve("indexes")
         .resolve(profileKey)
         .resolve(id.siteId().value())
         .resolve(FileKey.of(id.external()).value() + ".json");
@@ -286,6 +287,20 @@ class FileVectorIndexTest extends VectorIndexContract {
     assertThat(fileOf(PROFILE_ONNX, entry.id())).isRegularFile();
     assertSameEntry(restarted.find(entry.id()), entry);
     assertThat(restarted.ids()).containsExactly(entry.id());
+  }
+
+  @Test
+  @DisplayName("Review #4: an older binary on the same data directory leaves profile entries alone")
+  void an_older_binary_does_not_touch_profile_entries() {
+    IndexedPost entry = variedEntries().getFirst();
+    profileIndex(PROFILE_ONNX).save(entry);
+    byte[] stored = StoredFiles.read(fileOf(PROFILE_ONNX, entry.id()));
+
+    // An older binary opens the legacy layout with its own model.
+    FileVectorIndex.open(dataDirectory, "older-model", INDEXER_R1.recipe(), errors);
+
+    assertThat(StoredFiles.read(fileOf(PROFILE_ONNX, entry.id()))).containsExactly(stored);
+    assertSameEntry(profileIndex(PROFILE_ONNX).find(entry.id()), entry);
   }
 
   @Test

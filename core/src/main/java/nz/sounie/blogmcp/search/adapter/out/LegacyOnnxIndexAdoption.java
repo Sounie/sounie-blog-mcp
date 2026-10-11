@@ -9,7 +9,10 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.stream.Stream;
 
-/** Atomically moves files from the former default ONNX index path into its profile subtree. */
+/**
+ * Atomically moves files from the former default ONNX index path, {@code search/index/<site>/},
+ * into its profile subtree under {@code search/indexes/}.
+ */
 final class LegacyOnnxIndexAdoption {
 
   private static final String ONNX_PROFILE = "onnx-bge-small-en-v1.5-q-v1";
@@ -24,19 +27,20 @@ final class LegacyOnnxIndexAdoption {
     if (!Files.isDirectory(legacyRoot)) {
       return;
     }
+    Path profileRoot = FileVectorIndex.profileRoot(dataDirectory).resolve(ONNX_PROFILE);
     try (Stream<Path> sites = Files.list(legacyRoot)) {
-      sites.filter(Files::isDirectory).forEach(site -> adoptSite(site, legacyRoot, errors));
+      sites.filter(Files::isDirectory).forEach(site -> adoptSite(site, profileRoot, errors));
     } catch (IOException e) {
       throw new UncheckedIOException("Cannot inspect legacy ONNX index files", e);
     }
   }
 
-  private static void adoptSite(Path site, Path legacyRoot, PrintStream errors) {
+  private static void adoptSite(Path site, Path profileRoot, PrintStream errors) {
     try (Stream<Path> files = Files.list(site)) {
       files
           .filter(Files::isRegularFile)
           .filter(file -> file.getFileName().toString().endsWith(".json"))
-          .forEach(file -> move(file, legacyRoot, errors));
+          .forEach(file -> move(file, profileRoot, errors));
     } catch (IOException e) {
       errors.println("Could not adopt legacy ONNX index directory " + site + ": " + e.getMessage());
       return;
@@ -51,12 +55,9 @@ final class LegacyOnnxIndexAdoption {
     }
   }
 
-  private static void move(Path source, Path legacyRoot, PrintStream errors) {
+  private static void move(Path source, Path profileRoot, PrintStream errors) {
     Path target =
-        legacyRoot
-            .resolve("onnx-bge-small-en-v1.5-q-v1")
-            .resolve(source.getParent().getFileName())
-            .resolve(source.getFileName());
+        profileRoot.resolve(source.getParent().getFileName()).resolve(source.getFileName());
     try {
       Files.createDirectories(target.getParent());
       if (Files.exists(target)) {
