@@ -65,6 +65,11 @@ public final class Gemma2OnnxEmbedder implements EmbeddingProvider {
   }
 
   @Override
+  public String passagePreparationVersion() {
+    return Gemma2Profile.PASSAGE_PREPARATION_VERSION;
+  }
+
+  @Override
   public List<Embedding> embedPassages(List<Passage> passages) {
     return withModel(model -> passages.stream().map(p -> embed(model, p.text())).toList());
   }

@@ -12,6 +12,10 @@ import nz.sounie.blogmcp.search.domain.text.PassageTokenBudget;
 public final class Gemma2Profile {
 
   public static final String TOKENIZER_REVISION = "914f7f89142e33e77833254d9c9b90c3cef7303b";
+
+  /** The version of {@link #preparePassage}; change it whenever the template changes. */
+  public static final String PASSAGE_PREPARATION_VERSION = "gemma2-document-template-v1";
+
   public static final PassageTokenBudget BUDGET =
       new PassageTokenBudget(3000, 256, 128, 4096, 8192);
   private static final int DIMENSION = 768;
