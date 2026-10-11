@@ -544,7 +544,7 @@ And concurrent runs using different profile keys write only within their respect
 Given `blog-mcp-gemma2.jar`, with no network access and no model server running,
 When the app starts, indexes posts and answers a `search_posts` query,
 Then it embeds with the bundled q8 ONNX model from `onnx-community/embeddinggemma-2-ONNX` at revision `daa72c51243991dfcaf9f9137d2c573d8f7790c0`, returning 768-value normalised vectors from the `sentence_embedding` output.
-And the model files are extracted once to `<data>/cache/models/gemma2-onnx-q8-daa72c51-v1/`, checked against their pinned SHA-256 and reused on later starts. A file that fails the check is extracted again.
+And the jar carries the model files with their pinned SHA-256, and each process extracts them on first use into its own new temporary directory, removed when the JVM exits.
 And its index lives under the `gemma2-onnx-q8-daa72c51-v1` subtree, separate from the LM Studio provider's `gemma2-914f7f89-v1`.
 And it uses the same query and passage templates, tokenizer and budget as the LM Studio provider (AC-SRCH-46, AC-SRCH-47).
 

@@ -1,0 +1,17 @@
+EmbeddingGemma 2 (q8 ONNX)
+
+This distribution bundles the files embeddinggemma-2-onnx/model_quantized.onnx and
+embeddinggemma-2-onnx/model_quantized.onnx_data from onnx-community/embeddinggemma-2-ONNX at revision
+daa72c51243991dfcaf9f9137d2c573d8f7790c0
+(https://huggingface.co/onnx-community/embeddinggemma-2-ONNX).
+
+They are a modified version of google/embeddinggemma-2 at revision
+914f7f89142e33e77833254d9c9b90c3cef7303b (https://huggingface.co/google/embeddinggemma-2): the model
+was converted to ONNX and its weights quantised to 8 bits by onnx-community. The files are bundled
+unchanged from that conversion.
+
+Copyright Google LLC. Licensed under the Apache License, Version 2.0.
+See META-INF/licenses/LICENSE-EmbeddingGemma-2.0.txt.
+
+The model cards state that deployments must adhere to the Gemma Prohibited Use Policy:
+https://ai.google.dev/gemma/prohibited_use_policy

@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.Gemma2InputPreparation;
+import nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.Gemma2Profile;
 import nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.Gemma2TokenCounter;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProviderProfile;
@@ -18,7 +19,6 @@ import nz.sounie.blogmcp.search.domain.embedding.EmbeddingFactory;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.query.QueryText;
 import nz.sounie.blogmcp.search.domain.text.Passage;
-import nz.sounie.blogmcp.search.domain.text.PassageTokenBudget;
 import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 
 /**
@@ -28,10 +28,7 @@ import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 public final class Gemma2Embedder implements EmbeddingProvider {
 
   private static final String MODEL_ID = "text-embedding-embeddinggemma-2";
-  private static final String REVISION = "914f7f89142e33e77833254d9c9b90c3cef7303b";
   private static final String PROFILE_KEY = "gemma2-914f7f89-v1";
-  private static final PassageTokenBudget BUDGET =
-      new PassageTokenBudget(3000, 256, 128, 4096, 8192);
   private static final ReentrantLock MODEL_LOCK = new ReentrantLock();
 
   private static final class Tokenizer {
@@ -69,9 +66,8 @@ public final class Gemma2Embedder implements EmbeddingProvider {
 
   @Override
   public EmbeddingProviderProfile profile() {
-    Gemma2TokenCounter tokenizer = Tokenizer.INSTANCE;
-    return new EmbeddingProviderProfile(
-        REVISION, REVISION, PROFILE_KEY, 768, 8192, BUDGET, tokenizer);
+    // The server's model is the Google revision itself, so it shares the tokenizer's revision.
+    return Gemma2Profile.of(Gemma2Profile.TOKENIZER_REVISION, PROFILE_KEY, Tokenizer.INSTANCE);
   }
 
   @Override
@@ -86,17 +82,7 @@ public final class Gemma2Embedder implements EmbeddingProvider {
 
   @Override
   public String preparePassage(String title, Passage passage) {
-    String prepared = Gemma2InputPreparation.gemma2Passage(title, passage.text());
-    int tokens = Tokenizer.INSTANCE.countTokens(prepared);
-    if (tokens > BUDGET.preparedPassageTokens()) {
-      throw new IllegalArgumentException(
-          "Prepared Gemma2 passage has "
-              + tokens
-              + " tokens, exceeding the "
-              + BUDGET.preparedPassageTokens()
-              + "-token budget");
-    }
-    return prepared;
+    return Gemma2Profile.preparePassage(title, passage, Tokenizer.INSTANCE);
   }
 
   @Override

@@ -5,5 +5,6 @@ include(
     "core",
     "providers:onnx",
     "providers:gemma2-common",
+    "providers:gemma2",
     "providers:gemma2-server",
 )
