@@ -203,13 +203,12 @@ As of 2026-10-11, on `feature/provider-distribution`:
   in-process half of `ShadowJarTest`. The subprocess half, and the exact package and licence checks,
   use the jar itself.
 
-**Open from the branch review (2026-10-11), which requested changes:**
-- **Blocking: AC-SRCH-48's failure clause has no test.** That clause says a missing tokenizer fails
-  Gemma2 startup, and `Gemma2TokenCounter` hard-wires its resource. The proposed fix is a
-  package-private constructor taking the resource path, and one test.
-- **Blocking: AC-SRCH-51's cleanup clause has no test.** That clause says the temporary model
-  directory is removed at exit. The proposed fix is a jar test with its own `java.io.tmpdir` that
-  checks no `blog-mcp-model-*` directory remains.
+**Branch review (2026-10-11):** approved after its two blocking findings were fixed in `6574207`.
+- AC-SRCH-48's missing-tokenizer clause is tested by `Gemma2TokenCounterTest`.
+- AC-SRCH-51's cleanup clause is tested by `BundledModelCleanupJarTest`. That test runs the gemma2
+  jar with its own temp directory and checks no `blog-mcp-model-*` directory remains after exit.
+
+The review's non-blocking suggestions remain open:
 - **Suggested now:**
   - `OnnxEmbedder` takes the vector length from LangChain4j's output, so it no longer checks for
     384.
