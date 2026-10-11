@@ -94,5 +94,10 @@ class EmbeddingProviderDiscoveryTest {
         String title, nz.sounie.blogmcp.search.domain.text.Passage passage) {
       return passage.text();
     }
+
+    @Override
+    public String passagePreparationVersion() {
+      return "test-preparation-v1";
+    }
   }
 }

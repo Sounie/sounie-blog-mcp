@@ -16,4 +16,10 @@ public interface EmbeddingProvider extends PassageEmbedder, QueryEmbedder {
   String prepareQuery(QueryText query);
 
   String preparePassage(String title, Passage passage);
+
+  /**
+   * Names this provider's passage preparation for the index recipe. Change it whenever {@link
+   * #preparePassage} changes, so existing entries are re-embedded.
+   */
+  String passagePreparationVersion();
 }

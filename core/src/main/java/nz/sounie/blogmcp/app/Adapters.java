@@ -72,9 +72,7 @@ public record Adapters(
         profile,
         query -> new QueryPassage(provider.prepareQuery(query)),
         (title, content) -> new Passage(provider.preparePassage(title, new Passage(content))),
-        profile.indexProfileKey().startsWith("gemma2-")
-            ? "gemma2-document-template-v1"
-            : "onnx-bge-document-v1");
+        provider.passagePreparationVersion());
   }
 
   private static EmbeddingProviderProfile legacyProfile(TokenCounter tokens) {

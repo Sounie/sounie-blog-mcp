@@ -98,6 +98,11 @@ public final class Gemma2Embedder implements EmbeddingProvider {
   }
 
   @Override
+  public String passagePreparationVersion() {
+    return Gemma2Profile.PASSAGE_PREPARATION_VERSION;
+  }
+
+  @Override
   public List<Embedding> embedPassages(List<Passage> passages) {
     // LangChain4j rejects an empty list; no passages simply need no embeddings.
     return passages.isEmpty() ? List.of() : withModel(model -> embedAll(model, passages));

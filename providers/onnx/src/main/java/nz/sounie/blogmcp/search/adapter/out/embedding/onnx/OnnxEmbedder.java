@@ -66,6 +66,12 @@ public final class OnnxEmbedder implements EmbeddingProvider {
     return PassageFormatter.standard().format(title, passage.text()).text();
   }
 
+  /** The version recorded before ADR 0010; keeping it keeps existing ONNX index entries valid. */
+  @Override
+  public String passagePreparationVersion() {
+    return "onnx-bge-document-v1";
+  }
+
   @Override
   public List<Embedding> embedPassages(List<Passage> passages) {
     // LangChain4j rejects an empty list; no passages simply need no embeddings.
