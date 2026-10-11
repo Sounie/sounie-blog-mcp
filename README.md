@@ -24,16 +24,19 @@ instructions.
 
 ## Build
 
-Choose exactly one embedding provider at build time:
-
 ```sh
-./gw shadowJar -PembeddingProvider=onnx
-# or
-./gw shadowJar -PembeddingProvider=gemma2
+./gw shadowJar
 ```
 
-This produces the selected-provider distribution jar under `build/libs/`; the result includes the chosen provider and its runtime
-classpath, not a runtime selector. The base app is not built with multiple providers at once.
+This builds one runnable jar per embedding provider. You choose a provider by choosing which jar to run:
+
+| Jar | Embedding model |
+|---|---|
+| `providers/onnx/build/libs/blog-mcp-onnx.jar` | BGE-small-en-v1.5 (quantised), in process |
+| `providers/gemma2-server/build/libs/blog-mcp-gemma2-server.jar` | EmbeddingGemma 2 via LM Studio, which must be serving `text-embedding-embeddinggemma-2` on `http://localhost:1234/v1` (override with `BLOG_MCP_EMBEDDING_ENDPOINT`) |
+
+Each provider keeps its own search index in the data directory. The first run of a jar builds that
+provider's index; later runs, including after switching back from another jar, reuse it.
 
 ## Configure
 
@@ -61,14 +64,14 @@ Create `~/.config/blog-mcp/sites.json`:
 ## Connect an MCP client
 
 The server uses the stdio transport: the client starts it as a subprocess and talks to it over stdin and
-stdout. Any client that supports local stdio servers can use it. Point the client at the generated
-selected-provider launcher or distribution jar:
+stdout. Any client that supports local stdio servers can use it. Point the client at the jar for the
+provider you want:
 
 ```sh
 java -jar /path/to/blog-mcp-<provider>.jar
 ```
 
-Use the jar built for the provider you selected above. Set `BLOG_MCP_CONFIG` and `BLOG_MCP_DATA` in the
+Set `BLOG_MCP_CONFIG` and `BLOG_MCP_DATA` in the
 server's environment if you don't want the defaults.
 
 Many clients take a JSON configuration in this shape. Check your client's documentation for the file's name

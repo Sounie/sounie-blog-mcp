@@ -13,6 +13,7 @@ wiremock = "3.13.2"
 pmd = "7.28.0"
 langchain4j-embeddings-bge-small-en-v15-q = "1.21.0-beta31"
 langchain4j = "1.21.0"
+djl = "0.36.0"
 mcp = "2.0.1"
 slf4j = "2.0.18"
 spotbugs = "4.10.4"
@@ -30,6 +31,7 @@ jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 wiremock-standalone = { module = "org.wiremock:wiremock-standalone", version.ref = "wiremock" }
 langchain4j-embeddings-bge-small-en-v15-q = { module = "dev.langchain4j:langchain4j-embeddings-bge-small-en-v15-q", version.ref = "langchain4j-embeddings-bge-small-en-v15-q" }
 langchain4j-openai = { module = "dev.langchain4j:langchain4j-open-ai", version.ref = "langchain4j" }
+djl-tokenizers = { module = "ai.djl.huggingface:tokenizers", version.ref = "djl" }
 pmd-cli = { module = "net.sourceforge.pmd:pmd-cli", version.ref = "pmd" }
 pmd-java = { module = "net.sourceforge.pmd:pmd-java", version.ref = "pmd" }
 mcp-core = { module = "io.modelcontextprotocol.sdk:mcp-core", version.ref = "mcp" }
