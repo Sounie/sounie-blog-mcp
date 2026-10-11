@@ -4,10 +4,11 @@ Date: 2026-10-11
 
 ## Status
 
-Accepted by the owner on 2026-10-11. It replaces decisions 1, 3, 9 and 11 of ADR 0009, and defers
-decision 10 (see decision 7). ADR 0009's other
-decisions are unchanged: the SPI placement, one provider instance serving both ports, provider-keyed
-index subtrees, and the Gemma2 prompts and budget.
+Accepted by the owner on 2026-10-11 and implemented on `feature/provider-distribution`; see
+[Implementation status](#implementation-status). It replaces decisions 1, 3, 9 and 11 of ADR 0009,
+and the index paths in its decision 7 (see decision 8), and defers decision 10 (see decision 7).
+ADR 0009's other decisions are unchanged: the SPI placement, one provider instance serving both
+ports, provider-keyed index subtrees, and the Gemma2 prompts and budget.
 
 ## Context
 
@@ -161,10 +162,11 @@ LFS id:
 
 - **AC changes:** AC-SRCH-41 (rejecting a missing property) is retired, and AC-SRCH-40 and 43 are
   restated per module. `CLAUDE.md` commands need no property.
-- **Size:** `blog-mcp-gemma2.jar` is about 400 MB. A cold CI cache downloads about 350 MB of model
-  files once; setup-gradle caches them afterwards.
+- **Size:** `blog-mcp-gemma2.jar` is about 370 MB (371 MB as built). A cold CI cache downloads
+  about 350 MB of model files once; setup-gradle caches them afterwards.
 - **Disk:** each running in-process Gemma2 server holds about 314 MB in a temporary directory,
-  removed at exit. On Windows, files still open at exit may be left behind for the OS's
+  removed at a normal JVM exit. A killed or crashed process (for example `SIGKILL`) leaves its
+  directory behind, and on Windows files still open at exit may be left too; both wait for the OS's
   temp-folder cleanup.
 - **Licence:** both pinned repos declare Apache-2.0 and neither is gated. Their licence link goes to
   Google's "Gemma 4 license" page, which holds the Apache License 2.0 text. Neither repo ships a
@@ -176,3 +178,58 @@ LFS id:
     adhere to".
 - **Concurrency:** two runs on the same profile can still interleave their index writes. Each file write
   is atomic, so the last writer wins for each post. This is accepted until the HTTP transport arrives.
+
+## Implementation status
+
+As of 2026-10-11, on `feature/provider-distribution`:
+
+**Done and green locally** (`./gw check pitest jarTest`, macOS arm64, with the Hugging Face mirror):
+- All five modules and three distributions.
+- The in-process provider, which `jarTest` exercises through a real MCP client with no model
+  server.
+- The LM Studio adapter, tested over real HTTP with WireMock.
+- Most findings from the first review: the build property, lock, CI tests, old binaries, query
+  errors, jar launch, passage-preparation version, nested builds, timeouts, tokenizer download,
+  incompatible-model order and licence checks.
+- CI runs `check pitest jarTest` on Linux only.
+
+**Still open from the first review:**
+- **Recipe revision (partly fixed).** The in-process provider's model ID names its ONNX revision. The
+  LM Studio provider's model ID, and so its index recipe, is still the alias
+  `text-embedding-embeddinggemma-2`, without the revision.
+- **Startup failures.** Discovery and tokenizer failures are not yet `StartupFailure`. This is the
+  same item as the review's suggestion below.
+- **Distribution class loader (partly fixed).** It still loads classes parent-first in the
+  in-process half of `ShadowJarTest`. The subprocess half, and the exact package and licence checks,
+  use the jar itself.
+
+**Open from the branch review (2026-10-11), which requested changes:**
+- **Blocking: AC-SRCH-48's failure clause has no test.** That clause says a missing tokenizer fails
+  Gemma2 startup, and `Gemma2TokenCounter` hard-wires its resource. The proposed fix is a
+  package-private constructor taking the resource path, and one test.
+- **Blocking: AC-SRCH-51's cleanup clause has no test.** That clause says the temporary model
+  directory is removed at exit. The proposed fix is a jar test with its own `java.io.tmpdir` that
+  checks no `blog-mcp-model-*` directory remains.
+- **Suggested now:**
+  - `OnnxEmbedder` takes the vector length from LangChain4j's output, so it no longer checks for
+    384.
+  - Provider discovery and tokenizer failures print a stack trace, not "blog-mcp cannot start".
+  - Small fixes in `Gemma2OnnxModel`: close `SessionOptions`; close the session on the
+    unexpected-inputs path; check that the expected inputs are present; return early from an empty
+    `embedPassages`.
+- **Suggested later:**
+  - Remove `EmbeddingFactory`'s provider dimensions from the domain.
+  - Add `PassageTokenBudget` boundary tests and its missing `body <= preparedPassage` rule.
+  - Retire the test-only overloads, including the public `FileVectorIndex.open/4`, which writes to
+    `search/index/`.
+  - Pin the spike cosines in `Gemma2OnnxEmbedderTest`.
+  - Take the model lock per passage rather than per post.
+  - Small tidy-ups.
+- **Deferred:**
+  - `IndexFileLoader` guesses the vector dimension from the model ID or profile key.
+  - `Embedding.similarityTo` does not check that both vectors have the same length.
+  - Adopted legacy ONNX entries are re-embedded once.
+  - Concurrency hardening waits for the HTTP transport (decision 7).
+- **Not done:**
+  - The parity test comparing in-process vectors with LM Studio's (`local-server`).
+  - Windows and Linux arm64 are supported but not tested.

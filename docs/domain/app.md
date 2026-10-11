@@ -3,7 +3,7 @@
 Status:
 - **Slice 3a (persistence): approved by the owner on 2026-10-03.** ACs: AC-APP-24 to 29, 35, 40 and 41, plus AC-APP-44 and 45 from the 3a review (section 7).
 - **Slice 3b (MCP server, tools, wiring, scheduler, jar): draft, trimmed to essentials ("don't gild the lily"), awaiting the owner's 3b checkpoint.** ACs: AC-APP-1 to 12 (renumbered, section 7) plus AC-SRCH-39. Deferred items are listed in section 7.
-- **Build-time embedding-provider artifact selection, classpath discovery and provider-keyed search paths:** owner-selected direction; Gradle property spelling, SPI, packaging/classpath assembly and index layout remain proposed in ADR 0009 pending owner approval.
+- **Embedding providers, classpath discovery and provider-keyed search paths:** ADR 0009 (accepted 2026-10-09) and ADR 0010 (accepted 2026-10-11) are implemented on `feature/provider-distribution`, which is under review. The open review items are listed in ADR 0010's implementation status.
 
 SDK facts come from MCP Java SDK v2.0.1 (researcher, 2026-10-03). Section 8 keeps the ones that still inform a 3b decision.
 
@@ -151,12 +151,10 @@ root obtains the key and model identity from the selected provider profile and p
 the recipe and model ID. The same profile key reuses its persisted entries after restart; another profile gets a distinct subtree,
 which it neither loads nor deletes or overwrites.
 To preserve existing ONNX index data at the former `search/index/<siteId>/<FileKey(postId)>.json`
-location, a one-time adoption into the ONNX subtree is proposed; Gemma2 startup must not inspect or
-move those legacy files. Adoption mechanics await approval in ADR 0009.
-Provider artifacts live on the build-produced application runtime classpath, not in the data directory. ONNX BGE and Gemma2 are
-separate JARs; a required build property includes exactly one. The selected artifact and its profile dependencies/assets are
-distributed beside the base app artifact and discovered at runtime. No provider JAR path or provider-selection environment
-variable is introduced.
+location, the first ONNX open atomically moves those files into `search/indexes/onnx-bge-small-en-v1.5-q-v1/`, never overwriting
+an existing target (`LegacyOnnxIndexAdoption`). Gemma2 startups do not inspect or move the legacy files.
+Providers live in the distribution jar, not in the data directory: each provider module's jar contains `core` plus exactly that
+provider and its assets, discovered at runtime. No provider JAR path or provider-selection environment variable is introduced.
 
 **One file per aggregate** (post, checkpoint, indexed post). Every save is an atomic file write of one small file. A single
 file for everything would rewrite megabytes for each changed post: about 230 rewrites during a first sync. Each repository loads every
@@ -249,20 +247,20 @@ existing index embeds many chunks; a previously built profile reuses its own per
   provider and its dependencies. No build property selects a provider, and none is the default.
   The in-process Gemma2 provider extracts its bundled model into a private temporary directory on
   first use, removed at exit; it writes nothing to the data directory.
-- **Proposed classpath discovery/assembly:** the selected provider artifact advertises its implementation
-  through the `search.application` provider SPI. The app discovers exactly one provider using
-  `ServiceLoader`; missing or duplicate implementations fail startup. The distribution should retain
-  the provider JAR as a separate file and provide a launcher/classpath manifest that makes both the
-  app and selected provider (plus its required dependencies) available at runtime. The precise Gradle
-  configuration, distribution format and launcher mechanism remain structural questions for ADR 0009.
-- The Gradle Shadow plugin `com.gradleup.shadow` **9.6.1** produces the base `build/libs/blog-mcp-all.jar`,
-  with no embedding provider implementation shaded into it, and:
+- **Classpath discovery:** each provider module advertises its implementation with a static
+  `META-INF/services` entry for the `search.application` provider SPI. The app discovers exactly one
+  provider using `ServiceLoader`; missing or duplicate implementations fail startup. Each provider
+  module also has a `run` task that starts the server with that provider, for example from the IDE.
+- The Gradle Shadow plugin `com.gradleup.shadow` **9.6.1** produces one runnable jar per provider module,
+  `providers/<name>/build/libs/blog-mcp-<name>.jar`, configured once in the root build script, with:
   - `mergeServiceFiles()` and `duplicatesStrategy = DuplicatesStrategy.INCLUDE`. **This is required:** `McpJsonDefaults.getMapper()`
     finds `mcp-json-jackson3` through `ServiceLoader`;
   - `META-INF/*.SF`, `*.DSA` and `*.RSA` excluded explicitly, so a signed dependency cannot break the merged jar;
   - manifest `Main-Class: nz.sounie.blogmcp.app.Main`, `Implementation-Version` and `Enable-Native-Access: ALL-UNNAMED`
     (JEP 472; covers JNA (DJL) and ONNX Runtime, and avoids native-access warnings).
-- It contains the ONNX model, the tokenizer JSON, and the natives for `osx-aarch64` and `linux-x64`. Its size is about 130 MB, mostly ONNX Runtime.
+- Sizes as built: `blog-mcp-onnx.jar` about 154 MB (BGE model, tokenizer, ONNX Runtime natives), `blog-mcp-gemma2.jar` about
+  371 MB (the q8 model and its 32 MB tokenizer) and `blog-mcp-gemma2-server.jar` about 44 MB. The jars carry natives for Linux x64
+  and arm64, Windows x64 and macOS arm64 (AC-SRCH-52).
 
 ### 3.6 Search change: `Snippet` (3b; owner-accepted)
 
@@ -428,7 +426,7 @@ Given posts saved through `FilePostRepository` (including mixed-case tags, an em
 When a new repository instance opens the same directory,
 Then `findById`, `findByCanonicalUrl`, `findIdsBySite`, `findSiteIds` and `find(SiteId)` return equal values. `delete` removes the file, and the deletion survives a reopen.
 
-**AC-APP-25: The vector index survives a restart, bit-exactly, for each provider dimension.** (768-dimension provider extension proposed in ADR 0009)
+**AC-APP-25: The vector index survives a restart, bit-exactly, for each provider dimension.** (768-dimension extension: ADR 0009)
 Given indexed posts saved through `FileVectorIndex` for provider profiles with 384- and 768-dimensional vectors (including one post with zero chunks),
 When a new instance opens the same directory,
 Then every `IndexedPost` is equal: metadata, fingerprint, chunk texts and indexes, and every embedding float bit-for-bit. `remove` deletes the file.
@@ -485,18 +483,19 @@ And given a stored post, checkpoint or index file that cannot be read because of
 When its repository opens,
 Then that file is quarantined, or skipped with one stderr line if it cannot even be renamed, the other files load, and the repository opens normally. Catalog and search behave the same way.
 
-**AC-APP-47: Persistent indexes use stable provider/profile-keyed directories.** (proposed, ADR 0009)
-Given the data directory is `~/.local/share/blog-mcp` and the selected profile key is
-`onnx-bge-small-en-v1.5-q-v1` or `gemma2-914f7f89-v1`,
+**AC-APP-47: Persistent indexes use stable provider/profile-keyed directories.** (ADR 0009; root moved by ADR 0010 decision 8)
+Given the data directory is `~/.local/share/blog-mcp` and the profile key is
+`onnx-bge-small-en-v1.5-q-v1`, `gemma2-onnx-q8-daa72c51-v1` or `gemma2-914f7f89-v1`,
 When `FileVectorIndex` opens and writes an indexed post,
 Then its file is under `search/indexes/<indexProfileKey>/<siteId>/<FileKey(postId)>.json`.
-And the key is obtained from the one provider instance discovered on the build-selected runtime classpath, not another environment variable.
+And the key is obtained from the one provider instance discovered on the distribution's runtime classpath, not another environment variable.
 And reopening with the same key loads the existing entries from that subtree without rebuilding them
 solely because the process restarted.
 And opening a different key neither loads, deletes, quarantines nor overwrites entries in the other
 key's subtree; `BLOG_MCP_DATA` and the default data directory remain unchanged.
-And a proposed one-time adoption keeps existing legacy ONNX entries available under the ONNX key,
+And a one-time adoption keeps existing legacy ONNX entries available under the ONNX key,
 while a Gemma2 startup leaves that legacy path untouched.
+And a binary from before ADR 0009, run on the same data directory, leaves the profile subtrees untouched.
 
 ## 7. Slice split (owner decision: split)
 
@@ -583,7 +582,7 @@ Taken as recommended, for approval with the 3b checkpoint (no separate questions
 
 1. Build with `./gw shadowJar` (Java 25). It produces one jar per provider:
    `providers/onnx/build/libs/blog-mcp-onnx.jar`, `providers/gemma2/build/libs/blog-mcp-gemma2.jar`
-   (in process, about 400 MB) and `providers/gemma2-server/build/libs/blog-mcp-gemma2-server.jar`
+   (in process, about 370 MB) and `providers/gemma2-server/build/libs/blog-mcp-gemma2-server.jar`
    (needs LM Studio serving `text-embedding-embeddinggemma-2`). Pick a provider by choosing which jar
    to run. There is no runtime provider selector; each jar carries its pinned profile and assets.
 2. Configure `~/.config/blog-mcp/sites.json`:
@@ -595,14 +594,14 @@ Taken as recommended, for approval with the 3b checkpoint (no separate questions
    `syncEveryHours` is optional (default 24, minimum 1).
 3. Register it with Claude Code:
    ```
-   claude mcp add --env BLOG_MCP_CONFIG=/path/sites.json --transport stdio blog-mcp -- /path/blog-mcp
+   claude mcp add --env BLOG_MCP_CONFIG=/path/sites.json --transport stdio blog-mcp -- \
+     java -jar /path/blog-mcp-<provider>.jar
    ```
    The server name must not come directly after `--env`, so keep another option such as `--transport stdio` between them. Add
    `--env BLOG_MCP_DATA=/path/data` to move the data directory. Both variables are optional; without them the defaults are
    `~/.config/blog-mcp/sites.json` and `~/.local/share/blog-mcp`.
-   The example launcher represents the generated classpath/launcher for the provider selected at
-   build time. Switching providers requires rebuilding the distribution, not setting a runtime
-   variable. Neither provider JAR belongs under the data directory.
+   Switching providers means pointing the client at another jar, not setting a runtime variable;
+   each provider keeps its own index in the data directory.
 4. **First start:** the server answers at once, but search results stay incomplete until the first sync and index build finish
    (tens of seconds to a few minutes). Later starts serve the persisted index immediately.
 5. **Logs** go to stderr, which Claude Code shows in its MCP logs. Stdout is protocol only.

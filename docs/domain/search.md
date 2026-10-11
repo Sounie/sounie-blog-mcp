@@ -1,9 +1,10 @@
 # Search bounded context
 
-Status: Existing model decisions approved by the owner on 2026-10-02. Build-time provider-artifact
-selection and the EmbeddingGemma 2 profile reflect owner decisions from 2026-10-08; SPI placement,
-build/classpath assembly, token-budget values and profile-keyed index paths are proposed in ADR 0009
-and await owner approval.
+Status: Existing model decisions approved by the owner on 2026-10-02. Embedding providers (ADR 0009,
+accepted 2026-10-09, and ADR 0010, accepted 2026-10-11) are implemented on
+`feature/provider-distribution`: one Gradle module and jar per provider, SPI discovery,
+provider-specific profiles and budgets, and profile-keyed index paths under `search/indexes/`. The
+branch is under review; the open items are listed in ADR 0010's implementation status.
 Package: `nz.sounie.blogmcp.search`
 Feature tag for acceptance criteria: `SRCH`
 
@@ -17,8 +18,9 @@ Search is responsible for:
 - indexing only posts whose body is the **full** text. Posts the catalog holds only as a `SUMMARY`
   are excluded (owner decision, Q7);
 - splitting each post into overlapping **chunks** that stay safely under the embedding model's input limit;
-- turning each chunk, together with the post title, into an **embedding** with the provider artifact
-  selected at build time: ONNX BGE or the owner-confirmed local Google EmbeddingGemma 2 provider;
+- turning each chunk, together with the post title, into an **embedding** with the provider in the
+  distribution being run: ONNX BGE, Google EmbeddingGemma 2 in process, or EmbeddingGemma 2 served by
+  LM Studio;
 - keeping the index in step with the catalog: reacting to the catalog's integration events, and
   **reconciling** against the catalog's current posts to repair missed events or a changed recipe;
 - answering a **search query** with optional site and published-date filters and a clamped limit.
@@ -38,7 +40,7 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 
 | Term | Meaning | Code name |
 |---|---|---|
-| Invalid provider build selection | A missing, blank or unsupported required build property naming the embedding provider artifact. It fails build configuration instead of selecting a model implicitly. | Gradle configuration failure (proposed) |
+| Invalid provider build selection | Retired by ADR 0010: the build no longer takes a provider property. | (none) |
 | Post ID | Search's own copy of the catalog's post identity, in the external form `<siteId>:<sourcePostId>`. Parsed from the published language, and never shared as a catalog type. | `PostId` (search.domain) |
 | Site ID | The site part of a post ID (`[a-z0-9-]{1,40}`). It is used for the site filter. | `SiteId` (search.domain) |
 | Completeness | Whether the catalog has the `FULL` post text or only a `SUMMARY`. It is also the **indexability rule**: `FULL` posts go through the normal index decision, and `SUMMARY` posts are always excluded (owner decision, Q7). It is not stored in the index and not shown in results, because everything indexed is `FULL`. | `Completeness` (enum with behaviour `decide(...)`) |
@@ -48,22 +50,22 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Word sequence | The post body after **text normalisation**, as an ordered list of words. Any run of Unicode whitespace (spaces, tabs, newlines, no-break space U+00A0) separates words. Any **overlong word** is split into pieces. | `WordSequence` |
 | Overlong word | A whitespace-free run longer than 64 characters, such as a URL, base64 data or minified code. It is split into consecutive pieces of at most 64 characters, which then count as separate words. | `WordSequence` (rule `MAX_WORD_CHARS = 64`) |
 | Token | One unit counted by the selected provider's configured tokenizer. Tokenization and context limits are provider-specific; a provider-neutral budget must be selected with the provider. | `TokenCounter` (domain port) |
-| Passage token budget | Provider-selected, provider-neutral limits for chunk body tokens, overlap tokens, title tokens and fully prepared passage tokens. It is applied with the selected provider's tokenizer; vendor/model details stay outside the domain. The Gemma2 limits are built into its pinned provider-artifact profile, not runtime environment settings. | `PassageTokenBudget` (domain policy/configuration, proposed) |
+| Passage token budget | Provider-selected, provider-neutral limits for chunk body tokens, overlap tokens, title tokens and fully prepared passage tokens. It is applied with the selected provider's tokenizer; vendor/model details stay outside the domain. The Gemma2 limits are built into its pinned provider profile, not runtime environment settings. | `PassageTokenBudget` (domain policy/configuration) |
 | Token counter | Port that counts the selected provider's actual tokens. Provider tokenizer assets are pinned with the provider profile; an OpenAI-compatible endpoint cannot prove which model revision it loaded. | `TokenCounter` (domain port), provider adapter (`search.adapter.out`) |
-| Embedding provider | One selected provider artifact supplies a single provider instance, tokenizer and budget. ONNX BGE and Gemma2 are separate JAR artifacts; Gemma2 corresponds to the owner-confirmed `text-embedding-embeddinggemma-2` alias. | Provider JAR, discovered from classpath |
+| Embedding provider | The one provider in a distribution supplies a single provider instance, tokenizer and budget. There are three, each its own module: ONNX BGE, EmbeddingGemma 2 in process (q8 ONNX), and EmbeddingGemma 2 served by LM Studio under the owner-confirmed `text-embedding-embeddinggemma-2` alias. | `EmbeddingProvider` implementations, discovered from the classpath (`OnnxEmbedder`, `Gemma2OnnxEmbedder`, `Gemma2Embedder`) |
 | Embedding provider selection | Choosing which provider distribution to run. Each provider module builds its own jar containing exactly one provider. There is no build property, runtime selector or implicit default. | One Gradle module and jar per provider (ADR 0010) |
-| Provider model identity | The model and pinned revision identity exposed through the passage-embedding port and recorded in the index recipe/profile key. Gemma2 uses revision `914f7f89142e33e77833254d9c9b90c3cef7303b`. | `PassageEmbedder.modelId()` |
-| Gemma2 profile | Built-in profile in its separate provider artifact: pinned revision, matching tokenizer, dimension 768, context 8,192, provider-specific preparation and conservative token limits. It is selected at build time; no Gemma2-specific runtime variables are required. | Gemma2 provider JAR |
-| Shared provider instance | Exactly one instance from the selected provider artifact implements both separate consumer-owned embedding ports, ensuring passage and query vectors inhabit the same model space. | Provider discovery/composition (`app`, proposed) |
-| Query preparation | Provider-selected transformation of the raw `QueryText` into the exact query input the model expects. It is separate from query validation and from passage preparation; the selected adapter applies it, so query text in the domain carries no provider-specific prefix. | Query-preparation strategy at the selected adapter boundary (proposed) |
-| Passage preparation | Provider-selected transformation of canonical passage content into the exact model input, including any required instruction/template. Its version and budget affect the index recipe; its implementation remains in the adapter. | Passage-preparation strategy at the selected adapter boundary (proposed) |
+| Provider model identity | The model and pinned revision identity exposed through the passage-embedding port and recorded in the index recipe/profile key. The LM Studio provider records Google's revision `914f7f89142e33e77833254d9c9b90c3cef7303b`; the in-process provider records the ONNX conversion `onnx-community/embeddinggemma-2-ONNX@daa72c51` and its q8 quantisation. | `PassageEmbedder.modelId()` |
+| Gemma2 profile | The profile both Gemma2 providers share: pinned tokenizer revision, dimension 768, context 8,192, the Gemma2 prompts and conservative token limits. Each provider adds its own model revision and index profile key. No Gemma2-specific runtime variables are required. | `Gemma2Profile` (`providers/gemma2-common`) |
+| Shared provider instance | Exactly one instance from the distribution's provider implements both separate consumer-owned embedding ports, ensuring passage and query vectors inhabit the same model space. | `EmbeddingProviderDiscovery` and `Adapters` (`app`) |
+| Query preparation | Provider-selected transformation of the raw `QueryText` into the exact query input the model expects. It is separate from query validation and from passage preparation; the selected adapter applies it, so query text in the domain carries no provider-specific prefix. | `EmbeddingProvider.prepareQuery` |
+| Passage preparation | Provider-selected transformation of canonical passage content into the exact model input, including any required instruction/template. Its version and budget affect the index recipe; its implementation remains in the adapter, which also declares its version. | `EmbeddingProvider.preparePassage`, `passagePreparationVersion()` |
 | Chunk | A contiguous window of the word sequence that is embedded as one unit. A chunk has a zero-based **chunk index** in body order, and its text is its words joined by single spaces. | `Chunk` |
 | Chunking policy | The provider-neutral rule that decides chunk boundaries and overlap. Its token limits come from the selected `PassageTokenBudget`; they are not assumed to be shared by different providers. | `ChunkingPolicy` |
 | Overlap | The trailing words of one chunk that are repeated at the start of the next, so that a sentence crossing a boundary appears whole in at least one chunk. | `ChunkingPolicy` |
 | Passage | Canonical content for one chunk: title and chunk text. The selected provider's passage-preparation strategy converts it to exact model input. | `Passage` |
 | Title line | The canonical title content, limited according to the selected `PassageTokenBudget`; the adapter may apply its provider's passage template afterward. | `PassageComposition` |
 | Passage composition | The rule that builds passages from a title and chunks. | `PassageComposition` |
-| Embed | Turn canonical passage content or raw query text into an embedding through the selected provider and its input-preparation strategies. | `PassageEmbedder.embedPassages(...)`, `QueryEmbedder.embedQuery(QueryText)` (proposed signature) |
+| Embed | Turn canonical passage content or raw query text into an embedding through the selected provider and its input-preparation strategies. | `PassageEmbedder.embedPassages(...)`, `QueryEmbedder.embedQuery(QueryPassage)` |
 | Embedder | The selected provider instance is seen through two ports split by consumer (ADR 0006): the **passage embedder** (`modelId()` and `embedPassages(List<Passage>)`, used by indexing) and the **query embedder** (used by search). The same instance implements both ports and applies the provider's independent query and passage preparation. | `PassageEmbedder` (`search.domain.embedding`), `QueryEmbedder` (`search.application`) |
 | Embedding | A vector whose dimension matches the explicitly configured model, with finite values and unit length. | `Embedding` |
 | Similarity | The cosine similarity of two embeddings. Because embeddings are unit length, this is their dot product. Its range is [-1, 1], and higher means more related. | `Similarity` |
@@ -169,7 +171,7 @@ approximate-nearest-neighbour structure is needed (ADR 0005).
 | Splitting overlong words into pieces of at most 64 characters | `WordSequence` | Joining the pieces with no separator gives back the original word. In a snippet the pieces appear separated by spaces. |
 | Chunk boundaries and overlap | `ChunkingPolicy` | See 3.4. |
 | Token cost of a word | `TokenCounter` port supplied by the selected provider profile; tests: deterministic fake | It must count with the tokenizer matching the loaded model revision. The domain does not select a tokenizer. |
-| Provider-specific body/title/total token limits | `PassageTokenBudget` (provider-neutral domain policy/configuration, proposed) | Selected at composition with the provider. Concrete tokenizer and context-limit configuration stay outside the domain. |
+| Provider-specific body/title/total token limits | `PassageTokenBudget` (provider-neutral domain policy/configuration) | Selected at composition with the provider. Concrete tokenizer and context-limit configuration stay outside the domain. |
 | Canonical passage content from title and chunk | `PassageComposition` | Provider-specific passage preparation is applied by the selected adapter, not by the domain. |
 | Whether a post may be indexed at all | `Completeness.decide(...)` (`FULL` delegates to the normal decision; `SUMMARY` always gives `Exclude`) | Owner decision, Q7. It is reached only through `IndexDecision.forPost`, so events and reconciles share it. |
 | What changes re-embedding | `ContentFingerprint.of(IndexRecipe, title, WordSequence)` | Tags, URL and dates are excluded. Completeness is decided before the fingerprint matters. |
@@ -343,9 +345,9 @@ event. No other context needs to know about indexing. Outcomes are returned as r
   and `SharedCatalogPosts`) into `PostToIndex`. The pull side wraps each post in a `CatalogEntry`, so
   malformed states stay visible. Neither `search.domain` nor `search.application` sees
   `shared` types.
-- **search to embedding providers (conformist, wrapped)**: ONNX BGE and Gemma2 are separate provider
-  JAR artifacts. A required build property includes exactly one in the runtime classpath, and `app`
-  discovers its provider through the proposed SPI at the `search.application` boundary. The same
+- **search to embedding providers (conformist, wrapped)**: each provider is a separate module whose
+  distribution jar contains exactly that provider (ADR 0010), and `app` discovers it through the SPI
+  at the `search.application` boundary. The same
   discovered provider instance implements the separate consumer-owned embedding ports. Neither SPI
   nor provider depends on `app`. Provider tokenizers and model-specific preparation remain outside
   the domain; the selected tokenizer implements the separate `TokenCounter` port. Missing or
@@ -483,8 +485,8 @@ And no provider-selection runtime environment variable is read.
 
 **AC-SRCH-41: Retired (ADR 0010).** The build no longer takes a provider property, so there is nothing to reject.
 
-**AC-SRCH-42: The selected provider artifact is discovered exactly once.**
-Given a valid distribution whose runtime classpath contains exactly the provider artifact selected at build time,
+**AC-SRCH-42: The distribution's provider is discovered exactly once.**
+Given a valid distribution whose runtime classpath contains exactly one provider module,
 When the app assembles search,
 Then classpath discovery finds exactly one provider and uses its built-in profile, tokenizer, model identity and budget.
 And zero or multiple discovered providers, or unusable pinned assets, fail startup rather than falling back.
@@ -514,24 +516,25 @@ Then the selected provider applies its configured query-preparation strategy onl
 And tests for each configured provider verify the exact prepared inputs; no provider-specific prefix or template is asserted as shared domain behavior.
 And for the owner-confirmed local Google EmbeddingGemma 2 provider, its query input uses `task: search result | query: ` and its document input uses `title: {title} | text: {content}` (with `title: none` for an absent title), as documented by that model card.
 
-**AC-SRCH-47: The Gemma2 provider artifact uses its pinned tokenizer and conservative, provider-specific budget.**
-Given the build selects the Gemma2 provider artifact with pinned revision `914f7f89142e33e77833254d9c9b90c3cef7303b`,
-When the runtime classpath provider loads its tokenizer and validates its built-in profile,
-Then the tokenizer assets come from that same revision, the native dimension is 768, and the documented context is 8,192 tokens.
-And the proposed body, overlap, title and fully prepared passage budgets are 3,000, 256, 128 and 4,096 respectively, and tests using the pinned tokenizer assert `0 <= overlap < body`, `body <= fullyPrepared`, `title <= fullyPrepared`, and `fullyPrepared <= 8,192`.
+**AC-SRCH-47: Both Gemma2 providers use the pinned tokenizer and conservative, provider-specific budget.**
+Given either Gemma2 distribution, with the tokenizer pinned to revision `914f7f89142e33e77833254d9c9b90c3cef7303b`,
+When the provider loads its tokenizer and validates its built-in profile,
+Then the tokenizer assets come from that revision, the native dimension is 768, and the documented context is 8,192 tokens.
+And the body, overlap, title and fully prepared passage budgets are 3,000, 256, 128 and 4,096 respectively, and tests using the pinned tokenizer assert `0 <= overlap < body`, `body <= fullyPrepared`, `title <= fullyPrepared`, and `fullyPrepared <= 8,192`.
 And tests assert this is the Gemma2 profile and does not inherit ONNX BGE's values.
 
 **AC-SRCH-48: Missing or unusable pinned tokenizer assets fail Gemma2 startup.**
-Given the build selected Gemma2 and its provider artifact or pinned tokenizer assets cannot be loaded,
+Given a Gemma2 distribution whose pinned tokenizer assets cannot be loaded,
 When the application resolves the provider profile,
 Then startup fails with a provider configuration error and does not start with a partial profile or substitute another provider.
-And the tokenizer asset's Apache 2.0 license and notices are preserved in the Gemma2 provider artifact.
+And the tokenizer asset's Apache 2.0 license and notices are preserved in each Gemma2 distribution.
 
-**AC-SRCH-49: The profile records its pinned model identity without claiming endpoint attestation.**
-Given the Gemma2 provider artifact is selected at build time and its local endpoint does not report a verifiable loaded revision,
+**AC-SRCH-49: The LM Studio provider records its pinned model identity without claiming endpoint attestation.**
+Given the LM Studio distribution (`blog-mcp-gemma2-server.jar`), whose local endpoint does not report a verifiable loaded revision,
 When the application records provider identity and embeds passages or queries,
-Then the profile and index recipe identify Google EmbeddingGemma 2 at revision `914f7f89142e33e77833254d9c9b90c3cef7303b`, while making no claim that the endpoint independently proved it.
-And the provider artifact's tokenizer assets are pinned to that exact revision.
+Then the profile identifies Google EmbeddingGemma 2 at revision `914f7f89142e33e77833254d9c9b90c3cef7303b`, while making no claim that the endpoint independently proved it.
+And its tokenizer assets are pinned to that exact revision.
+(The in-process provider records its own ONNX revision instead; see AC-SRCH-51.)
 
 **AC-SRCH-50: Provider-keyed indexes are distinct, stable across restarts and isolated when switching profiles.**
 Given ONNX BGE and Gemma2 have each written entries under their stable provider/profile key,
@@ -752,31 +755,31 @@ Model decisions (approved with the model by the owner on 2026-10-02):
   context-derived budget (AC-SRCH-47).
 - `OnnxEmbedder` serialises model access with one lock (section 4.1).
 
-Embedding-provider decisions (AC-SRCH-40–50; build-time selection and model identity confirmed by
-the owner on 2026-10-08; implementation structure and index layout proposed in ADR 0009):
+Embedding-provider decisions (AC-SRCH-40–52; model identity confirmed by the owner on 2026-10-08;
+ADR 0009 accepted 2026-10-09, ADR 0010 accepted 2026-10-11; implemented):
 - Each provider is its own Gradle module with its own jar (ADR 0010, which replaces ADR 0009's build
   property). The former runtime `BLOG_MCP_EMBEDDING_PROVIDER` selector is gone; none is read at runtime.
-- ONNX BGE and Gemma2 are separate provider artifacts. The selected provider is auto-discovered from
-  the app/runtime classpath. `app` owns discovery and composition, not a new domain aggregate or
-  merged embedding port. `PassageEmbedder` and `QueryEmbedder` remain separate consumer-owned ports,
-  implemented by the same selected provider instance.
-- Each artifact owns its pinned profile, query/passage strategies, tokenizer and budget. Gemma2's
-  provider artifact pins model and tokenizer revision
-  `914f7f89142e33e77833254d9c9b90c3cef7303b`, dimension 768 and context 8,192.
+- The distribution's provider is auto-discovered from the runtime classpath. `app` owns discovery and
+  composition, not a new domain aggregate or merged embedding port. `PassageEmbedder` and
+  `QueryEmbedder` remain separate consumer-owned ports, implemented by the same provider instance.
+- Each provider owns its pinned profile, query/passage strategies, tokenizer and budget. Both Gemma2
+  providers pin tokenizer revision `914f7f89142e33e77833254d9c9b90c3cef7303b`, dimension 768 and
+  context 8,192 (`Gemma2Profile`). The LM Studio provider records that revision as its model; the
+  in-process provider records `onnx-community/embeddinggemma-2-ONNX@daa72c51` (q8).
 - Gemma2 uses query prefix `task: search result | query: ` and document format
-  `title: {title} | text: {content}` (`title: none` when absent). Proposed body/overlap/title/fully
+  `title: {title} | text: {content}` (`title: none` when absent). Its body/overlap/title/fully
   prepared limits are 3,000/256/128/4,096 tokens, validated with the pinned tokenizer. They are
   provider-specific and do not inherit ONNX BGE limits (400/100/64/465). The tokenizer is
   approximately 32.2 MB, usable with existing DJL 0.36.0 HuggingFace tokenizers, Apache 2.0; package
   with required notices preserved.
-- The provider SPI is proposed in `search.application` (for example
-  `nz.sounie.blogmcp.search.application.embedding.spi`), consumed by `app` and implemented by each
-  provider artifact. Neither SPI nor provider depends on `app`; domain and search application depend
+- The provider SPI is `nz.sounie.blogmcp.search.application.embedding.spi`, consumed by `app` and
+  implemented by each provider module. Neither SPI nor provider depends on `app`; domain and search application depend
   on no provider implementation.
 - Query preparation is excluded from `IndexRecipe`; passage preparation and other indexing-affecting
   profile identity remain included. A stable profile key selects a distinct persistent index subtree;
   the same profile reuses it after restart, while switching profiles cannot load, delete or overwrite
-  another profile's entries. The proposed keys and paths are in ADR 0009 and `docs/domain/app.md`.
+  another profile's entries. The keys and paths (`search/indexes/<profileKey>/…`) are in
+  `docs/domain/app.md` and ADR 0010 decision 8.
 - No domain event is emitted for a startup composition choice, and no aggregate changes.
 
 Owner decisions (all resolved 2026-10-02, owner):
