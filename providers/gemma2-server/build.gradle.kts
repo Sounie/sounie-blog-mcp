@@ -10,6 +10,8 @@ dependencies {
     implementation(libs.langchain4j.openai)
     // langchain4j-core brings Jackson 2 transitively; see providers/onnx.
     implementation(platform(libs.jackson2.bom))
+
+    testImplementation(libs.wiremock.standalone)
 }
 
 // Opt-in: the adapter against the real model served by LM Studio on localhost:1234.

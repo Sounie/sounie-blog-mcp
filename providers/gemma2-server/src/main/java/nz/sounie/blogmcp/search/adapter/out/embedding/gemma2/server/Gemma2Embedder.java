@@ -3,7 +3,7 @@ package nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.server;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
-import dev.langchain4j.model.output.Response;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
@@ -22,41 +22,53 @@ import nz.sounie.blogmcp.search.domain.text.Passage;
 import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 
 /**
- * Trying out Google DeepMind's Gemma 2 embedding model, running locally behind an OpenAI-compatible
- * API.
+ * Google EmbeddingGemma 2 served by a local OpenAI-compatible endpoint such as LM Studio (ADR 0009,
+ * ADR 0010). Serialises its public calls with one lock.
  */
 public final class Gemma2Embedder implements EmbeddingProvider {
 
   private static final String MODEL_ID = "text-embedding-embeddinggemma-2";
   private static final String PROFILE_KEY = "gemma2-914f7f89-v1";
+  private static final String DEFAULT_ENDPOINT = "http://localhost:1234/v1";
+
+  /**
+   * Review #11: long enough for a 4,096-token passage on a local model, short enough that a stalled
+   * server fails a search well within an MCP client's patience. No retries: the next search or
+   * scheduled sync tries again.
+   */
+  private static final Duration TIMEOUT = Duration.ofSeconds(30);
+
   private static final ReentrantLock MODEL_LOCK = new ReentrantLock();
 
   private static final class Tokenizer {
     static final Gemma2TokenCounter INSTANCE = new Gemma2TokenCounter();
   }
 
-  /** Loaded by the JVM on first access to {@link #INSTANCE}, so the model loads lazily. */
-  private static final class Model {
-    // This is a local server that proxies to the real Gemma 2 model, so we can run tests without an
-    // API key.
-    static final EmbeddingModel INSTANCE =
-        OpenAiEmbeddingModel.builder()
-            .baseUrl(
-                Optional.ofNullable(System.getenv("BLOG_MCP_EMBEDDING_ENDPOINT"))
-                    .filter(value -> !value.isBlank())
-                    .orElse("http://localhost:1234/v1"))
-            .modelName(MODEL_ID)
-            .build();
+  private final EmbeddingModel model;
 
-    private Model() {}
+  /** The endpoint from {@code BLOG_MCP_EMBEDDING_ENDPOINT}, or LM Studio's default. */
+  public Gemma2Embedder() {
+    this(
+        Optional.ofNullable(System.getenv("BLOG_MCP_EMBEDDING_ENDPOINT"))
+            .filter(value -> !value.isBlank())
+            .orElse(DEFAULT_ENDPOINT),
+        TIMEOUT);
+  }
+
+  Gemma2Embedder(String endpoint, Duration timeout) {
+    // A local server needs no API key.
+    this.model =
+        OpenAiEmbeddingModel.builder()
+            .baseUrl(endpoint)
+            .modelName(MODEL_ID)
+            .timeout(timeout)
+            .maxRetries(0)
+            .build();
   }
 
   @Override
   public Embedding embedQuery(QueryPassage query) {
-    Response<dev.langchain4j.data.embedding.Embedding> response =
-        Model.INSTANCE.embed(query.text());
-
-    return toEmbedding(response.content());
+    return withModel(model -> toEmbedding(model.embed(query.text()).content()));
   }
 
   @Override
@@ -104,10 +116,10 @@ public final class Gemma2Embedder implements EmbeddingProvider {
    * Runs one call on the model under the model lock. A failure to load the model ({@link
    * LinkageError}, e.g. a missing native library) or to run it becomes {@link EmbedderUnavailable}.
    */
-  private static <T> T withModel(Function<EmbeddingModel, T> call) {
+  private <T> T withModel(Function<EmbeddingModel, T> call) {
     MODEL_LOCK.lock();
     try {
-      return call.apply(Gemma2Embedder.Model.INSTANCE);
+      return call.apply(model);
     } catch (RuntimeException | LinkageError e) {
       throw new EmbedderUnavailable("The local embedding model " + MODEL_ID + " failed", e);
     } finally {
