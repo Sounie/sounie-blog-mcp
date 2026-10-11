@@ -4,8 +4,8 @@ A local, read-only [MCP](https://modelcontextprotocol.io) server that lets any M
 and read my blog posts.
 
 It syncs posts from WordPress and Blogger sites, stores them as plain text on disk, and indexes them with a
-provider-selected local embedding model. The application is built with exactly one embedding provider on the runtime classpath,
-chosen at build time; provider details stay outside the core search domain. Search runs entirely on your machine:
+local embedding model. Each embedding provider has its own runnable jar, and you choose a provider by choosing which jar
+to run; provider details stay outside the core search domain. Search runs entirely on your machine:
 no API keys, and no calls to hosted models. The only network traffic is fetching the blogs' public feeds.
 
 ## Tools

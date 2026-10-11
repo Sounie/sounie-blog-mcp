@@ -4,8 +4,9 @@ Date: 2026-10-08
 
 ## Status
 
-Accepted by the owner on 2026-10-09. Implementation and validation remain pending, including checking
-the proposed Gemma2 token budgets against its pinned tokenizer.
+Accepted by the owner on 2026-10-09 and implemented. ADR 0010 (2026-10-11) replaces decisions 1, 3, 9
+and 11 and the index paths in decision 7, and defers decision 10. The Gemma2 token budgets were checked
+against the pinned tokenizer (`Gemma2ProviderProfileAcceptanceTest`).
 
 ## Context
 
