@@ -241,10 +241,11 @@ existing index embeds many chunks; a previously built profile reuses its own per
 
 ### 3.5 Packaging (3b)
 
-- **Proposed provider build selection (ADR 0009):** the build requires `-PembeddingProvider=onnx` or
-  `-PembeddingProvider=gemma2`. Missing, blank or unsupported values fail Gradle configuration; no
-  provider is the default. Exactly the selected provider JAR is added to the distribution/runtime
-  classpath, separate from the base app JAR.
+- **Provider modules (ADR 0010):** `core` holds the app. Each provider module (`providers/onnx`,
+  `providers/gemma2`, `providers/gemma2-server`) builds its own runnable jar containing `core`, that
+  provider and its dependencies. No build property selects a provider, and none is the default.
+  The in-process Gemma2 provider extracts its bundled model to `<data>/cache/models/<profileKey>/`
+  on first use.
 - **Proposed classpath discovery/assembly:** the selected provider artifact advertises its implementation
   through the `search.application` provider SPI. The app discovers exactly one provider using
   `ServiceLoader`; missing or duplicate implementations fail startup. The distribution should retain
@@ -577,11 +578,11 @@ Taken as recommended, for approval with the 3b checkpoint (no separate questions
 
 ## 10. Usage (for the README; 3b)
 
-1. Choose exactly one provider at build time: `./gw -PembeddingProvider=onnx shadowJar` or
-   `./gw -PembeddingProvider=gemma2 shadowJar`. An omitted or invalid property fails configuration.
-   The build produces the base app artifact and a distribution/runtime classpath containing only the
-   chosen provider JAR and its required dependencies. It needs Java 25. There is no runtime provider
-   selector; provider artifacts carry their pinned profiles and matching tokenizer assets/dependencies.
+1. Build with `./gw shadowJar` (Java 25). It produces one jar per provider:
+   `providers/onnx/build/libs/blog-mcp-onnx.jar`, `providers/gemma2/build/libs/blog-mcp-gemma2.jar`
+   (in process, about 400 MB) and `providers/gemma2-server/build/libs/blog-mcp-gemma2-server.jar`
+   (needs LM Studio serving `text-embedding-embeddinggemma-2`). Pick a provider by choosing which jar
+   to run. There is no runtime provider selector; each jar carries its pinned profile and assets.
 2. Configure `~/.config/blog-mcp/sites.json`:
    ```json
    {"syncEveryHours": 24,
