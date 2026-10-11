@@ -36,8 +36,9 @@ final class IndexFileLoader {
         List.of(
             IndexFileLoader::knownFormat,
             IndexFileLoader::namedModel,
-            dimensionMatches(currentModelId, indexProfileKey),
-            builtWith(currentModelId));
+            // Another model's file is deleted as incompatible, whatever its vectors' length.
+            builtWith(currentModelId),
+            dimensionMatches(currentModelId, indexProfileKey));
   }
 
   /** Never throws: anything wrong with the content is {@link IndexFileLoad.Unreadable}. */

@@ -78,6 +78,18 @@ class IndexFileLoaderTest {
 
   @Test
   @DisplayName(
+      "Review #9: another model's file is incompatible even when its vectors differ in length")
+  void file_from_another_model_with_other_dimension_is_incompatible_not_unreadable() {
+    ObjectNode file = IndexFileJson.of(POST, "another-model", "another/r");
+    IndexFileJson.chunk(file, 0).put("vector", IndexFileJson.vector(ones(768)));
+
+    IndexFileLoad load = loader.read(IndexFileJson.bytes(file));
+
+    assertThat(load).isEqualTo(new IndexFileLoad.IncompatibleModel("another-model"));
+  }
+
+  @Test
+  @DisplayName(
       "AC-APP-29: a different recipe with the same model still loads (the fingerprint decides)")
   void file_with_another_recipe_of_the_same_model_loads() {
     IndexFileLoad load =
