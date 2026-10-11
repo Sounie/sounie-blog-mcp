@@ -51,7 +51,7 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Passage token budget | Provider-selected, provider-neutral limits for chunk body tokens, overlap tokens, title tokens and fully prepared passage tokens. It is applied with the selected provider's tokenizer; vendor/model details stay outside the domain. The Gemma2 limits are built into its pinned provider-artifact profile, not runtime environment settings. | `PassageTokenBudget` (domain policy/configuration, proposed) |
 | Token counter | Port that counts the selected provider's actual tokens. Provider tokenizer assets are pinned with the provider profile; an OpenAI-compatible endpoint cannot prove which model revision it loaded. | `TokenCounter` (domain port), provider adapter (`search.adapter.out`) |
 | Embedding provider | One selected provider artifact supplies a single provider instance, tokenizer and budget. ONNX BGE and Gemma2 are separate JAR artifacts; Gemma2 corresponds to the owner-confirmed `text-embedding-embeddinggemma-2` alias. | Provider JAR, discovered from classpath |
-| Embedding provider selection | A required build-time choice includes exactly one provider JAR on the app/runtime classpath. There is no runtime selector or implicit default. | Gradle property (proposed: `embeddingProvider`) |
+| Embedding provider selection | Choosing which provider distribution to run. Each provider module builds its own jar containing exactly one provider. There is no build property, runtime selector or implicit default. | One Gradle module and jar per provider (ADR 0010) |
 | Provider model identity | The model and pinned revision identity exposed through the passage-embedding port and recorded in the index recipe/profile key. Gemma2 uses revision `914f7f89142e33e77833254d9c9b90c3cef7303b`. | `PassageEmbedder.modelId()` |
 | Gemma2 profile | Built-in profile in its separate provider artifact: pinned revision, matching tokenizer, dimension 768, context 8,192, provider-specific preparation and conservative token limits. It is selected at build time; no Gemma2-specific runtime variables are required. | Gemma2 provider JAR |
 | Shared provider instance | Exactly one instance from the selected provider artifact implements both separate consumer-owned embedding ports, ensuring passage and query vectors inhabit the same model space. | Provider discovery/composition (`app`, proposed) |
@@ -174,7 +174,7 @@ approximate-nearest-neighbour structure is needed (ADR 0005).
 | Whether a post may be indexed at all | `Completeness.decide(...)` (`FULL` delegates to the normal decision; `SUMMARY` always gives `Exclude`) | Owner decision, Q7. It is reached only through `IndexDecision.forPost`, so events and reconciles share it. |
 | What changes re-embedding | `ContentFingerprint.of(IndexRecipe, title, WordSequence)` | Tags, URL and dates are excluded. Completeness is decided before the fingerprint matters. |
 | Recipe identity | `IndexRecipe` | Derived from selected model/revision identity, `ChunkingPolicy` and passage-budget parameters, and passage-preparation version. Query preparation is excluded. |
-| Provider-artifact selection and composition | Required Gradle property (proposed: `embeddingProvider`) and classpath discovery in `app` | Build configuration rejects missing, blank or unsupported values and includes exactly one provider artifact. At runtime `ServiceLoader` discovers exactly one provider from the classpath. No runtime provider selector or default exists; this is not a search-domain aggregate or shared port. |
+| Provider-artifact selection and composition | Provider modules (ADR 0010) and classpath discovery in `app` | Each provider module's jar includes exactly one provider artifact. At runtime `ServiceLoader` discovers exactly one provider from the classpath. No runtime provider selector or default exists; this is not a search-domain aggregate or shared port. |
 | Dimension check, finiteness, non-zero norm, normalisation, cosine | `Embedding` | It throws `InvalidEmbedding`. |
 | Query validation | `QueryText` | It stores trimmed, validated raw text. Provider-specific query preparation is not a domain rule; the selected adapter applies its configured strategy. |
 | Query versus passage preparation | Separate `QueryEmbedder` and `PassageEmbedder` consumer-owned ports; selected adapter's preparation strategies | No boolean flag or provider-specific prefix in the domain. Query preparation is not part of `IndexRecipe`; passage preparation is. |
@@ -273,9 +273,9 @@ Index mutations (`IndexPost` and `ReconcileIndex`) are serialised by a single lo
 application layer, so that a decision and its save cannot interleave with another mutation of the same post.
 Searches do not take that lock.
 
-**Embedding providers and model access.** ONNX BGE and Gemma2 are separate provider JAR artifacts;
-each provides one instance implementing both consumer-owned ports. A required build property selects
-exactly one artifact for the app/runtime classpath. The app discovers that provider from the runtime
+**Embedding providers and model access.** ONNX BGE, in-process Gemma2 and LM Studio Gemma2 are
+separate provider modules (ADR 0010); each provides one instance implementing both consumer-owned
+ports. Each module builds its own distribution jar containing exactly that provider. The app discovers that provider from the runtime
 classpath; it reads no provider-selection environment variable. The provider supplies its own
 query/passage strategies, matching tokenizer and explicit passage-token budget. Model-specific
 instructions, tokenizers and context facts remain in adapters/configuration, not the domain. Passage
@@ -468,23 +468,20 @@ And changing query preparation does not change any `IndexRecipe` or `ContentFing
 
 ### Embedding provider artifact selection
 
-The build requires a provider choice and includes exactly one provider JAR on the application runtime
-classpath. Proposed Gradle invocation: `./gw -PembeddingProvider=onnx shadowJar` or
-`./gw -PembeddingProvider=gemma2 shadowJar`. This build property replaces the former
-`BLOG_MCP_EMBEDDING_PROVIDER` runtime selector; there is no runtime provider choice or implicit
-default. Each separate provider artifact owns its pinned profile and matching dependencies/assets.
-Runtime discovery is from the selected artifact on the classpath, not from the data directory.
+Each provider is its own Gradle module (ADR 0010): `providers/onnx`, `providers/gemma2` (in process)
+and `providers/gemma2-server` (LM Studio). One build produces one distribution per provider:
+`blog-mcp-onnx.jar`, `blog-mcp-gemma2.jar` and `blog-mcp-gemma2-server.jar`. The provider is chosen
+by picking the jar to run. There is no build property, no runtime provider selector and no implicit
+default. Each provider module owns its pinned profile and matching dependencies/assets. Runtime
+discovery is from the provider on the jar's classpath, not from the data directory.
 
-**AC-SRCH-40: Build selection is mandatory and chooses one provider artifact.**
-Given the build is invoked with `-PembeddingProvider=onnx` or `-PembeddingProvider=gemma2`,
-When Gradle configures and assembles the application distribution,
-Then exactly the matching provider artifact and its required dependencies/assets are included on the runtime classpath.
+**AC-SRCH-40: Each distribution contains exactly one provider.**
+Given the build runs without any provider property,
+When Gradle assembles the distributions,
+Then each provider module produces its own runnable jar, containing `core`, that provider, its services entry and its required dependencies/assets, and no other provider's classes, services entry or model library.
 And no provider-selection runtime environment variable is read.
 
-**AC-SRCH-41: Missing or invalid build selection fails configuration.**
-Given the `embeddingProvider` property is absent, blank or names anything other than `onnx` or `gemma2`,
-When Gradle configures the application,
-Then configuration fails with a clear error before producing a runnable distribution, with no implicit ONNX default.
+**AC-SRCH-41: Retired (ADR 0010).** The build no longer takes a provider property, so there is nothing to reject.
 
 **AC-SRCH-42: The selected provider artifact is discovered exactly once.**
 Given a valid distribution whose runtime classpath contains exactly the provider artifact selected at build time,
@@ -493,11 +490,11 @@ Then classpath discovery finds exactly one provider and uses its built-in profil
 And zero or multiple discovered providers, or unusable pinned assets, fail startup rather than falling back.
 And Gemma2 requires no Gemma2-specific runtime environment variables or config-file values.
 
-**AC-SRCH-43: ONNX and Gemma2 are separate provider artifacts.**
-Given either provider is selected at build time,
-When the application distribution is assembled,
-Then its provider implementation is in a separate JAR from the base app and only the selected provider JAR is on that distribution's runtime classpath.
-And the ONNX provider artifact is required explicitly; it is not silently bundled as a default in the base app.
+**AC-SRCH-43: Providers are separate modules, and core depends on no model library.**
+Given the `core` module and the provider modules,
+When they compile,
+Then `core` compiles without any embedding-model library on its classpath, and each provider module compiles against `core` and its own model library only.
+And no provider module depends on `nz.sounie.blogmcp.app`.
 
 **AC-SRCH-44: One selected provider instance serves both consumer-owned ports.**
 Given exactly one provider is discovered,
@@ -542,6 +539,19 @@ When an application restarts with the same profile, switches to the other profil
 Then the same profile reuses its persisted entries from its own index subtree.
 And switching profiles neither loads, deletes, quarantines nor overwrites entries under the other profile's subtree.
 And concurrent runs using different profile keys write only within their respective subtrees.
+
+**AC-SRCH-51: The in-process Gemma2 provider runs without a network or a separate service.**
+Given `blog-mcp-gemma2.jar`, with no network access and no model server running,
+When the app starts, indexes posts and answers a `search_posts` query,
+Then it embeds with the bundled q8 ONNX model from `onnx-community/embeddinggemma-2-ONNX` at revision `daa72c51243991dfcaf9f9137d2c573d8f7790c0`, returning 768-value normalised vectors from the `sentence_embedding` output.
+And the model files are extracted once to `<data>/cache/models/gemma2-onnx-q8-daa72c51-v1/`, checked against their pinned SHA-256 and reused on later starts. A file that fails the check is extracted again.
+And its index lives under the `gemma2-onnx-q8-daa72c51-v1` subtree, separate from the LM Studio provider's `gemma2-914f7f89-v1`.
+And it uses the same query and passage templates, tokenizer and budget as the LM Studio provider (AC-SRCH-46, AC-SRCH-47).
+
+**AC-SRCH-52: The distributions run on Linux, Windows and macOS.**
+Given CI runners on Linux x64, Windows x64 and macOS arm64,
+When `check` and `jarTest` run for every provider module,
+Then they pass on each platform. Linux arm64 is supported through the bundled natives but not tested in CI.
 
 ### Index maintenance
 
@@ -743,9 +753,8 @@ Model decisions (approved with the model by the owner on 2026-10-02):
 
 Embedding-provider decisions (AC-SRCH-40–50; build-time selection and model identity confirmed by
 the owner on 2026-10-08; implementation structure and index layout proposed in ADR 0009):
-- A required build property selects exactly one provider JAR. The proposed property is
-  `-PembeddingProvider=onnx|gemma2`; missing/blank/unsupported values fail Gradle configuration.
-  This replaces the former runtime `BLOG_MCP_EMBEDDING_PROVIDER` selector; none is read at runtime.
+- Each provider is its own Gradle module with its own jar (ADR 0010, which replaces ADR 0009's build
+  property). The former runtime `BLOG_MCP_EMBEDDING_PROVIDER` selector is gone; none is read at runtime.
 - ONNX BGE and Gemma2 are separate provider artifacts. The selected provider is auto-discovered from
   the app/runtime classpath. `app` owns discovery and composition, not a new domain aggregate or
   merged embedding port. `PassageEmbedder` and `QueryEmbedder` remain separate consumer-owned ports,
