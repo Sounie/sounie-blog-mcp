@@ -5,9 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
+import nz.sounie.blogmcp.search.domain.image.PostImage;
 import nz.sounie.blogmcp.search.domain.index.PostToIndex;
 import nz.sounie.blogmcp.search.domain.post.PostId;
 import nz.sounie.blogmcp.search.domain.reconcile.CatalogEntry;
+import nz.sounie.blogmcp.shared.query.CatalogPostImage;
 import nz.sounie.blogmcp.shared.query.CatalogPostState;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,8 +50,62 @@ class SharedCatalogPostsTest {
         s.body(),
         s.completeness(),
         s.tags(),
+        s.images().stream()
+            .map(image -> PostImage.of(image.url(), image.altText(), image.caption()))
+            .toList(),
         s.publishedAt(),
         s.updatedAt());
+  }
+
+  private static CatalogPostState withImages(CatalogPostImage... images) {
+    return new CatalogPostState(
+        "sounie-wp:8",
+        "sounie-wp",
+        "https://blog2.sounie.nz/8/",
+        "Eight",
+        "Body",
+        "FULL",
+        Set.of(),
+        List.of(images),
+        AT,
+        AT);
+  }
+
+  @Test
+  @DisplayName("AC-SRCH-66: a state's images reach the post to index, in order")
+  void maps_the_images() {
+    CatalogPostState state =
+        withImages(
+            new CatalogPostImage("https://i0.wp.com/a.jpg", "Swan", ""),
+            new CatalogPostImage("https://blog2.sounie.nz/b.png", "", "Grapes"));
+
+    var entries = new SharedCatalogPosts(new FakeCatalogPosts(state)).currentPosts();
+
+    assertThat(entries)
+        .singleElement()
+        .isInstanceOfSatisfying(
+            CatalogEntry.Readable.class,
+            entry ->
+                assertThat(entry.post().images())
+                    .containsExactly(
+                        PostImage.of("https://i0.wp.com/a.jpg", "Swan", ""),
+                        PostImage.of("https://blog2.sounie.nz/b.png", "", "Grapes")));
+  }
+
+  @Test
+  @DisplayName("AC-SRCH-66: a non-https image URL or a null image field makes the state Unreadable")
+  void malformed_image_is_unreadable() {
+    CatalogPostState httpImage = withImages(new CatalogPostImage("http://x.example/a.jpg", "", ""));
+    CatalogPostState nullAlt =
+        withImages(new CatalogPostImage("https://x.example/a.jpg", null, ""));
+
+    for (CatalogPostState state : List.of(httpImage, nullAlt)) {
+      assertThat(new SharedCatalogPosts(new FakeCatalogPosts(state)).currentPosts())
+          .singleElement()
+          .isInstanceOfSatisfying(
+              CatalogEntry.Unreadable.class,
+              entry -> assertThat(entry.id()).isEqualTo(PostId.parse("sounie-wp:8")));
+    }
   }
 
   @Test

@@ -6,10 +6,14 @@ import static nz.sounie.blogmcp.search.domain.index.IndexedPosts.indexed;
 import static nz.sounie.blogmcp.search.domain.index.PostToIndexBuilder.aPost;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.net.URI;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
+import nz.sounie.blogmcp.search.domain.embedding.Embedding;
+import nz.sounie.blogmcp.search.domain.index.IndexedImage;
 import nz.sounie.blogmcp.search.domain.index.IndexedPost;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,8 +42,81 @@ class IndexFileLoaderTest {
           TestEmbeddings.irregular(1),
           TestEmbeddings.irregular(2));
 
+  /** Two chunks and two images, with indexes 0 and 2 (image 1 was skipped). */
+  private static final IndexedPost POST_WITH_IMAGES =
+      IndexedPost.restore(
+          POST.id(),
+          POST.metadata(),
+          POST.fingerprint(),
+          POST.chunks(),
+          List.of(
+              new IndexedImage(
+                  0, URI.create("https://x.example/swan.jpg"), "Black swan", irregular(3)),
+              new IndexedImage(2, URI.create("https://x.example/b.png"), "Grapes", irregular(4))));
+
+  private static Embedding irregular(long seed) {
+    return TestEmbeddings.irregular(seed);
+  }
+
   private static ObjectNode validFile() {
     return IndexFileJson.of(POST, MODEL, RECIPE);
+  }
+
+  private static ObjectNode validFormatTwoFile() {
+    return IndexFileJson.formatTwo(POST_WITH_IMAGES, MODEL, RECIPE);
+  }
+
+  @Test
+  @DisplayName("AC-SRCH-74: a format-2 file is loaded with its images, bit-exactly")
+  void loads_a_format_two_file_with_images() {
+    IndexFileLoad load = loader.read(IndexFileJson.bytes(validFormatTwoFile()));
+
+    assertThat(load).isInstanceOf(IndexFileLoad.Loaded.class);
+    IndexedPost loaded = ((IndexFileLoad.Loaded) load).post();
+    assertThat(loaded).usingRecursiveComparison().isEqualTo(POST_WITH_IMAGES);
+    assertThat(loaded.images()).extracting(IndexedImage::index).containsExactly(0, 2);
+    assertThat(TestEmbeddings.rawBits(loaded.images().get(1).embedding()))
+        .containsExactly(TestEmbeddings.rawBits(POST_WITH_IMAGES.images().get(1).embedding()));
+  }
+
+  @Test
+  @DisplayName("AC-SRCH-74: a format-1 file (no images array) loads with no images")
+  void loads_a_format_one_file_without_images() {
+    IndexFileLoad load = loader.read(IndexFileJson.bytes(validFile()));
+
+    assertThat(load)
+        .isInstanceOfSatisfying(
+            IndexFileLoad.Loaded.class, loaded -> assertThat(loaded.post().images()).isEmpty());
+  }
+
+  static Stream<Arguments> formatTwoCorruptions() {
+    return Stream.of(
+        Arguments.of(
+            "image vector of the wrong dimension",
+            change(
+                file ->
+                    IndexFileJson.image(file, 0).put("vector", IndexFileJson.vector(ones(383))))),
+        Arguments.of(
+            "image indexes out of order",
+            change(file -> IndexFileJson.image(file, 1).put("index", 0))),
+        Arguments.of(
+            "image URL not https",
+            change(file -> IndexFileJson.image(file, 0).put("url", "http://x.example/swan.jpg"))),
+        Arguments.of("format 3", change(file -> file.put("format", 3))),
+        Arguments.of("format 0", change(file -> file.put("format", 0))));
+  }
+
+  private static byte[] change(Consumer<ObjectNode> change) {
+    ObjectNode file = validFormatTwoFile();
+    change.accept(file);
+    return IndexFileJson.bytes(file);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("formatTwoCorruptions")
+  @DisplayName("AC-SRCH-74: another format, or a broken image, makes the file unreadable")
+  void broken_format_two_file_is_unreadable(String kind, byte[] content) {
+    assertUnreadable(loader.read(content));
   }
 
   @Test
@@ -108,7 +185,7 @@ class IndexFileLoaderTest {
         corrupt(
             "metadata site differs from post ID",
             file -> ((ObjectNode) file.get("metadata")).put("siteId", "elegant")),
-        corrupt("unknown format", file -> file.put("format", 2)),
+        corrupt("unknown format", file -> file.put("format", 3)),
         corrupt("missing fingerprint", file -> file.remove("fingerprint")),
         corrupt("missing model ID (S2)", file -> file.remove("modelId")),
         corrupt("malformed post ID", file -> file.put("postId", "no-separator")),

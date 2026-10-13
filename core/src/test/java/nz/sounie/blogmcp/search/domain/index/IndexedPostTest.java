@@ -9,13 +9,17 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
+import java.net.URI;
 import java.util.List;
+import java.util.stream.Stream;
 import nz.sounie.blogmcp.search.domain.embedding.Vectors;
 import nz.sounie.blogmcp.search.domain.post.PostMetadata;
 import nz.sounie.blogmcp.search.domain.text.Words;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class IndexedPostTest {
 
@@ -133,6 +137,122 @@ class IndexedPostTest {
 
       assertThat(empty.bestMatch(Vectors.query())).isEmpty();
     }
+
+    @Test
+    @DisplayName("AC-SRCH-73: an image as the best entry gives the score, snippet and URL")
+    void an_image_can_be_the_best_entry() {
+      IndexedPost a =
+          withImages(
+              List.of(
+                  new IndexedChunk(0, "c0", Vectors.atSimilarity(DIMENSION, 0.70, 1)),
+                  new IndexedChunk(1, "c1", Vectors.atSimilarity(DIMENSION, 0.60, 2))),
+              new IndexedImage(0, SWAN, "Black swan", Vectors.atSimilarity(DIMENSION, 0.78, 3)));
+
+      PostMatch match = a.bestMatch(Vectors.query()).orElseThrow();
+
+      assertThat(match.score().value()).isCloseTo(0.78, within(1e-6));
+      assertThat(match.snippet()).isEqualTo(new Snippet("Black swan", false));
+      assertThat(match.matchedImage()).contains(SWAN);
+    }
+
+    @Test
+    @DisplayName("AC-SRCH-73: a chunk as the best entry has no matched image")
+    void a_chunk_match_has_no_matched_image() {
+      IndexedPost a =
+          withImages(
+              List.of(new IndexedChunk(0, "c0", Vectors.atSimilarity(DIMENSION, 0.75, 1))),
+              new IndexedImage(0, SWAN, "Black swan", Vectors.atSimilarity(DIMENSION, 0.5, 3)));
+
+      PostMatch match = a.bestMatch(Vectors.query()).orElseThrow();
+
+      assertThat(match.snippet().text()).isEqualTo("c0");
+      assertThat(match.matchedImage()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("AC-SRCH-73: a post with zero chunks matches through its image")
+    void a_post_without_chunks_matches_through_an_image() {
+      IndexedPost imageOnly =
+          withImages(
+              List.of(),
+              new IndexedImage(0, SWAN, "Black swan", Vectors.atSimilarity(DIMENSION, 0.4, 3)));
+
+      assertThat(imageOnly.bestMatch(Vectors.query()))
+          .hasValueSatisfying(match -> assertThat(match.matchedImage()).contains(SWAN));
+    }
+
+    @Test
+    @DisplayName("AC-SRCH-67: a long image description gives a 60-word snippet")
+    void a_long_description_is_cut_like_a_chunk() {
+      String seventyWords = Words.numbered(70);
+      IndexedPost a =
+          withImages(
+              List.of(),
+              new IndexedImage(0, SWAN, seventyWords, Vectors.atSimilarity(DIMENSION, 0.9, 3)));
+
+      assertThat(a.bestMatch(Vectors.query()).orElseThrow().snippet())
+          .isEqualTo(new Snippet(Words.numbered(60) + " …", true));
+    }
+  }
+
+  @Test
+  @DisplayName("Invariant 7: withMetadata keeps the images")
+  void with_metadata_keeps_images() {
+    IndexedPost withImage =
+        withImages(List.of(), new IndexedImage(0, SWAN, "Swan", Vectors.axis(DIMENSION, 5)));
+
+    IndexedPost refreshed =
+        withImage.withMetadata(aPost().id("sounie-wp:1").tags("Kotlin").metadata());
+
+    assertThat(refreshed.images()).isEqualTo(withImage.images());
+  }
+
+  private static final URI SWAN = URI.create("https://x.example/swan.jpg");
+
+  private IndexedPost withImages(List<IndexedChunk> chunks, IndexedImage... images) {
+    return IndexedPost.restore(post.id(), post.metadata(), STORED, chunks, List.of(images));
+  }
+
+  private IndexedPost withImageIndexes(int... indexes) {
+    List<IndexedImage> images =
+        java.util.Arrays.stream(indexes)
+            .mapToObj(
+                i ->
+                    new IndexedImage(
+                        i,
+                        URI.create("https://x.example/" + i + ".jpg"),
+                        "image " + i,
+                        Vectors.axis(DIMENSION, 10 + Math.abs(i))))
+            .toList();
+    return IndexedPost.restore(post.id(), post.metadata(), STORED, List.of(), images);
+  }
+
+  @Nested
+  class ImageInvariants {
+
+    @ParameterizedTest
+    @MethodSource("nz.sounie.blogmcp.search.domain.index.IndexedPostTest#invalidImageIndexes")
+    @DisplayName("AC-SRCH-69: image indexes must be distinct, non-negative and ascending")
+    void rejects_invalid_image_indexes(int[] indexes) {
+      assertThatThrownBy(() -> withImageIndexes(indexes)).isInstanceOf(InvalidIndexedPost.class);
+    }
+
+    @Test
+    @DisplayName("AC-SRCH-69: gaps in image indexes are accepted (skipped images)")
+    void accepts_gaps_in_image_indexes() {
+      assertThat(withImageIndexes(0, 2).images())
+          .extracting(IndexedImage::index)
+          .containsExactly(0, 2);
+    }
+
+    @Test
+    void no_images_are_accepted() {
+      assertThat(withImageIndexes().images()).isEmpty();
+    }
+  }
+
+  static Stream<int[]> invalidImageIndexes() {
+    return Stream.of(new int[] {1, 0}, new int[] {0, 0}, new int[] {-1});
   }
 
   @Nested

@@ -25,7 +25,11 @@ class SearchResultsTest {
   private static PostMatch match(String id, double score, Instant publishedAt) {
     PostToIndexBuilder post = aPost().id(id).publishedAt(publishedAt);
     return new PostMatch(
-        post.postId(), post.metadata(), new Similarity(score), new Snippet(id + " snippet", false));
+        post.postId(),
+        post.metadata(),
+        new Similarity(score),
+        new Snippet(id + " snippet", false),
+        java.util.Optional.empty());
   }
 
   private static List<String> ids(SearchResults results) {

@@ -9,17 +9,20 @@ import java.util.function.Predicate;
 import nz.sounie.blogmcp.search.application.QueryEmbedder;
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
+import nz.sounie.blogmcp.search.domain.embedding.ImageEmbedder;
+import nz.sounie.blogmcp.search.domain.embedding.ImagePixels;
 import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.text.Passage;
 
 /**
- * Deterministic fake of our {@link PassageEmbedder} and {@link QueryEmbedder} ports. By default
- * each text becomes a bag-of-words vector: every lower-cased word is hashed into one of 384
- * dimensions, and the result is normalised. Tests can assign exact vectors to passage texts or
- * queries, make it fail, and inspect every call.
+ * Deterministic fake of our {@link PassageEmbedder}, {@link QueryEmbedder} and {@link
+ * ImageEmbedder} ports. By default each text becomes a bag-of-words vector: every lower-cased word
+ * is hashed into one of 384 dimensions, and the result is normalised; an image becomes the vector
+ * of its dimensions and content hash. Tests can assign exact vectors to passage texts, queries or
+ * images, make it fail, and inspect every call.
  */
-public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
+public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder, ImageEmbedder {
 
   private final String modelId;
   private final int dimensions;
@@ -30,6 +33,9 @@ public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
   private volatile Predicate<List<Passage>> failWhen = passages -> false;
   private volatile int countAdjustment;
   private volatile boolean queriesFail;
+  private final List<ImagePixels> imageCalls = new CopyOnWriteArrayList<>();
+  private final Map<ImagePixels, Embedding> assignedImages = new ConcurrentHashMap<>();
+  private volatile Predicate<ImagePixels> imagesFailWhen = pixels -> false;
 
   public FakeEmbedder() {
     this("fake-model", 384);
@@ -68,6 +74,41 @@ public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
       return assignedQuery;
     }
     return bagOfWords(dimensions, query.text());
+  }
+
+  @Override
+  public Embedding embedImage(ImagePixels pixels) {
+    imageCalls.add(pixels);
+    if (imagesFailWhen.test(pixels)) {
+      throw new EmbedderUnavailable("fake image embedder failure");
+    }
+    return assignedImages.getOrDefault(
+        pixels,
+        bagOfWords(
+            dimensions,
+            "image " + pixels.width() + "x" + pixels.height() + " " + pixels.hashCode()));
+  }
+
+  /** Returns this vector for an image with exactly these pixels. */
+  public FakeEmbedder assignImage(ImagePixels pixels, Embedding embedding) {
+    assignedImages.put(pixels, embedding);
+    return this;
+  }
+
+  /** Fails {@code embedImage} for exactly these pixels, until {@link #imagesWorking()}. */
+  public FakeEmbedder failingForImage(ImagePixels pixels) {
+    this.imagesFailWhen = pixels::equals;
+    return this;
+  }
+
+  /** Embeds every image normally again. */
+  public FakeEmbedder imagesWorking() {
+    this.imagesFailWhen = pixels -> false;
+    return this;
+  }
+
+  public List<ImagePixels> imageCalls() {
+    return List.copyOf(imageCalls);
   }
 
   /** Returns this vector for a passage with exactly this text. */
@@ -149,6 +190,7 @@ public final class FakeEmbedder implements PassageEmbedder, QueryEmbedder {
   public void clearCalls() {
     passageCalls.clear();
     queries.clear();
+    imageCalls.clear();
   }
 
   /** A deterministic, unit-length vector from the words of the text. */
