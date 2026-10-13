@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
+import nz.sounie.blogmcp.search.domain.image.PostImage;
 import nz.sounie.blogmcp.search.domain.post.MalformedCatalogPost;
 import nz.sounie.blogmcp.search.domain.post.PostId;
 import nz.sounie.blogmcp.search.domain.post.PostMetadata;
@@ -18,6 +20,10 @@ class PostToIndexTest {
 
   private static final Instant PUBLISHED = Instant.parse("2024-04-01T00:00:00Z");
   private static final Instant UPDATED = Instant.parse("2024-04-02T00:00:00Z");
+  private static final List<PostImage> IMAGES =
+      List.of(
+          PostImage.of("https://i0.wp.com/a.jpg", "Swan", ""),
+          PostImage.of("https://blog2.sounie.nz/b.png", "", "Grapes"));
 
   private static PostToIndex of(String postId, String siteId, String completeness) {
     return PostToIndex.of(
@@ -28,12 +34,13 @@ class PostToIndexTest {
         "Body text",
         completeness,
         Set.of("Java"),
+        IMAGES,
         PUBLISHED,
         UPDATED);
   }
 
   @Test
-  @DisplayName("AC-SRCH-18: a valid payload becomes a post to index")
+  @DisplayName("AC-SRCH-18, AC-SRCH-66: a valid payload becomes a post to index, images in order")
   void translates_a_valid_payload() {
     PostToIndex post = of("sounie-wp:1", "sounie-wp", "FULL");
 
@@ -51,7 +58,8 @@ class PostToIndexTest {
                     PUBLISHED,
                     UPDATED),
                 "Title",
-                "Body text"));
+                "Body text",
+                IMAGES));
   }
 
   @Test
@@ -85,8 +93,8 @@ class PostToIndexTest {
   }
 
   @ParameterizedTest(name = "argument {0} is null")
-  @org.junit.jupiter.params.provider.ValueSource(ints = {0, 1, 2, 3, 4, 5, 6, 7, 8})
-  @DisplayName("AC-SRCH-38: a null field is malformed, not a NullPointerException")
+  @org.junit.jupiter.params.provider.ValueSource(ints = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9})
+  @DisplayName("AC-SRCH-38, AC-SRCH-66: a null field is malformed, not a NullPointerException")
   void rejects_a_null_argument(int nullArgument) {
     Object[] args = {
       "sounie-wp:1",
@@ -96,6 +104,7 @@ class PostToIndexTest {
       "Body text",
       "FULL",
       Set.of("Java"),
+      IMAGES,
       PUBLISHED,
       UPDATED
     };
@@ -111,14 +120,20 @@ class PostToIndexTest {
                     (String) args[4],
                     (String) args[5],
                     castTags(args[6]),
-                    (Instant) args[7],
-                    (Instant) args[8]))
+                    castImages(args[7]),
+                    (Instant) args[8],
+                    (Instant) args[9]))
         .isInstanceOf(MalformedCatalogPost.class);
   }
 
   @SuppressWarnings("unchecked")
   private static Set<String> castTags(Object tags) {
     return (Set<String>) tags;
+  }
+
+  @SuppressWarnings("unchecked")
+  private static List<PostImage> castImages(Object images) {
+    return (List<PostImage>) images;
   }
 
   @Test
@@ -136,6 +151,7 @@ class PostToIndexTest {
                     "Body text",
                     "FULL",
                     tags,
+                    IMAGES,
                     PUBLISHED,
                     UPDATED))
         .isInstanceOf(MalformedCatalogPost.class);

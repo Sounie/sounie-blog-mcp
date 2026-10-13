@@ -49,7 +49,8 @@ class CompletenessTest {
               post.metadata().publishedAt(),
               post.metadata().updatedAt()),
           post.title(),
-          post.body());
+          post.body(),
+          post.images());
     }
   }
 

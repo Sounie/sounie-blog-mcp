@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import nz.sounie.blogmcp.search.domain.image.PostImage;
 import nz.sounie.blogmcp.search.domain.post.PostId;
 import nz.sounie.blogmcp.search.domain.post.PostMetadata;
 import nz.sounie.blogmcp.search.domain.post.SiteId;
@@ -23,6 +24,7 @@ public final class PostToIndexBuilder {
   private Set<String> tags = new LinkedHashSet<>();
   private Instant publishedAt = DEFAULT_PUBLISHED_AT;
   private Instant updatedAt = DEFAULT_PUBLISHED_AT;
+  private List<PostImage> images = List.of();
 
   private PostToIndexBuilder() {}
 
@@ -92,7 +94,13 @@ public final class PostToIndexBuilder {
         new SiteId(siteId), link, title, Set.copyOf(tags), publishedAt, updatedAt);
   }
 
+  /** The post's images, in catalog order. */
+  public PostToIndexBuilder images(PostImage... images) {
+    this.images = List.of(images);
+    return this;
+  }
+
   public PostToIndex build() {
-    return new PostToIndex(postId(), completeness, metadata(), title, body);
+    return new PostToIndex(postId(), completeness, metadata(), title, body, images);
   }
 }

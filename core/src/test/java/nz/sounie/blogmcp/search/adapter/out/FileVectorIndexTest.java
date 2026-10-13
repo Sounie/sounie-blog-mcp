@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -23,6 +24,7 @@ import nz.sounie.blogmcp.search.application.ReconcileIndex;
 import nz.sounie.blogmcp.search.application.ReconcileReport;
 import nz.sounie.blogmcp.search.application.SearchContext;
 import nz.sounie.blogmcp.search.domain.index.IndexOutcome;
+import nz.sounie.blogmcp.search.domain.index.IndexedImage;
 import nz.sounie.blogmcp.search.domain.index.IndexedPost;
 import nz.sounie.blogmcp.search.domain.index.PostIndexer;
 import nz.sounie.blogmcp.search.domain.index.PostToIndex;
@@ -145,6 +147,73 @@ class FileVectorIndexTest extends VectorIndexContract {
         });
     assertThat(reopened.all()).hasSize(3);
     assertThat(errorLines()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "AC-SRCH-74: a post with images survives a restart bit-exactly, in a format-2 file with an"
+          + " images array")
+  void images_survive_a_restart_in_format_two() {
+    IndexedPost base =
+        indexed(
+            aPost().id("sounie-wp:7").build(),
+            fingerprint('d'),
+            TestEmbeddings.irregular(5),
+            TestEmbeddings.irregular(6));
+    IndexedPost entry =
+        IndexedPost.restore(
+            base.id(),
+            base.metadata(),
+            base.fingerprint(),
+            base.chunks(),
+            List.of(
+                new IndexedImage(
+                    0,
+                    URI.create("https://x.example/swan.jpg"),
+                    "Black swan",
+                    TestEmbeddings.irregular(7)),
+                new IndexedImage(
+                    2,
+                    URI.create("https://x.example/b.png"),
+                    "Grapes",
+                    TestEmbeddings.irregular(8))));
+    index.save(entry);
+
+    IndexedPost loaded = reopen().find(entry.id()).orElseThrow();
+
+    assertThat(loaded).usingRecursiveComparison().isEqualTo(entry);
+    IntStream.range(0, entry.images().size())
+        .forEach(
+            i ->
+                assertThat(TestEmbeddings.rawBits(loaded.images().get(i).embedding()))
+                    .containsExactly(TestEmbeddings.rawBits(entry.images().get(i).embedding())));
+    ObjectNode json = (ObjectNode) IndexFileJson.JSON.readTree(fileOf(entry.id()));
+    assertThat(json.get("format").intValue()).isEqualTo(2);
+    assertThat(json.get("images").size()).isEqualTo(2);
+    assertThat(errorLines()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "AC-SRCH-74: a format-1 file loads with no images, is not quarantined, and a text-only"
+          + " reconcile keeps it")
+  void a_format_one_file_still_loads() throws IOException {
+    PostToIndex post = aPost().id("sounie-wp:8").title("Before phase 3").words(80).build();
+    Path file = fileOf(post.id());
+    Files.createDirectories(file.getParent());
+    Files.write(
+        file,
+        IndexFileJson.bytes(
+            IndexFileJson.of(INDEXER_R1.index(post), MODEL, INDEXER_R1.recipe().id())));
+
+    FileVectorIndex reopened = reopen();
+
+    assertThat(reopened.find(post.id()))
+        .hasValueSatisfying(loaded -> assertThat(loaded.images()).isEmpty());
+    assertThat(file).isRegularFile();
+    assertThat(errorLines()).isEmpty();
+    assertThat(reconcile(reopened, INDEXER_R1, post).outcomes())
+        .isEqualTo(Map.of(post.id(), IndexOutcome.UNCHANGED));
   }
 
   @Test

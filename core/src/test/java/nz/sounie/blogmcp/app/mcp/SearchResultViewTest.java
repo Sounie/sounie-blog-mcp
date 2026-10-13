@@ -2,7 +2,9 @@ package nz.sounie.blogmcp.app.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.net.URI;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.Set;
 import nz.sounie.blogmcp.search.domain.embedding.Similarity;
 import nz.sounie.blogmcp.search.domain.index.PostMatch;
@@ -10,14 +12,19 @@ import nz.sounie.blogmcp.search.domain.index.Snippet;
 import nz.sounie.blogmcp.search.domain.post.PostId;
 import nz.sounie.blogmcp.search.domain.post.PostMetadata;
 import nz.sounie.blogmcp.search.domain.post.SiteId;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
-/** app.md 3.1: score and published-date presentation. */
+/** app.md 3.1: score and published-date presentation; search.md 3.7: the matched image. */
 class SearchResultViewTest {
 
   private static PostMatch match(Instant publishedAt, double score) {
+    return match(publishedAt, score, Optional.empty());
+  }
+
+  private static PostMatch match(Instant publishedAt, double score, Optional<URI> matchedImage) {
     SiteId site = new SiteId("elegant");
     return new PostMatch(
         new PostId(site, "7"),
@@ -29,7 +36,8 @@ class SearchResultViewTest {
             publishedAt,
             publishedAt),
         new Similarity(score),
-        new Snippet("Records are …", true));
+        new Snippet("Records are …", true),
+        matchedImage);
   }
 
   @Test
@@ -45,7 +53,19 @@ class SearchResultViewTest {
                 "elegant",
                 "2024-06-01",
                 0.5,
-                "Records are …"));
+                "Records are …",
+                null));
+  }
+
+  @Test
+  @DisplayName("AC-SRCH-75: an image match presents the matched image's URL")
+  void presents_the_matched_image() {
+    URI swan = URI.create("https://x.example/swan.jpg");
+
+    SearchResultView view =
+        SearchResultView.of(match(Instant.parse("2024-06-01T00:00:00Z"), 0.5, Optional.of(swan)));
+
+    assertThat(view.matchedImage()).isEqualTo("https://x.example/swan.jpg");
   }
 
   @ParameterizedTest

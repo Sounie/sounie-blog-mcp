@@ -130,6 +130,22 @@ class LayeringTest {
               "tools.jackson..", "com.fasterxml.jackson..", "org.jsoup..", "java.net.http..")
           .allowEmptyShould(true);
 
+  // search.md 3.7 (ADR 0011 phase 3): decoding image files and resolving or categorising host
+  // addresses are adapter concerns. The domain sees only ImagePixels and ImageFetch; it knows
+  // nothing about addresses, ImageIO or AWT rasters.
+  @ArchTest
+  static final ArchRule image_decoding_and_address_resolution_stay_in_adapters =
+      noClasses()
+          .that()
+          .resideInAnyPackage("..domain..", "..application..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage("javax.imageio..", "java.awt..")
+          .orShould()
+          .dependOnClassesThat()
+          .areAssignableTo(java.net.InetAddress.class)
+          .allowEmptyShould(true);
+
   // ADR 0010 (AC-SRCH-43): core uses no embedding-model library; each provider module brings its
   // own. The build already keeps them off core's classpath; this states the rule where it is read.
   @ArchTest

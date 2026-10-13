@@ -4,6 +4,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Base64;
 import nz.sounie.blogmcp.search.domain.index.IndexedChunk;
+import nz.sounie.blogmcp.search.domain.index.IndexedImage;
 import nz.sounie.blogmcp.search.domain.index.IndexedPost;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ArrayNode;
@@ -20,6 +21,7 @@ final class IndexFileJson {
 
   private IndexFileJson() {}
 
+  /** A format-1 file (no images), as written before phase 3. */
   static ObjectNode of(IndexedPost post, String modelId, String recipe) {
     ObjectNode root = JSON.createObjectNode();
     root.put("format", 1);
@@ -38,6 +40,27 @@ final class IndexFileJson {
     ArrayNode chunks = root.putArray("chunks");
     post.chunks().forEach(chunk -> addChunk(chunks, chunk));
     return root;
+  }
+
+  /** A format-2 file: format 1 plus an {@code images} array of index, url, description, vector. */
+  static ObjectNode formatTwo(IndexedPost post, String modelId, String recipe) {
+    ObjectNode root = of(post, modelId, recipe);
+    root.put("format", 2);
+    ArrayNode images = root.putArray("images");
+    post.images().forEach(image -> addImage(images, image));
+    return root;
+  }
+
+  private static void addImage(ArrayNode images, IndexedImage image) {
+    ObjectNode node = images.addObject();
+    node.put("index", image.index());
+    node.put("url", image.url().toString());
+    node.put("description", image.description());
+    node.put("vector", vector(image.embedding().values()));
+  }
+
+  static ObjectNode image(ObjectNode file, int position) {
+    return (ObjectNode) file.get("images").get(position);
   }
 
   private static void addChunk(ArrayNode chunks, IndexedChunk chunk) {

@@ -11,9 +11,11 @@ import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.aSnapsho
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
+import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.HashMap;
@@ -32,12 +34,14 @@ import nz.sounie.blogmcp.search.domain.embedding.Embedding;
 import nz.sounie.blogmcp.search.domain.embedding.Vectors;
 import nz.sounie.blogmcp.search.domain.index.ContentFingerprint;
 import nz.sounie.blogmcp.search.domain.index.IndexedChunk;
+import nz.sounie.blogmcp.search.domain.index.IndexedImage;
 import nz.sounie.blogmcp.search.domain.index.IndexedPost;
 import nz.sounie.blogmcp.search.domain.post.PostId;
 import nz.sounie.blogmcp.search.domain.post.PostMetadata;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.query.QueryText;
 import nz.sounie.blogmcp.search.domain.text.Words;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -99,6 +103,27 @@ class BlogMcpToolsTest {
     index.save(IndexedPost.restore(id, metadata, FINGERPRINT, indexed));
   }
 
+  /** An indexed post with one chunk and one image. */
+  private void givenIndexedWithImage(
+      String postId, Instant publishedAt, String title, Chunk chunk, IndexedImage image) {
+    PostId id = PostId.parse(postId);
+    PostMetadata metadata =
+        new PostMetadata(
+            id.siteId(),
+            "https://example.org/" + id.sourcePostId(),
+            title,
+            Set.of(),
+            publishedAt,
+            publishedAt);
+    index.save(
+        IndexedPost.restore(
+            id,
+            metadata,
+            FINGERPRINT,
+            List.of(new IndexedChunk(0, chunk.text(), chunk.embedding())),
+            List.of(image)));
+  }
+
   private record Chunk(String text, Embedding embedding) {}
 
   private static Chunk chunk(String text, double similarity) {
@@ -150,6 +175,59 @@ class BlogMcpToolsTest {
                   "score", 0.9,
                   "snippet", Words.numbered(60) + " …"));
       assertThat(textAsJson(result)).isEqualTo(structured(result));
+    }
+
+    @Test
+    @DisplayName(
+        "AC-SRCH-75: an image match shows matchedImage; a chunk match has no such key; both"
+            + " validate against the output schema")
+    void an_image_match_shows_the_matched_image() {
+      givenIndexedWithImage(
+          "elegant:1",
+          Instant.parse("2024-05-01T00:00:00Z"),
+          "Swans",
+          chunk("about birds", 0.6),
+          new IndexedImage(
+              0,
+              URI.create("https://x.example/swan.jpg"),
+              "Black swan",
+              Vectors.atSimilarity(384, 0.9)));
+      givenIndexed(
+          "elegant:2", Instant.parse("2024-05-01T00:00:00Z"), "Records", chunk("records", 0.8));
+
+      CallToolResult result = searchPosts(Map.of("query", "black swan"));
+
+      assertThat(isError(result)).isFalse();
+      List<Map<String, Object>> results = results(result);
+      assertThat(results)
+          .extracting(r -> r.get("postId"))
+          .containsExactly("elegant:1", "elegant:2");
+      assertThat(results.get(0))
+          .containsEntry("matchedImage", "https://x.example/swan.jpg")
+          .containsEntry("snippet", "Black swan");
+      assertThat(results.get(1)).doesNotContainKey("matchedImage");
+      assertThat(textAsJson(result)).isEqualTo(structured(result));
+
+      Map<String, Object> outputSchema = tools.searchPosts().tool().outputSchema();
+      Map<String, Object> item =
+          object(object(object(outputSchema, "properties"), "results"), "items");
+      assertThat(object(object(item, "properties"), "matchedImage"))
+          .containsEntry("type", "string")
+          .containsEntry("format", "uri");
+      assertThat(item.get("required"))
+          .asInstanceOf(InstanceOfAssertFactories.LIST)
+          .doesNotContain("matchedImage");
+      assertThat(
+              McpJsonDefaults.getSchemaValidator()
+                  .validate(outputSchema, result.structuredContent())
+                  .valid())
+          .as("the structured content validates against the output schema")
+          .isTrue();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> object(Map<String, Object> parent, String key) {
+      return (Map<String, Object>) parent.get(key);
     }
 
     @Test

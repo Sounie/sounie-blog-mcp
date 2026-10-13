@@ -3,7 +3,9 @@ package nz.sounie.blogmcp.search.application;
 import nz.sounie.blogmcp.search.adapter.out.FakeEmbedder;
 import nz.sounie.blogmcp.search.adapter.out.FakePostCatalog;
 import nz.sounie.blogmcp.search.adapter.out.FakeTokenCounter;
+import nz.sounie.blogmcp.search.adapter.out.InMemoryImageSource;
 import nz.sounie.blogmcp.search.adapter.out.InMemoryVectorIndex;
+import nz.sounie.blogmcp.search.domain.index.ImageIndexing;
 import nz.sounie.blogmcp.search.domain.index.PostIndexer;
 import nz.sounie.blogmcp.search.domain.index.VectorIndex;
 import nz.sounie.blogmcp.search.domain.text.ChunkingPolicy;
@@ -29,11 +31,25 @@ public final class SearchContext {
   }
 
   public SearchContext(FakeEmbedder embedder) {
+    this(embedder, indexerWith(embedder));
+  }
+
+  private SearchContext(FakeEmbedder embedder, PostIndexer indexer) {
     this.embedder = embedder;
-    this.indexer = indexerWith(embedder);
+    this.indexer = indexer;
     this.indexPost = new IndexPost(index, indexer, lock);
     this.searchPosts = new SearchPosts(index, embedder);
     this.reconcile = new ReconcileIndex(catalog, index, indexer, lock);
+  }
+
+  /**
+   * The use cases with image indexing: images fetched from the given source and embedded by the
+   * same fake embedder that embeds passages and queries.
+   */
+  public static SearchContext withImages(FakeEmbedder embedder, InMemoryImageSource images) {
+    return new SearchContext(
+        embedder,
+        indexerWith(embedder).withImageIndexing(ImageIndexing.withImages(images, embedder)));
   }
 
   public static PostIndexer indexerWith(FakeEmbedder embedder) {
