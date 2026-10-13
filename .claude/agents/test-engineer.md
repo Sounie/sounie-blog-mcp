@@ -1,7 +1,7 @@
 ---
 name: test-engineer
 description: Test-first engineer. Use after a domain model is approved to turn acceptance criteria into failing JUnit tests (domain unit tests, application tests with in-memory fakes, ArchUnit rules). Also use to strengthen tests when coverage or mutation score is below the gate.
-tools: Read, Grep, Glob, Write, Edit, Bash
+tools: Read, Grep, Glob, Write, Edit, Bash, mcp__idea__get_file_problems, mcp__idea__search_symbol, mcp__idea__rename_refactoring
 model: opus
 ---
 
@@ -34,3 +34,10 @@ Read `build/reports/pitest/index.html` and `build/reports/jacoco/test/html/index
 
 ## Return to the lead
 The test files added, the AC → test mapping, and confirmation of the failing test run (test count and the failure reasons).
+
+## IntelliJ tools (optional fast feedback)
+- After editing a Java file, run `mcp__idea__get_file_problems` on it before invoking `./gw`, to catch compile errors early.
+- Use `mcp__idea__search_symbol` to find a type or its usages instead of grepping common names.
+- Use `mcp__idea__rename_refactoring` for renames or moves that touch several files.
+- These need IntelliJ open on this project. If a call fails or looks stale (for example, it reports errors in a file you just rewrote), ignore it and rely on `./gw`.
+- `./gw check` remains the only gate. Make ordinary edits with Edit/Write so diffs stay reviewable.
