@@ -49,6 +49,14 @@ public record WordSequence(List<String> words) {
     return SURROUNDING_WHITE_SPACE.matcher(text).replaceAll("");
   }
 
+  /**
+   * The text with every run of white space (by the rule that separates words) collapsed to a single
+   * space, and none at either end. Unlike {@link #of}, overlong words stay whole.
+   */
+  public static String collapseWhiteSpace(String text) {
+    return WHITESPACE.matcher(strip(text)).replaceAll(" ");
+  }
+
   /** The words joined by single spaces. */
   public String text() {
     return String.join(" ", words);

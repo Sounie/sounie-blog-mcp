@@ -8,8 +8,10 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import nz.sounie.blogmcp.search.domain.index.ContentFingerprint;
 import nz.sounie.blogmcp.search.domain.index.IndexDecision;
 import nz.sounie.blogmcp.search.domain.index.IndexRecipe;
+import nz.sounie.blogmcp.search.domain.index.PostToIndex;
 import nz.sounie.blogmcp.search.domain.index.VectorIndex;
 import nz.sounie.blogmcp.search.domain.post.PostId;
 
@@ -42,9 +44,22 @@ public record ReconcilePlan(List<IndexDecision> decisions, List<String> orphanRe
    */
   public static ReconcilePlan between(
       List<CatalogEntry> entries, VectorIndex snapshot, IndexRecipe recipe) {
+    return between(entries, snapshot, post -> post.fingerprintUnder(recipe));
+  }
+
+  /**
+   * As {@link #between(List, VectorIndex, IndexRecipe)}, with each readable post's current
+   * fingerprint from the given function (the post indexer's, which covers its images under image
+   * indexing).
+   */
+  public static ReconcilePlan between(
+      List<CatalogEntry> entries,
+      VectorIndex snapshot,
+      Function<PostToIndex, ContentFingerprint> currentFingerprint) {
     List<CatalogEntry> listed = listedOnce(entries);
     List<String> blockers = entries.stream().flatMap(CatalogEntry::orphanRemovalBlockers).toList();
-    Stream<IndexDecision> planned = listed.stream().flatMap(e -> e.decisions(snapshot, recipe));
+    Stream<IndexDecision> planned =
+        listed.stream().flatMap(e -> e.decisions(snapshot, currentFingerprint));
     Stream<IndexDecision> removals =
         blockers.isEmpty() ? orphanRemovals(listed, snapshot) : Stream.empty();
     return new ReconcilePlan(Stream.concat(planned, removals).toList(), blockers);

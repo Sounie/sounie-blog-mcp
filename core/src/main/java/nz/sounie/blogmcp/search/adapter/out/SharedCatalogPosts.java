@@ -3,10 +3,12 @@ package nz.sounie.blogmcp.search.adapter.out;
 import java.util.List;
 import java.util.Objects;
 import nz.sounie.blogmcp.search.application.PostCatalog;
+import nz.sounie.blogmcp.search.domain.image.PostImage;
 import nz.sounie.blogmcp.search.domain.index.PostToIndex;
 import nz.sounie.blogmcp.search.domain.post.MalformedCatalogPost;
 import nz.sounie.blogmcp.search.domain.post.PostId;
 import nz.sounie.blogmcp.search.domain.reconcile.CatalogEntry;
+import nz.sounie.blogmcp.shared.query.CatalogPostImage;
 import nz.sounie.blogmcp.shared.query.CatalogPostState;
 import nz.sounie.blogmcp.shared.query.CatalogPosts;
 
@@ -58,7 +60,16 @@ public final class SharedCatalogPosts implements PostCatalog {
         state.body(),
         state.completeness(),
         state.tags(),
+        images(state.images()),
         state.publishedAt(),
         state.updatedAt());
+  }
+
+  /** Each image parsed; a null list or a null image is malformed, not a NullPointerException. */
+  private static List<PostImage> images(List<CatalogPostImage> images) {
+    return MalformedCatalogPost.requirePresent(images, "images").stream()
+        .map(image -> MalformedCatalogPost.requirePresent(image, "image"))
+        .map(image -> PostImage.of(image.url(), image.altText(), image.caption()))
+        .toList();
   }
 }

@@ -82,7 +82,7 @@ final class IndexFileLoader {
   }
 
   private static Optional<IndexFileLoad> knownFormat(IndexFile file) {
-    return file.format() == IndexFile.CURRENT_FORMAT
+    return IndexFile.READABLE_FORMATS.contains(file.format())
         ? Optional.empty()
         : Optional.of(new IndexFileLoad.Unreadable("Unknown format " + file.format()));
   }
@@ -97,25 +97,20 @@ final class IndexFileLoader {
   private static Rule dimensionMatches(String currentModelId, String indexProfileKey) {
     int expected = expectedDimension(currentModelId, indexProfileKey);
     return file ->
-        file.chunks().stream()
-            .map(chunk -> dimensionIssue(chunk, expected))
+        file.entries()
+            .map(entry -> dimensionIssue(entry, expected))
             .flatMap(Optional::stream)
             .findFirst();
   }
 
-  private static Optional<IndexFileLoad> dimensionIssue(IndexFile.Chunk chunk, int expected) {
+  private static Optional<IndexFileLoad> dimensionIssue(IndexFile.StoredEntry entry, int expected) {
     try {
-      int actual = VectorCodec.decode(chunk.vector()).length;
+      int actual = VectorCodec.decode(entry.vector()).length;
       return actual == expected
           ? Optional.empty()
           : Optional.of(
               new IndexFileLoad.Unreadable(
-                  "Chunk "
-                      + chunk.index()
-                      + " has a "
-                      + actual
-                      + "-value vector, expected "
-                      + expected));
+                  entry.label() + " has a " + actual + "-value vector, expected " + expected));
     } catch (RuntimeException unreadable) {
       return Optional.of(new IndexFileLoad.Unreadable(StoredFiles.reasonFor(unreadable)));
     }

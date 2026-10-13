@@ -156,4 +156,25 @@ class PostToIndexTest {
                     UPDATED))
         .isInstanceOf(MalformedCatalogPost.class);
   }
+
+  @Test
+  @DisplayName("AC-SRCH-66: a null element in the images is malformed, not a NullPointerException")
+  void rejects_a_null_image() {
+    List<PostImage> images = java.util.Arrays.asList(IMAGES.getFirst(), null);
+
+    assertThatThrownBy(
+            () ->
+                PostToIndex.of(
+                    "sounie-wp:1",
+                    "sounie-wp",
+                    "https://blog2.sounie.nz/1/",
+                    "Title",
+                    "Body text",
+                    "FULL",
+                    Set.of("Java"),
+                    images,
+                    PUBLISHED,
+                    UPDATED))
+        .isInstanceOf(MalformedCatalogPost.class);
+  }
 }
