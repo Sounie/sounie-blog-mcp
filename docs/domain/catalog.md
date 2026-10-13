@@ -1,6 +1,8 @@
 # Catalog bounded context
 
-Status: approved by the owner on 2026-10-01 (decisions recorded in section 8)
+Status: approved by the owner on 2026-10-01 (decisions recorded in section 8). The post images
+additions (ADR 0011 phase 2: section 3.6, AC-CAT-33 to AC-CAT-41, Q9 to Q13) were approved by the
+owner on 2026-10-13.
 Package: `nz.sounie.blogmcp.catalog`
 Feature tag for acceptance criteria: `CAT`
 
@@ -14,6 +16,7 @@ The catalog is responsible for:
 - reading the configured sites and validating that configuration;
 - syncing each site incrementally from its blog platform, and doing a full reconcile once a day;
 - turning platform HTML into plain text, and WordPress tag IDs into tag names (WordPress categories are ignored);
+- recording the **post images** inside each post's content (URL, alt text, caption), so that `search` can later embed them (ADR 0011). The catalog never fetches the images themselves;
 - answering "give me this post" by post ID or by URL.
 
 It is **not** responsible for:
@@ -41,13 +44,20 @@ It is **not** responsible for:
 | Body | The post content as plain text, produced from the platform HTML by **text extraction**. | `Body` |
 | Body completeness | Whether the body is the `FULL` post text or only a `SUMMARY` (a truncated excerpt from a short feed). | `BodyCompleteness` |
 | Text extraction | Turning HTML into plain text: drop `script`/`style`, decode entities, put a paragraph break after block elements, keep whitespace inside `pre`, and collapse other whitespace. | `HtmlToText` port (adapter-implemented) |
+| Post image | (phase 2, proposed) One image that is part of a post's content. It has a **URL** (absolute `https`, with a host), **alt text** and a **caption**. Alt text and caption are plain text, trimmed, and **empty when absent** (never null), like `Title` and `Body`. An empty `alt=""` and a missing `alt` are therefore the same. | `PostImage` (`catalog.domain.post`) |
+| Post images | (phase 2, proposed) The ordered list of a post's post images: document order, and **at most one image per URL** (the first occurrence wins, with its alt text and caption). It may be empty. Two lists are equal only with the same images in the same order. | `PostImages` (`catalog.domain.post`) |
+| Alt text | The `alt` attribute of an `<img>`, with entities decoded and whitespace collapsed. | `PostImage.altText()` |
+| Caption | The text of the `<figcaption>` of the nearest `<figure>` that encloses the `<img>`, extracted like a body and collapsed to one line. Images outside a `<figure>` have an empty caption. | `PostImage.caption()` |
+| Image extraction | (phase 2, proposed) Reading the post images out of the same content HTML that text extraction reads. It chooses each image's source (see *srcset choice*), resolves it against the post's canonical URL, and drops it if an *image exclusion* applies. Excluded images are dropped silently: they are not skipped entries and raise no sync warning. | `PostImageExtractor` (`catalog.adapter.out`, jsoup) |
+| Srcset choice | Which URL an `<img>` contributes: the `srcset` candidate with the **largest width descriptor (`w`) that is at most 2048**. If there is no such candidate, the `src` attribute is used. If neither yields a URL, the `<img>` contributes nothing. | `Srcset` (`catalog.adapter.out`) |
+| Image exclusion | One rule that drops an `<img>`: `EMOJI` (class `emoji` or `wp-smiley`); `TOO_SMALL` (a declared `width` or `height` attribute below 64, which also covers 1×1 and 0×0 **tracking pixels**; a value that is not a whole number of pixels, such as `100%`, counts as not declared); `NOT_HTTPS` (the resolved URL is not absolute `https`, which covers `data:` URIs, `http:` URLs and unparseable URLs). Duplicates are not an exclusion rule: `PostImages` owns them. | `ImageExclusion` (enum rule table, `catalog.adapter.out`) |
 | Post snapshot | What a blog source currently says about one post, already mapped to catalog language. It is the input to publish and revise. | `PostSnapshot` |
 | Source entry | One item returned by a blog source. It is one of: **available** (carries a post snapshot), **not public** (for example a password-protected post) or **malformed** (could not be mapped, with a reason and the source post ID if one could be read). | `SourceEntry` (sealed: `Available`, `NotPublic`, `Malformed`) |
 | Blog source | Port that pages through the source entries of a site, optionally only those changed since a given instant. | `BlogSource` (domain port) |
 | Source page | One page of source entries, plus whether more pages follow. | `SourcePage` |
 | Change order | The order in which a blog source returns changed entries: `OLDEST_FIRST`, `NEWEST_FIRST` or `UNORDERED`. It decides when the checkpoint may advance. WordPress is `OLDEST_FIRST` and Blogger is `NEWEST_FIRST` (both verified). | `ChangeOrder` |
 | Publish (a post) | Add a post the catalog has not seen before. | `Post.publish(...)` |
-| Revise (a post) | Apply a snapshot to a known post, checked against the post's site exactly like publish. A revision is **material** only if the title, body, body completeness, tags, canonical URL or published-at changed. | `Revision Post.revise(Site site, PostSnapshot snapshot)` |
+| Revise (a post) | Apply a snapshot to a known post, checked against the post's site exactly like publish. A revision is **material** only if the title, body, body completeness, tags, canonical URL, published-at or post images changed. | `Revision Post.revise(Site site, PostSnapshot snapshot)` |
 | Withdraw (a post) | Remove a post from the catalog because it is no longer publicly listed. | `Post.withdraw(reason)` |
 | Withdrawal reason | `NO_LONGER_LISTED` (missing from a complete reconcile), `NO_LONGER_PUBLIC` (seen as not public, e.g. password-protected) or `SITE_REMOVED` (its site is no longer in the sites configuration; AC-CAT-32). | `WithdrawalReason` |
 | Sync | One run that brings a site's posts up to date with its blog source. A sync is either **incremental** (from the checkpoint) or a **reconcile**. | `SyncSite` use case |
@@ -60,14 +70,14 @@ It is **not** responsible for:
 | Skipped entry | A source entry that was not applied, with its source post ID (if readable) and reason: `MALFORMED`, `NOT_PUBLIC` or `DUPLICATE_CANONICAL_URL`. An unresolvable WordPress tag ID is *not* a skip; it is a `SyncWarning` of kind `SOURCE_NOTE` (AC-CAT-8). | `SkippedEntry` |
 | Get post | Look up one post by post ID or by URL. | `GetPost` use case |
 | Post reference | (slice 3, proposed in `docs/domain/app.md` 3.7, pending owner approval) The free text given to `get_post`. It is a **URL** if the trimmed text starts with a scheme and `://`, and a **post ID** otherwise. A reference of either form that does not parse is `InvalidPostReference`. | `PostReference` (sealed `ById`, `ByUrl`), `GetPost.byReference(String)` |
-| Post file / checkpoint file | (slice 3, proposed) The persisted form of one post or one checkpoint: one JSON file each under the data directory, written atomically. An unreadable file is quarantined, and the startup sync becomes a reconcile (`docs/domain/app.md` 3.3). | `FilePostRepository`, `FileSyncCheckpointRepository` (`adapter.out`) |
+| Post file / checkpoint file | (slice 3, proposed) The persisted form of one post or one checkpoint: one JSON file each under the data directory, written atomically. An unreadable file is quarantined, and the startup sync becomes a reconcile (`docs/domain/app.md` 3.3). From phase 2, post files are written as format 2 (they carry post images). Format 1 files are still read, as posts with no images known. They are not quarantined, and the next sync that sees such a post records its images (Q9). | `FilePostRepository`, `FileSyncCheckpointRepository` (`adapter.out`) |
 
 ## 3. Aggregates
 
 ### 3.1 `Post` (aggregate root)
 
 State: `PostId id`, `CanonicalUrl url`, `Title title`, `Body body`, `BodyCompleteness completeness`,
-`Set<Tag> tags`, `Instant publishedAt`, `Instant updatedAt`.
+`Set<Tag> tags`, `PostImages images` (phase 2), `Instant publishedAt`, `Instant updatedAt`.
 
 Behaviour:
 - `static Published Post.publish(Site site, PostSnapshot s)` creates the post and returns it with a `PostPublished` event.
@@ -82,9 +92,10 @@ Invariants:
 1. **Identity**: `PostId` = (`SiteId`, `SourcePostId`). It is assigned once and never changes. A snapshot whose ID belongs to a different post is rejected by `revise` (`PostIdentityMismatch`).
 2. **Canonical URL**: absolute, scheme `https`, and host equal (ignoring case) to the site host. This is checked by both `publish` and `revise`. Otherwise the snapshot is invalid (`CanonicalUrlNotOnSite`) and the entry is skipped as malformed. An `http` link is **never** upgraded to `https`; it makes the entry malformed (owner decision, Q7; AC-CAT-16).
 3. **Timestamps**: `updatedAt` is never earlier than `publishedAt`. If a source reports `updated < published`, the snapshot normalises `updatedAt := publishedAt`. A post's `updatedAt` **never moves backwards**: a stale snapshot is ignored (`Revision.Stale`).
-4. **Material change**: `PostRevised` is raised only when at least one of title, body, completeness, tag set (compared without regard to order or case), canonical URL or published-at differs. A snapshot with the *same* `updatedAt` but different content (for example after a short feed was switched to full) is still applied.
+4. **Material change**: `PostRevised` is raised only when at least one of title, body, completeness, tag set (compared without regard to order or case), canonical URL, published-at or post images (compared as an ordered list, including alt text and caption) differs. A snapshot with the *same* `updatedAt` but different content (for example after a short feed was switched to full) is still applied.
 5. **Tags**: trimmed, not blank, de-duplicated without regard to case. An empty set is allowed.
 6. **Body**: never null, and may be empty.
+7. **Post images** (phase 2): never null, and may be empty. Every image URL is absolute `https` with a host, and no URL appears twice. These are enforced by the value objects (3.6), so `Post` never re-checks them. Image URLs need **not** be on the site host (images are often on a media CDN).
 
 Cross-aggregate rule, checked by the `SyncSite` use case against the repository rather than by `Post`:
 - **A canonical URL belongs to at most one post.** If an available entry has a canonical URL that a *different* post already holds, the entry is skipped with reason `DUPLICATE_CANONICAL_URL` and reported.
@@ -140,6 +151,32 @@ behind the domain port `SiteDirectory`.
 - `GetPost(PostId | url)` returns `Optional<PostView>`. URL lookup **normalises**: lower-case scheme and host, `http` is treated as `https`, the fragment is dropped, the default port is dropped, and a trailing slash on the path is ignored. The query string is kept.
 - Scheduling (run at startup in the background, then every 6 hours) lives in an inbound adapter.
 
+### 3.6 Post images (phase 2, ADR 0011; proposed)
+
+Each decision has one owning type, tested there; callers compose them without branching.
+
+| Decision | Owner | Rule |
+|---|---|---|
+| What a valid post image is | `PostImage(URI url, String altText, String caption)`, a record in `catalog.domain.post` | The compact constructor requires an absolute `https` URL with a host (otherwise `IllegalArgumentException`: the adapter has already excluded such images, so this is a broken invariant, not an expected outcome). Alt text and caption must not be null, and are stripped. Empty means "none". |
+| Order and duplicates | `PostImages`, a first-class list in `catalog.domain.post` | `PostImages.of(List<PostImage>)` keeps the given (document) order and drops any later image whose URL equals an earlier one (`URI` equality). `PostImages.none()` is the empty list. |
+| Whether images changed | `RevisedAspect.IMAGES` (reads `PostContent::images`) | List equality, so adding, removing or reordering images, or changing an alt text or caption, is a change. No new branching in `Post`. |
+| Which URL an `<img>` contributes | `Srcset` (`catalog.adapter.out`, package-private) | Parses `srcset` into candidates and returns the largest `w` descriptor at most 2048 (the first on a tie). Candidates with `x` descriptors, no descriptor, or an unparseable one are ignored. Empty when none qualify, and the caller falls back to `src` with `Optional.or`. |
+| Where a relative URL points | `ImageCandidate` (`catalog.adapter.out`, package-private), the attributes of one `<img>` | Resolves the chosen URL against the post's **canonical URL** with standard URI resolution. So a protocol-relative `//host/a.jpg` becomes `https://host/a.jpg`, and `/a.jpg` becomes `https://<site host>/a.jpg`. An absolute `http:` URL stays `http:` (never upgraded, as for canonical URLs, Q7). |
+| Whether an `<img>` is excluded | `ImageExclusion` enum (`EMOJI`, `TOO_SMALL`, `NOT_HTTPS`), each constant with `boolean excludes(ImageCandidate)` | A rule table: an image is kept only when no rule excludes it. Each rule is tested alone, plus one test of the composition. |
+| Which bodies yield images | `BloggerEntryMapper.BodyText` (the existing body strategy) | A `FULL` body (`content.$t`) is extracted. A `SUMMARY` body (`summary.$t`) yields `PostImages.none()`, because a summary is a truncated excerpt and search excludes summary posts anyway. WordPress bodies are always `FULL` (`content.rendered`). |
+
+`PostImageExtractor` is a concrete jsoup class in `catalog.adapter.out` next to `JsoupHtmlToText`, with
+`PostImages extract(String html, CanonicalUrl postUrl)`. It is not a domain or application port: only the
+two mappers use it, on the same HTML they pass to `HtmlToText`. It is a pipeline (select `img`, read an
+`ImageCandidate`, filter by the rule table, map to `PostImage`, collect into `PostImages`) with no nested
+branching. Tests use real jsoup.
+
+Images flow unchanged through every layer: `PostSnapshot.images` → `PostContent.images` → `Post.images`
+→ `PostPublished` / `PostRevised` → `IntegrationEvents` → `CatalogPostPublished` / `CatalogPostRevised`,
+`ListCatalogPosts` → `CatalogPostState`, and `PostFile` (written as format 2, with an `images`
+array of `{url, altText, caption}` objects; format 1 is still read, with no images, per Q9). `Post.restore` takes the images too. `PostView` (`get_post`) does
+**not** show images in this phase (Q12).
+
 ## 4. Domain events
 
 Domain events live in `catalog.domain`. They are raised by `Post` and **published only after the
@@ -149,9 +186,17 @@ in-process event bus. `search` subscribes to those and never imports `catalog.do
 
 | Event | Trigger | Payload |
 |---|---|---|
-| `PostPublished` | `Post.publish` (first time this post ID is seen, including a post coming back after withdrawal) | post ID, site ID, canonical URL, title, body, completeness, tags, publishedAt, updatedAt |
-| `PostRevised` | `Post.revise` with a material change | same full state as `PostPublished`, plus `Set<RevisedAspect> changed` (`TITLE`, `BODY`, `COMPLETENESS`, `TAGS`, `URL`, `PUBLISHED_AT`) so that search can skip re-embedding when only tags or the URL changed |
+| `PostPublished` | `Post.publish` (first time this post ID is seen, including a post coming back after withdrawal) | post ID, site ID, canonical URL, title, body, completeness, tags, post images (phase 2), publishedAt, updatedAt |
+| `PostRevised` | `Post.revise` with a material change | same full state as `PostPublished`, plus `Set<RevisedAspect> changed` (`TITLE`, `BODY`, `COMPLETENESS`, `TAGS`, `URL`, `PUBLISHED_AT`, and from phase 2 `IMAGES`) so that search can skip re-embedding when only tags or the URL changed |
 | `PostWithdrawn` | `Post.withdraw` (reconcile found the post missing; the post was seen as not public; or its site was removed from the configuration) | post ID, site ID, canonical URL, reason |
+
+**Published language for post images (phase 2, proposed).** One record,
+`nz.sounie.blogmcp.shared.query.CatalogPostImage(String url, String altText, String caption)`, is used by
+`CatalogPostPublished`, `CatalogPostRevised` and `CatalogPostState`, each of which gains
+`List<CatalogPostImage> images` (document order, no duplicate URLs, alt text and caption empty when
+absent, never null). It lives in `shared.query` because ArchUnit lets `shared.query` depend only on
+itself and the JDK, while `shared.event` may depend on any `shared` package. `CatalogPostRevised.changed`
+may now contain `"IMAGES"`. Search ignores the images until phase 3.
 
 The events carry their full state (event-carried state transfer), so `search` never needs to query
 the catalog. Delivery is in-process and at most once, so `search` will need a rebuild path in slice 2 (Q8).
@@ -172,6 +217,7 @@ the catalog. Delivery is in-process and at most once, so `search` will need a re
   - Title: honour `title.type`. If it is `html` or `xhtml`, strip markup and decode entities. If it is `text` or missing, keep `title.$t` verbatim. All 209 real entries are `type: text` (AC-CAT-6).
   - `ChangeOrder` is `NEWEST_FIRST`. Verified: with `orderby=updated` the first of 150 entries was from 2026-04-13 and the last from 2010-01-19. So the Blogger checkpoint advances only after the final page of a complete sync (AC-CAT-4, AC-CAT-19).
   - Body source (owner decision, Q1, option (a)): the owner switches the site feed to *Full*, so `/feeds/posts/default` carries `content.$t`, which goes through text extraction with completeness `FULL`. Until then, or whenever an entry has no `content`, the snapshot carries the `summary` with completeness `SUMMARY`. Such posts upgrade through AC-CAT-14. No page scraping and no Blogger API v3.
+- **Post images (phase 2, both platforms):** image extraction reads only the content field (WordPress `content.rendered`, Blogger `content.$t`). Those fields hold only the post content, so navigation, headers and sidebars are excluded by construction. A Blogger `summary.$t` yields no images (3.6).
 
 ## 7. Acceptance criteria
 
@@ -253,7 +299,7 @@ Then `revise` returns `Stale`, the stored post is unchanged, and no event is pub
 **AC-CAT-14: Upgrading a summary to the full body is a revision.**
 Given stored Blogger post `elegant:371460637286630063` with completeness `SUMMARY`, and a snapshot with the **same** `updatedAt` but completeness `FULL` and a longer body,
 When it is applied,
-Then one `PostRevised` is published with `changed = {BODY, COMPLETENESS}`.
+Then one `PostRevised` is published with `changed = {BODY, COMPLETENESS}` (plus `IMAGES` if the full body contains post images, since a summary has none; AC-CAT-38).
 
 ### Exclusions, invalid data and failure
 
@@ -360,6 +406,63 @@ When `GetPost` is called with either one,
 Then an empty result is returned (not an exception).
 And when it is called with `not-an-id` or a non-URL string, then `InvalidPostReference` is raised.
 
+### Post images (phase 2, ADR 0011; proposed)
+
+**AC-CAT-33: Post images are recorded in document order with alt text and caption.**
+Given a WordPress entry whose `content.rendered` is `<p>Intro</p><figure><img src="https://blog2.sounie.nz/wp-content/uploads/swan.jpg" alt="A black  swan"><figcaption>Swan in the <em>reeds</em></figcaption></figure><p>More</p><img src="https://i0.wp.com/blog2.sounie.nz/grapes.png">`,
+When it is applied,
+Then the post's images are, in order, (`https://blog2.sounie.nz/wp-content/uploads/swan.jpg`, alt `A black swan`, caption `Swan in the reeds`) and (`https://i0.wp.com/blog2.sounie.nz/grapes.png`, alt empty, caption empty), and the body text is the same as without the images.
+And the same holds for a Blogger entry with that HTML in `content.$t`.
+And a body with no `<img>`, or an empty body, gives an empty image list.
+
+**AC-CAT-34: Emoji, tiny images and tracking pixels are excluded.**
+Given a body containing an emoji `<img class="emoji" src="https://s.w.org/images/core/emoji/15.0.3/72x72/1f600.png">`, a tracking pixel `<img src="https://pixel.wp.com/g.gif" width="1" height="1">`, and a photo `<img src="https://blog2.sounie.nz/wp-content/uploads/swan.jpg" width="1024" height="768">`,
+When it is applied,
+Then the post has exactly one post image, the photo.
+And an `<img class="wp-smiley">` is excluded; an image with `width="63"` (any height) or `height="63"` (any width) is excluded; one with `width="64" height="64"` is kept; and one with `width="100%"` or no size attributes is kept.
+
+**AC-CAT-35: Only https image URLs are kept, after resolving against the canonical URL.**
+Given a post with canonical URL `https://blog2.sounie.nz/2026/09/20/hello/` whose body has images with `src` `data:image/png;base64,iVBOR…`, `http://blog2.sounie.nz/a.jpg`, `//i0.wp.com/b.jpg`, `/wp-content/uploads/c.jpg` and `d.jpg`,
+When it is applied,
+Then the post's images are `https://i0.wp.com/b.jpg`, `https://blog2.sounie.nz/wp-content/uploads/c.jpg` and `https://blog2.sounie.nz/2026/09/20/hello/d.jpg`: the `data:` URI is excluded, and the `http:` URL is excluded rather than upgraded.
+And an `src` that is not a parseable URL (e.g. `https://exa mple.com/x.jpg`) is excluded without making the entry malformed.
+
+**AC-CAT-36: `srcset` contributes its largest candidate up to 2048 px, falling back to `src`.**
+Given an `<img src="https://x.example/s.jpg" srcset="https://x.example/300.jpg 300w, https://x.example/2048.jpg 2048w, https://x.example/1024.jpg 1024w, https://x.example/4096.jpg 4096w">`,
+When it is applied,
+Then the image URL is `https://x.example/2048.jpg`.
+And when every candidate is wider than 2048 (e.g. only `3000w`), or the candidates use `x` descriptors only, or `srcset` is empty, the image URL is `https://x.example/s.jpg`.
+And an `<img>` with no `src` and no qualifying `srcset` candidate contributes no image.
+
+**AC-CAT-37: An image URL is recorded once.**
+Given a body where `https://x.example/a.jpg` appears first with alt `First`, then `https://x.example/b.jpg`, then `https://x.example/a.jpg` again with alt `Second`,
+When it is applied,
+Then the post's images are `a.jpg` (alt `First`) then `b.jpg`.
+
+**AC-CAT-38: A summary body yields no images.**
+Given a Blogger entry with no `content` whose `summary.$t` contains an `<img>` with an https URL,
+When it is applied,
+Then the post has completeness `SUMMARY` and an empty image list.
+
+**AC-CAT-39: A change to the images alone is a revision.**
+Given stored post `sounie-wp:123` with images [`a.jpg`], and a snapshot with a later `updatedAt`, identical title, body text, tags, URL and published-at, and images [`a.jpg`, `b.jpg`],
+When it is applied,
+Then exactly one `PostRevised` is published with `changed = {IMAGES}`, and the stored post has both images.
+And the same holds (`changed = {IMAGES}`) when only an image's alt text or caption changed, or when the same images appear in a different order.
+And a snapshot with the same images in the same order changes nothing about images (AC-CAT-10, AC-CAT-12).
+
+**AC-CAT-40: Images are part of the published language.**
+Given a post published with images (`https://x.example/a.jpg`, alt `Swan`, caption empty),
+When the integration events are published and `ListCatalogPosts` is queried,
+Then `CatalogPostPublished.images` and `CatalogPostState.images` are each [`CatalogPostImage("https://x.example/a.jpg", "Swan", "")`]. And after an images-only revision, `CatalogPostRevised.images` holds the new list and `changed` is `{"IMAGES"}`.
+
+**AC-CAT-41: Stored posts keep their images, and format-1 files load with no images.**
+Given a post with two images, in order, saved by `FilePostRepository`,
+When the repository is reopened,
+Then the restored post has the same two images in the same order with the same alt texts and captions, and the file has `"format": 2`.
+And given a valid post file with `"format": 1` (no `images`), when the repository opens, the post loads with `PostImages.none()`, the file is **not** quarantined, and the storage health stays `HEALTHY`. When a later sync applies a snapshot of that post that has images (even with the same `updatedAt`), one `PostRevised` with `changed = {IMAGES}` is published, and the file is rewritten as format 2 (Q9).
+And a file with any other format (missing, or e.g. `3`) is still unreadable and quarantined.
+
 ## 8. Decisions and open questions
 
 - **Q1 (resolved 2026-10-01, owner): full Blogger text, option (a).** The owner will switch Blogger Settings, Site feed, "Allow blog feed" to *Full*. There is no scraping and no API v3. `BodyCompleteness` is kept: posts stored as `SUMMARY` before the switch upgrade to `FULL` through AC-CAT-14.
@@ -382,3 +485,24 @@ And when it is called with `not-an-id` or a non-URL string, then `InvalidPostRef
   - Sources must never report false completeness for a truncated listing (3.4).
   - Titles are plain text. Markup is removed only where the platform declares the title as HTML: always for WordPress `title.rendered`, and for Blogger only when `title.type` is `html` or `xhtml`. Blogger `text` titles are kept verbatim (AC-CAT-6). This was corrected in review loop 2.
 - **Q8 (open, lead, for slice 2): event delivery.** Delivery is in-process and at most once, with no outbox. `search` will need a way to rebuild its index from the catalog (for example a `ListPosts` query or a replay), which is out of scope for this slice. *Resolved (slice 2, approved by the owner on 2026-10-02):* a pull contract `shared.query.CatalogPosts`, implemented by the catalog as `ListCatalogPosts`, and a fingerprint-based reconcile in search. See `docs/domain/search.md` section 5, ADR 0005 and AC-SRCH-31.
+- **Modeller decisions for post images (phase 2, 2026-10-13, approved by the owner with the ACs):**
+  - Alt text and caption are **empty strings when absent**, not `Optional`, following `Title` and `Body` and keeping the `shared` records to plain `String`s. `alt=""` (decorative) and a missing `alt` are not distinguished; ADR 0011's snippet fallback (alt, then caption, then URL) treats both as absent.
+  - Tracking pixels are **merged into `TOO_SMALL`**: a declared width or height below 64 covers 1×1 and 0×0. `data:` URIs are **merged into `NOT_HTTPS`**. That leaves three exclusion rules with no overlap; duplicates belong to `PostImages`.
+  - Relative and protocol-relative URLs are **resolved against the canonical URL** (always https), so they are kept. Absolute `http:` is excluded, never upgraded (see Q10).
+  - Duplicates compare the **exact resolved URL**. Size variants of one picture (e.g. `a.jpg?w=300` and `a.jpg`) are different URLs and both kept.
+  - Excluded images are dropped silently: no skipped entry and no `SyncWarning`.
+  - Blogger `SUMMARY` bodies yield no images (AC-CAT-38).
+  - `CatalogPostImage` lives in `shared.query` and is reused by the events (section 4).
+- **Q9 (resolved 2026-10-13, owner): read format 1 as "no images known".**
+  - `StoredFormat` reads versions 1 and 2 and always writes 2.
+  - A format-1 file restores its post with `PostImages.none()`. It is not quarantined, and storage health is unaffected.
+  - The next sync or reconcile that sees such a post revises it if it has images. It publishes `PostRevised` with `changed = {IMAGES}` (invariant 4 applies a same-`updatedAt` snapshot with different content) and rewrites the file as format 2.
+  - Images can take up to a day to appear for posts that no incremental sync touches. There is no mass quarantine and no re-publish of every post (AC-CAT-41).
+- **Q10 (resolved 2026-10-13, owner): image URLs stay strictly https-only.** There is no `http` to `https` upgrade (AC-CAT-35).
+  - Evidence (researcher, 2026-10-13, from the live feeds): all 16 post images across the three sites are already https. WordPress images come via `i0.wp.com` and Blogger images via `blogger.googleusercontent.com`. No `http:`, `//`, relative or `data:` URLs were seen.
+  - That check was based on summaries, not a raw grep. The rule can be revisited if `http:` images turn up.
+- **Q11 (resolved 2026-10-13, owner): no other caption or lazy-loading markup is read now.** Only `<figure>`/`<figcaption>` captions are read. WordPress `wp-caption`, Blogger `tr-caption`, `data-src` and `data-lazy-src` are not handled.
+  - The live WordPress site uses `<figure class="wp-block-image">` with `<figcaption>`, which is covered. It uses `loading="lazy"` with a real `src`, so no lazy-load attribute handling is needed.
+  - Blogger wraps images in `div.separator`/`a.imageanchor` and has no captions.
+- **Q12 (resolved 2026-10-13, owner): accepted as modelled.** `get_post` shows no images in this phase, and `PostView` is unchanged.
+- **Q13 (note for phase 3, not a catalog question):** a tracking pixel without declared `width`/`height` cannot be detected without fetching it. Phase 3's `ImageSource` should drop decoded images smaller than 64 px on either side.

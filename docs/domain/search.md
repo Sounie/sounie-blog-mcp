@@ -313,6 +313,12 @@ event. No other context needs to know about indexing. Outcomes are returned as r
 - **Contract check (completeness)**: the existing `CatalogPostPublished` and `CatalogPostRevised` already carry
   `completeness` as a `String` (`FULL` or `SUMMARY`), so no event change is needed. `CatalogPostWithdrawn`
   does not need it. `CatalogPostState` is new and includes it, as part of AC-SRCH-31.
+- **Contract change (post images, ADR 0011 phase 2, proposed in `catalog.md` 3.6 and section 4):**
+  `CatalogPostPublished`, `CatalogPostRevised` and `CatalogPostState` gain
+  `List<shared.query.CatalogPostImage> images`, and `changed` may contain `"IMAGES"`. Search ignores both
+  until phase 3. `SharedCatalogPosts` and `CatalogEventTranslation` do not read `images`, and the
+  fingerprint does not include them. So an images-only revision, including the ones that follow the
+  catalog's format-1 upgrade (catalog Q9), is `Keep` and re-embeds nothing.
 - **Reading the contract**: search reads it only through `SharedCatalogPosts` (`search.adapter.out`), which
   implements search's own port `PostCatalog`. It translates **every** state into a `CatalogEntry` and
   **never drops one**:
