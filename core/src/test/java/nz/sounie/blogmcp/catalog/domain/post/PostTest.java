@@ -1,6 +1,7 @@
 package nz.sounie.blogmcp.catalog.domain.post;
 
 import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.aSnapshot;
+import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.image;
 import static nz.sounie.blogmcp.catalog.domain.site.TestSites.ELEGANT;
 import static nz.sounie.blogmcp.catalog.domain.site.TestSites.SOUNIE_WP;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -312,6 +313,129 @@ class PostTest {
       assertThat(event.siteId()).isEqualTo(SOUNIE_WP.id());
       assertThat(event.url()).isEqualTo(post.url());
       assertThat(event.reason()).isEqualTo(WithdrawalReason.NO_LONGER_LISTED);
+    }
+  }
+
+  @Nested
+  class Images {
+
+    private static final PostImage A = image("https://x.example/a.jpg", "Swan", "On the lake");
+    private static final PostImage B = image("https://x.example/b.jpg");
+
+    private final PostSnapshotBuilder stored =
+        aSnapshot().sourcePostId("123").title("Same").tags("DDD").updatedAt(T1);
+
+    private Revision reviseStoredWithImages(PostImage[] storedImages, PostImage... newImages) {
+      Post post = stored.images(storedImages).buildStoredPost();
+      return post.revise(SOUNIE_WP, stored.images(newImages).updatedAt(T2).build());
+    }
+
+    private static PostImage[] images(PostImage... images) {
+      return images;
+    }
+
+    @Test
+    @DisplayName("AC-CAT-33: a published post and its PostPublished carry the snapshot images")
+    void publishing_carries_the_images_in_document_order() {
+      PostSnapshot snapshot = aSnapshot().images(A, B).build();
+
+      Post.Published published = Post.publish(SOUNIE_WP, snapshot);
+
+      assertThat(published.post().images().asList()).containsExactly(A, B);
+      assertThat(published.event().images().asList()).containsExactly(A, B);
+    }
+
+    @Test
+    @DisplayName("AC-CAT-41: a restored post holds its images")
+    void a_restored_post_holds_its_images() {
+      assertThat(aSnapshot().images(B, A).buildStoredPost().images().asList())
+          .containsExactly(B, A);
+    }
+
+    @Test
+    @DisplayName("AC-CAT-39: an added image alone is a revision with changed = {IMAGES}")
+    void an_added_image_is_a_revision_of_images_only() {
+      Post post = stored.images(A).buildStoredPost();
+
+      Revision revision = post.revise(SOUNIE_WP, stored.images(A, B).updatedAt(T2).build());
+
+      assertThat(revision).isInstanceOf(Revision.Changed.class);
+      PostRevised event = ((Revision.Changed) revision).event();
+      assertThat(event.changed()).containsExactly(RevisedAspect.IMAGES);
+      assertThat(event.images().asList()).containsExactly(A, B);
+      assertThat(post.images().asList()).containsExactly(A, B);
+      assertThat(post.updatedAt()).isEqualTo(T2);
+    }
+
+    static Stream<Arguments> imagesOnlyChanges() {
+      PostImage newAlt = image("https://x.example/a.jpg", "Black swan", "On the lake");
+      PostImage newCaption = image("https://x.example/a.jpg", "Swan", "In the reeds");
+      return Stream.of(
+          Arguments.of("an alt text changed", images(A), images(newAlt)),
+          Arguments.of("a caption changed", images(A), images(newCaption)),
+          Arguments.of("the order changed", images(A, B), images(B, A)),
+          Arguments.of("an image was removed", images(A, B), images(A)),
+          Arguments.of("every image was removed", images(A), images()));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("imagesOnlyChanges")
+    @DisplayName("AC-CAT-39: a change to the images alone is a revision with changed = {IMAGES}")
+    void a_change_to_the_images_alone_is_a_revision_of_images_only(
+        String change, PostImage[] before, PostImage[] after) {
+      Revision revision = reviseStoredWithImages(before, after);
+
+      assertThat(revision).isInstanceOf(Revision.Changed.class);
+      assertThat(((Revision.Changed) revision).event().changed())
+          .containsExactly(RevisedAspect.IMAGES);
+    }
+
+    @Test
+    @DisplayName("AC-CAT-39 / AC-CAT-12: the same images at a newer timestamp are only Touched")
+    void the_same_images_in_the_same_order_change_nothing() {
+      Revision revision = reviseStoredWithImages(images(A, B), A, B);
+
+      assertThat(revision).isInstanceOf(Revision.Touched.class);
+    }
+
+    @Test
+    @DisplayName("AC-CAT-41 / Q9: images found at the same updatedAt are still a revision")
+    void images_found_for_a_post_stored_without_images_at_the_same_timestamp_are_a_revision() {
+      Post post = stored.buildStoredPost();
+
+      Revision revision = post.revise(SOUNIE_WP, stored.images(A).build());
+
+      assertThat(revision).isInstanceOf(Revision.Changed.class);
+      assertThat(((Revision.Changed) revision).event().changed())
+          .containsExactly(RevisedAspect.IMAGES);
+      assertThat(post.images().asList()).containsExactly(A);
+      assertThat(post.updatedAt()).isEqualTo(T1);
+    }
+
+    @Test
+    @DisplayName("AC-CAT-14: a summary upgraded to a full body with images also changes IMAGES")
+    void summary_upgraded_to_a_full_body_with_images_changes_body_completeness_and_images() {
+      PostSnapshotBuilder summary =
+          aSnapshot()
+              .on(ELEGANT)
+              .sourcePostId("371460637286630063")
+              .body("In March 2026 I got caught up")
+              .completeness(BodyCompleteness.SUMMARY)
+              .updatedAt(T1);
+      Post post = summary.buildStoredPost();
+      PostSnapshot full =
+          summary
+              .body("In March 2026 I got caught up in the reduction. And then much more.")
+              .completeness(BodyCompleteness.FULL)
+              .images(A)
+              .build();
+
+      Revision revision = post.revise(ELEGANT, full);
+
+      assertThat(revision).isInstanceOf(Revision.Changed.class);
+      assertThat(((Revision.Changed) revision).event().changed())
+          .containsExactlyInAnyOrder(
+              RevisedAspect.BODY, RevisedAspect.COMPLETENESS, RevisedAspect.IMAGES);
     }
   }
 }

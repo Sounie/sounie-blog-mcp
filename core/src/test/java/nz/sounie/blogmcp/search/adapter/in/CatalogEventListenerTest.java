@@ -7,6 +7,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import nz.sounie.blogmcp.search.adapter.out.FakeEmbedder;
 import nz.sounie.blogmcp.search.application.SearchContext;
@@ -48,6 +49,7 @@ class CatalogEventListenerTest {
         Words.numbered(700),
         completeness,
         Set.of("Java"),
+        List.of(),
         PUBLISHED,
         PUBLISHED);
   }
@@ -91,6 +93,7 @@ class CatalogEventListenerTest {
             "A brand new body",
             "FULL",
             Set.of("Java"),
+            List.of(),
             PUBLISHED,
             PUBLISHED,
             Set.of("BODY"));

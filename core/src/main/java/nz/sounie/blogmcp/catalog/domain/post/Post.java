@@ -40,6 +40,8 @@ public final class Post {
             c.body(),
             c.completeness(),
             c.tags(),
+            // TODO(green): carry the snapshot's images.
+            PostImages.none(),
             c.publishedAt(),
             post.updatedAt));
   }
@@ -52,8 +54,10 @@ public final class Post {
       Body body,
       BodyCompleteness completeness,
       Set<Tag> tags,
+      PostImages images,
       Instant publishedAt,
       Instant updatedAt) {
+    // TODO(green): keep the images.
     return new Post(
         id, new PostContent(url, title, body, completeness, tags, publishedAt), updatedAt);
   }
@@ -122,6 +126,8 @@ public final class Post {
             content.body(),
             content.completeness(),
             content.tags(),
+            // TODO(green): carry the new images.
+            PostImages.none(),
             content.publishedAt(),
             updatedAt,
             changed));
@@ -149,6 +155,12 @@ public final class Post {
 
   public Set<Tag> tags() {
     return content.tags();
+  }
+
+  /** The post images, in document order. */
+  public PostImages images() {
+    // TODO(green): return the stored images.
+    return PostImages.none();
   }
 
   public Instant publishedAt() {

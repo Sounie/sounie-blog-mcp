@@ -18,6 +18,7 @@ public record PostSnapshot(
     Body body,
     BodyCompleteness completeness,
     Set<Tag> tags,
+    PostImages images,
     Instant publishedAt,
     Instant updatedAt) {
 

@@ -7,6 +7,8 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.Optional;
 import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
+import nz.sounie.blogmcp.catalog.domain.post.PostImage;
+import nz.sounie.blogmcp.catalog.domain.post.PostImages;
 import nz.sounie.blogmcp.catalog.domain.post.PostSnapshot;
 import nz.sounie.blogmcp.catalog.domain.post.SourcePostId;
 import nz.sounie.blogmcp.catalog.domain.post.Tag;
@@ -81,6 +83,38 @@ class BloggerEntryMapperTest {
 
     assertThat(snapshot.body().text()).isEqualTo("extracted(<p>Full</p>)");
     assertThat(snapshot.completeness()).isEqualTo(BodyCompleteness.FULL);
+  }
+
+  @Test
+  @DisplayName("AC-CAT-33: the post images of a full body come from content.$t")
+  void reads_the_post_images_from_the_full_content() {
+    ObjectNode entry = entry();
+    entry.putObject("content").put("type", "html").put("$t", PostImageExtractorTest.AC_CAT_33_HTML);
+
+    PostSnapshot snapshot = snapshotOf(mapper.map(entry));
+
+    assertThat(snapshot.images().asList())
+        .containsExactly(
+            new PostImage(
+                URI.create("https://blog2.sounie.nz/wp-content/uploads/swan.jpg"),
+                "A black swan",
+                "Swan in the reeds"),
+            new PostImage(URI.create("https://i0.wp.com/blog2.sounie.nz/grapes.png"), "", ""));
+  }
+
+  @Test
+  @DisplayName("AC-CAT-38: a summary body yields no images")
+  void a_summary_body_yields_no_images() {
+    ObjectNode entry = entry();
+    entry
+        .putObject("summary")
+        .put("type", "html")
+        .put("$t", "<img src=\"https://blogger.googleusercontent.com/img/a.jpg\"> A summary");
+
+    PostSnapshot snapshot = snapshotOf(mapper.map(entry));
+
+    assertThat(snapshot.completeness()).isEqualTo(BodyCompleteness.SUMMARY);
+    assertThat(snapshot.images()).isEqualTo(PostImages.none());
   }
 
   @Test

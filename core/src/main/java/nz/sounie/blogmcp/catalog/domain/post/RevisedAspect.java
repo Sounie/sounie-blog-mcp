@@ -14,7 +14,10 @@ public enum RevisedAspect {
   /** Compared as a set of tags, so neither order nor case matters. */
   TAGS(PostContent::tags),
   URL(PostContent::url),
-  PUBLISHED_AT(PostContent::publishedAt);
+  PUBLISHED_AT(PostContent::publishedAt),
+  /** Compared as an ordered list, including alt text and caption (phase 2). */
+  // TODO(green): read PostContent::images; this stub never reports a difference.
+  IMAGES(content -> PostImages.none());
 
   private final Function<PostContent, Object> valueIn;
 

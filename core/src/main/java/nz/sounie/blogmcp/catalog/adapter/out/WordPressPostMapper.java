@@ -14,6 +14,7 @@ import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
 import nz.sounie.blogmcp.catalog.domain.post.CanonicalUrl;
 import nz.sounie.blogmcp.catalog.domain.post.CanonicalUrlNotOnSite;
 import nz.sounie.blogmcp.catalog.domain.post.PostId;
+import nz.sounie.blogmcp.catalog.domain.post.PostImages;
 import nz.sounie.blogmcp.catalog.domain.post.PostSnapshot;
 import nz.sounie.blogmcp.catalog.domain.post.SourcePostId;
 import nz.sounie.blogmcp.catalog.domain.post.Tag;
@@ -86,6 +87,8 @@ final class WordPressPostMapper {
             new Body(htmlToText.extract(rendered(post, "content"))),
             BodyCompleteness.FULL,
             tags(post, notes),
+            // TODO(green): extract the post images from content.rendered.
+            PostImages.none(),
             publishedAt,
             modified);
     return new SourceEntry.Available(snapshot, notes);

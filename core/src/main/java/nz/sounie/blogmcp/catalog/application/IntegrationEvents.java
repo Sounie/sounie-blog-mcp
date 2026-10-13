@@ -3,6 +3,7 @@ package nz.sounie.blogmcp.catalog.application;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 import nz.sounie.blogmcp.catalog.domain.post.PostEvent;
@@ -32,6 +33,8 @@ final class IntegrationEvents {
               published.body().text(),
               published.completeness().name(),
               names(published.tags(), Tag::value),
+              // TODO(green): map the post images.
+              List.of(),
               published.publishedAt(),
               published.updatedAt());
       case PostRevised revised ->
@@ -43,6 +46,8 @@ final class IntegrationEvents {
               revised.body().text(),
               revised.completeness().name(),
               names(revised.tags(), Tag::value),
+              // TODO(green): map the post images.
+              List.of(),
               revised.publishedAt(),
               revised.updatedAt(),
               names(revised.changed(), RevisedAspect::name));

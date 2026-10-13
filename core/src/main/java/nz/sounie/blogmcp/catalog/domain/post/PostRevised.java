@@ -14,6 +14,7 @@ public record PostRevised(
     Body body,
     BodyCompleteness completeness,
     Set<Tag> tags,
+    PostImages images,
     Instant publishedAt,
     Instant updatedAt,
     Set<RevisedAspect> changed)
