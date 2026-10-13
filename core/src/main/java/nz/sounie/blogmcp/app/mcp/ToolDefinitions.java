@@ -60,7 +60,8 @@ public final class ToolDefinitions {
              "site": {"type": "string"},
              "published": {"type": "string", "format": "date"},
              "score": {"type": "number"},
-             "snippet": {"type": "string"}}}}}}
+             "snippet": {"type": "string"},
+             "matchedImage": {"type": "string", "format": "uri"}}}}}}
       """;
 
   private static final String GET_POST_INPUT =

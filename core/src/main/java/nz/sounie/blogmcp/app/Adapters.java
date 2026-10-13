@@ -2,6 +2,7 @@ package nz.sounie.blogmcp.app;
 
 import java.time.Clock;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import nz.sounie.blogmcp.catalog.adapter.out.BlogSources;
 import nz.sounie.blogmcp.catalog.application.BlogSource;
@@ -9,6 +10,7 @@ import nz.sounie.blogmcp.catalog.domain.site.Platform;
 import nz.sounie.blogmcp.search.application.QueryEmbedder;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProviderProfile;
+import nz.sounie.blogmcp.search.domain.embedding.ImageEmbedder;
 import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.query.QueryText;
@@ -20,6 +22,8 @@ import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 /**
  * The outbound adapters that reach outside the process (the blogs, the local model) and the clock.
  * The file repositories are not here: {@link Wiring} opens them on the data directory.
+ *
+ * @param imageEmbedder the provider's image embedder, or empty for a text-only provider (ADR 0011)
  */
 public record Adapters(
     Map<Platform, BlogSource> sources,
@@ -30,8 +34,10 @@ public record Adapters(
     EmbeddingProviderProfile profile,
     Function<QueryText, QueryPassage> queryPreparation,
     PassageFormatter passageFormatter,
-    String passagePreparationVersion) {
+    String passagePreparationVersion,
+    Optional<ImageEmbedder> imageEmbedder) {
 
+  /** Text-only: no image embedder. */
   public Adapters(
       Map<Platform, BlogSource> sources,
       PassageEmbedder passageEmbedder,
@@ -47,7 +53,8 @@ public record Adapters(
         legacyProfile(tokenCounter),
         QueryPassage::of,
         PassageFormatter.standard(),
-        "canonical-v1");
+        "canonical-v1",
+        Optional.empty());
   }
 
   /**
@@ -72,7 +79,8 @@ public record Adapters(
         profile,
         query -> new QueryPassage(provider.prepareQuery(query)),
         (title, content) -> new Passage(provider.preparePassage(title, new Passage(content))),
-        provider.passagePreparationVersion());
+        provider.passagePreparationVersion(),
+        provider.imageEmbedder());
   }
 
   private static EmbeddingProviderProfile legacyProfile(TokenCounter tokens) {
