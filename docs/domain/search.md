@@ -93,8 +93,8 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Indexed image | (phase 3) One embedded post image: its **image index** (its zero-based position in the post's images, so skipped images leave gaps), URL, image description and embedding. | `IndexedImage` (`search.domain.index`) |
 | Index entry | (phase 3) Either an indexed chunk or an indexed image: anything a query is scored against. | `IndexEntry` (sealed: `IndexedChunk`, `IndexedImage`) |
 | Image host allow-list | Not used (owner decision, 2026-10-14): blogs may serve images from arbitrary domains of their own, so post images may come from **any** `https` host. The blog category, the redirect limit and the size, type and pixel limits are what protect the fetch. | (none) |
-| Address category | (phase 3) Where an address lives, recognised by a rule table that also handles IPv4-mapped IPv6 forms:<br>• `PUBLIC`: every address not in the categories below;<br>• `PRIVATE_NETWORK`: 10/8, 172.16/12, 192.168/16, 100.64/10 (CGNAT, e.g. Tailscale) and `fc00::/7`;<br>• `LOOPBACK`: 127/8 and `::1`;<br>• `NON_ROUTABLE`: link-local 169.254/16 (cloud metadata) and `fe80::/10`, any-local, and multicast.<br>Each category owns `permits(AddressCategory)`, which says which image addresses a blog in that category may use: `PUBLIC` permits `PUBLIC`; `PRIVATE_NETWORK` permits `PUBLIC` and `PRIVATE_NETWORK`; `LOOPBACK` permits `PUBLIC`, `PRIVATE_NETWORK` and `LOOPBACK`; `NON_ROUTABLE` permits `PUBLIC`. No category permits `NON_ROUTABLE`, so an image is never fetched from a link-local, any-local or multicast address. | `AddressCategory` (enum, `search.adapter.out`, package-private), `AddressCategory.of(InetAddress)` |
-| Blog category | (phase 3) The address category of the host of the post's canonical URL, resolved at fetch time. If that host has several addresses, it is the category among them that permits the least, so a host with any public address counts as `PUBLIC`. Every resolved address of the image host, and of each redirect target, must be permitted by it. A post host that does not resolve makes the fetch `Unavailable`. No site configuration flows into search. | `HttpImageSource` (using `AddressCategory`) |
+| Address category | (phase 3) Where an address lives, recognised by a rule table that also handles IPv4-mapped IPv6 forms:<br>• `PUBLIC`: every address not in the categories below;<br>• `PRIVATE_NETWORK`: 10/8, 172.16/12, 192.168/16, 100.64/10 (CGNAT, e.g. Tailscale) and `fc00::/7`;<br>• `LOOPBACK`: 127/8 and `::1`;<br>• `NON_ROUTABLE`: link-local 169.254/16 (cloud metadata) and `fe80::/10`, any-local, and multicast.<br>Each category owns `permits(AddressCategory)`, which says which image addresses a blog in that category may use: `PUBLIC` permits `PUBLIC`; `PRIVATE_NETWORK` permits `PUBLIC` and `PRIVATE_NETWORK`; `LOOPBACK` permits `PUBLIC`, `PRIVATE_NETWORK` and `LOOPBACK`; `NON_ROUTABLE` permits `PUBLIC` and `NON_ROUTABLE`. Only a `NON_ROUTABLE` blog permits `NON_ROUTABLE` images, so a link-local, any-local or multicast image address is fetched only for a blog whose own host is in that same category (owner decision, 2026-10-14). | `AddressCategory` (enum, `search.adapter.out`, package-private), `AddressCategory.of(InetAddress)` |
+| Blog category | (phase 3) The address category of the host of the post's canonical URL, resolved at fetch time. If that host has several addresses, it is the category among them that permits the least, so a host with any public address counts as `PUBLIC`. (`PRIVATE_NETWORK` and `NON_ROUTABLE` permit sets that neither contains the other; a host with addresses in both permits only what both permit, i.e. `PUBLIC`.) Every resolved address of the image host, and of each redirect target, must be permitted by it. A post host that does not resolve makes the fetch `Unavailable`. No site configuration flows into search. | `HttpImageSource` (using `AddressCategory`) |
 | Vector index | Port holding every indexed post. In this slice it has an in-memory implementation only, and file persistence is slice 3. | `VectorIndex` (domain port), `InMemoryVectorIndex` (adapter.out) |
 | Index change | What an integration event asks of the index: **upsert** a post (for both a publish and a revise) or **remove** a post (for a withdraw). | `IndexChange` (sealed: `Upsert`, `Remove`) |
 | Index decision | What must happen to one post's entry: **add** (not indexed yet), **re-embed** (the fingerprint differs), **refresh metadata** (same fingerprint, different metadata), **keep** (nothing differs), **exclude** (a summary-only post), **remove** (withdrawn, or an orphan) or **unreadable** (a malformed catalog post whose ID is known: leave its entry untouched and report it as failed). Readable posts go through one entry point, `IndexDecision.forPost(...)`, for both events and reconciles. | `IndexDecision` (sealed: `Add`, `ReEmbed`, `RefreshMetadata`, `Keep`, `Exclude`, `Remove`, `Unreadable`) |
@@ -430,7 +430,7 @@ acyclic (6.1).
 | Image index invariants | `IndexedPost.restore` (invariant 7), `IndexedImage` compact constructor | |
 | Best entry, snippet and matched image | `IndexEntry.hitFor(query)` per entry kind, `EntryHit.BEST_FIRST`, `PostMatch.matchedImage()` | |
 | Scheme | `HttpImageSource` | Only `https`, on any host and port. Checked before every request, including redirects; otherwise `NOT_HTTPS`. There is no host allow-list (owner decision, 2026-10-14). |
-| Which image addresses a blog permits | `AddressCategory` (package-private enum): `AddressCategory.of(InetAddress)` is a rule table, and each category owns `permits(AddressCategory)` | The blog category is the least-permissive category among the post host's resolved addresses. Every resolved address of the image host, and of each redirect target, must be permitted by it; otherwise `Rejected(ADDRESS_NOT_PERMITTED)`, with no request sent to that host. `NON_ROUTABLE` is never permitted. A post host that does not resolve gives `Unavailable`. The categorisation and the permits table are tested on the enum. |
+| Which image addresses a blog permits | `AddressCategory` (package-private enum): `AddressCategory.of(InetAddress)` is a rule table, and each category owns `permits(AddressCategory)` | The blog category is the least-permissive category among the post host's resolved addresses. Every resolved address of the image host, and of each redirect target, must be permitted by it; otherwise `Rejected(ADDRESS_NOT_PERMITTED)`, with no request sent to that host. Only a `NON_ROUTABLE` blog permits `NON_ROUTABLE` images. A post host that does not resolve gives `Unavailable`. The categorisation and the permits table are tested on the enum. |
 | Host resolution | `HostResolver` (package-private seam in `search.adapter.out`, wrapping `InetAddress`) | An adapter-only abstraction we own (ADR 0006), not a double of a JDK type. The production resolver uses `InetAddress.getAllByName`. Tests use a fixed-answer resolver, so a "public" image host can redirect to an internal one under WireMock. A WireMock post URL on `localhost` is a `LOOPBACK` blog, and a public IP literal (e.g. `https://93.184.216.34/p`) is a `PUBLIC` blog without DNS. |
 | Redirects | `HttpImageSource` follows them itself (the client never follows redirects), at most 3 | Each target must be `https` and be permitted by the blog category. The fourth redirect is `TOO_MANY_REDIRECTS`. |
 | Response status | `FetchStatus` (package-private) | 2xx: read the body. 3xx with `Location`: redirect. 408, 429, 5xx, timeouts and I/O errors: `Unavailable`. Any other status: `Rejected(HTTP_STATUS)`. |
@@ -1201,8 +1201,9 @@ Then `127.0.0.1` and `::1` are `LOOPBACK`; `10.1.2.3`, `172.16.0.1`, `192.168.1.
 and `::ffff:10.1.2.3` are `PRIVATE_NETWORK`; `169.254.169.254`, `fe80::1`, `0.0.0.0` and `224.0.0.1` are
 `NON_ROUTABLE`; and `93.184.216.34` and `2606:4700::1111` are `PUBLIC`.
 And `permits` is exactly the table in the glossary ("Address category"), tested on the enum: `PUBLIC`
-and `NON_ROUTABLE` permit only `PUBLIC`, `PRIVATE_NETWORK` also permits `PRIVATE_NETWORK`, `LOOPBACK`
-also permits `PRIVATE_NETWORK` and `LOOPBACK`, and nothing permits `NON_ROUTABLE`.
+permits only `PUBLIC`, `PRIVATE_NETWORK` also permits `PRIVATE_NETWORK`, `LOOPBACK` also permits
+`PRIVATE_NETWORK` and `LOOPBACK`, `NON_ROUTABLE` permits `PUBLIC` and `NON_ROUTABLE`, and only
+`NON_ROUTABLE` permits `NON_ROUTABLE`.
 And given a public blog (post URL `https://93.184.216.34/p`) whose image host resolves to a
 private-network or loopback address, the fetch is `Rejected(ADDRESS_NOT_PERMITTED)` and no request is
 sent.
@@ -1212,8 +1213,9 @@ is `Rejected(ADDRESS_NOT_PERMITTED)` and no request reaches the target.
 And given a loopback blog (a `localhost` post URL) with a loopback image, the fetch is `Fetched`; and
 given a private-network or loopback blog with an image whose host resolves to a public address, the
 fetch is `Fetched`.
-And given any blog (public, private-network or loopback) with an image at `https://169.254.169.254/a.jpg`,
-the fetch is `Rejected(ADDRESS_NOT_PERMITTED)`.
+And given a public, private-network or loopback blog with an image at `https://169.254.169.254/a.jpg`,
+the fetch is `Rejected(ADDRESS_NOT_PERMITTED)`; given a non-routable blog (post host resolving to
+`169.254.0.10` through the test `HostResolver`), the same image is not rejected for its address.
 And given a post URL whose host does not resolve, the fetch is `Unavailable` (so it is retried on the
 next reconcile).
 And a redirect to an `http` URL is `Rejected(NOT_HTTPS)`.
@@ -1327,7 +1329,7 @@ Image indexing decisions (ADR 0011 phase 3, AC-SRCH-66 to 80; approved by the ow
   permits only public image addresses. A private-network blog also permits private-network addresses
   (so a blog on an internal network or Tailscale can index images from that network). A loopback blog
   also permits loopback addresses. Link-local (including cloud metadata), any-local and multicast
-  addresses are never fetched. The rule is checked for the image host and every redirect target.
+  addresses are fetched only for a blog whose own host is in the same non-routable category. The rule is checked for the image host and every redirect target.
   Fetching is also limited by the redirect limit, the 10 MiB cap, the content-type check, the pixel
   limits and the timeouts.
 - **No new index decision or outcome.** A pending image is retried through the existing staleness
@@ -1360,7 +1362,8 @@ Owner decisions on the phase 3 questions (all resolved 2026-10-14, owner):
 - **Q-IMG 9 (resolved): accepted.** A 403, 404 or 410 settles the image for that content version.
 - **Q-IMG 10 (resolved): DNS rebinding is an accepted residual risk**, with no connection pinning.
   Addresses are checked after resolving, but the HTTP client resolves again when it connects. The
-  blog category rule bounds what a fetch may reach, and link-local addresses are never permitted.
+  blog category rule bounds what a fetch may reach, and link-local addresses are permitted only for a
+  blog whose own host is non-routable.
 
 Owner decisions (all resolved 2026-10-02, owner):
 - **Q1 (resolved): the catalog change is in this slice.** It adds `shared.query.CatalogPosts` / `CatalogPostState` and

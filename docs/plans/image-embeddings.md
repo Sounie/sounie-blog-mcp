@@ -49,7 +49,8 @@ the single source of truth for progress across sessions. Each phase's PR updates
     https host whose address category is permitted by the category of the post's host:
     - a public blog permits only public image addresses;
     - a private-network blog also permits private-network addresses;
-    - link-local, any-local and multicast addresses are never fetched.
+    - link-local, any-local and multicast addresses are fetched only for a blog whose own host is
+      in the same non-routable category.
 
     DNS rebinding is an accepted residual risk.
   - Query URLs must not resolve to loopback, link-local or private addresses.
@@ -154,7 +155,8 @@ photo yields exactly one post image.
     checks every resolved address of the image host, and of each redirect target, against the
     category of the post's host (`AddressCategory`; search.md 3.7). A public blog permits only
     public image addresses, and a private-network blog also permits private-network addresses.
-    Link-local, any-local and multicast addresses are never fetched. This came from the phase 2
+    Link-local, any-local and multicast addresses are fetched only for a blog whose own host is in
+    the same non-routable category. This came from the phase 2
     review.
   - It drops decoded images under 64 px, which catches tracking pixels with no declared size
     (catalog Q13).

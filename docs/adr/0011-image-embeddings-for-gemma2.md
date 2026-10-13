@@ -80,7 +80,8 @@ The owner wants two features:
      may serve images from arbitrary domains of their own. Images may come from any https host whose
      address category is permitted by the category of the post's host. A public blog permits only
      public image addresses, and a private-network blog also permits private-network addresses.
-     Link-local, any-local and multicast addresses are never fetched. The check is repeated for
+     Link-local, any-local and multicast addresses are fetched only for a blog whose own host is in
+     the same non-routable category. The check is repeated for
      every redirect target. DNS rebinding is an accepted residual risk.
    - At most 10 MB, with content-type checks and timeouts.
    - A failed image skips only that image.
