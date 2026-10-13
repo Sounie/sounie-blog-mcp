@@ -14,7 +14,7 @@ record CheckpointFile(
 
   static CheckpointFile of(SyncCheckpoint checkpoint) {
     return new CheckpointFile(
-        StoredFormat.CURRENT,
+        StoredFormat.CHECKPOINT.written(),
         checkpoint.siteId().value(),
         checkpoint.changesSeenUpTo().map(Instant::toString).orElse(null),
         checkpoint.lastReconciledAt().map(Instant::toString).orElse(null));
@@ -26,7 +26,7 @@ record CheckpointFile(
    * @throws RuntimeException naming the problem, if it does not
    */
   CheckpointFile validated() {
-    StoredFormat.require(format);
+    StoredFormat.CHECKPOINT.require(format);
     toCheckpoint();
     return this;
   }

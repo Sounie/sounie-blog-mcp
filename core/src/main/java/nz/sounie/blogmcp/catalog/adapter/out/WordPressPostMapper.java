@@ -14,7 +14,6 @@ import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
 import nz.sounie.blogmcp.catalog.domain.post.CanonicalUrl;
 import nz.sounie.blogmcp.catalog.domain.post.CanonicalUrlNotOnSite;
 import nz.sounie.blogmcp.catalog.domain.post.PostId;
-import nz.sounie.blogmcp.catalog.domain.post.PostImages;
 import nz.sounie.blogmcp.catalog.domain.post.PostSnapshot;
 import nz.sounie.blogmcp.catalog.domain.post.SourcePostId;
 import nz.sounie.blogmcp.catalog.domain.post.Tag;
@@ -33,6 +32,7 @@ final class WordPressPostMapper {
   private final Site site;
   private final Map<Long, String> tagNames;
   private final HtmlToText htmlToText;
+  private final PostImageExtractor imageExtraction = new PostImageExtractor();
 
   WordPressPostMapper(Site site, Map<Long, String> tagNames, HtmlToText htmlToText) {
     this.site = site;
@@ -79,16 +79,16 @@ final class WordPressPostMapper {
   private SourceEntry available(
       JsonNode post, SourcePostId id, CanonicalUrl url, Instant publishedAt, Instant modified) {
     List<String> notes = new ArrayList<>();
+    String content = rendered(post, "content");
     PostSnapshot snapshot =
         new PostSnapshot(
             new PostId(site.id(), id),
             url,
             new Title(TitleFormat.HTML.toPlainText(rendered(post, "title"), htmlToText)),
-            new Body(htmlToText.extract(rendered(post, "content"))),
+            new Body(htmlToText.extract(content)),
             BodyCompleteness.FULL,
             tags(post, notes),
-            // TODO(green): extract the post images from content.rendered.
-            PostImages.none(),
+            imageExtraction.extract(content, url),
             publishedAt,
             modified);
     return new SourceEntry.Available(snapshot, notes);

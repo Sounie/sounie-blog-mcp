@@ -4,20 +4,22 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import nz.sounie.blogmcp.catalog.domain.post.Body;
 import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
 import nz.sounie.blogmcp.catalog.domain.post.CanonicalUrl;
 import nz.sounie.blogmcp.catalog.domain.post.Post;
 import nz.sounie.blogmcp.catalog.domain.post.PostId;
+import nz.sounie.blogmcp.catalog.domain.post.PostImage;
 import nz.sounie.blogmcp.catalog.domain.post.PostImages;
 import nz.sounie.blogmcp.catalog.domain.post.Tag;
 import nz.sounie.blogmcp.catalog.domain.post.Title;
 
 /**
- * A stored post as JSON ({@code "format": 1}), and the immutable snapshot the repository keeps in
+ * A stored post as JSON ({@code "format": 2}), and the immutable snapshot the repository keeps in
  * memory. Restoring goes through the catalog value objects and {@link Post#restore}, so an invalid
- * value makes the file unreadable.
+ * value makes the file unreadable. A format 1 file has no {@code images}, and restores with none.
  */
 record PostFile(
     Integer format,
@@ -27,22 +29,38 @@ record PostFile(
     String body,
     String completeness,
     List<String> tags,
+    List<ImageEntry> images,
     String publishedAt,
     String updatedAt) {
 
+  /** A missing {@code images} field reads as none, for any readable format. */
   PostFile {
     tags = List.copyOf(tags);
+    images = Optional.ofNullable(images).map(List::copyOf).orElse(List.of());
+  }
+
+  /** One post image as stored. */
+  record ImageEntry(String url, String altText, String caption) {
+
+    static ImageEntry of(PostImage image) {
+      return new ImageEntry(image.url().toString(), image.altText(), image.caption());
+    }
+
+    PostImage toPostImage() {
+      return new PostImage(URI.create(url), altText, caption);
+    }
   }
 
   static PostFile of(Post post) {
     return new PostFile(
-        StoredFormat.CURRENT,
+        StoredFormat.POST.written(),
         post.id().external(),
         post.url().value().toString(),
         post.title().value(),
         post.body().text(),
         post.completeness().name(),
         post.tags().stream().map(Tag::value).toList(),
+        post.images().asList().stream().map(ImageEntry::of).toList(),
         post.publishedAt().toString(),
         post.updatedAt().toString());
   }
@@ -53,7 +71,7 @@ record PostFile(
    * @throws RuntimeException naming the problem, if it does not
    */
   PostFile validated() {
-    StoredFormat.require(format);
+    StoredFormat.POST.require(format);
     toPost();
     return this;
   }
@@ -67,8 +85,7 @@ record PostFile(
         new Body(body),
         BodyCompleteness.valueOf(completeness),
         tags.stream().map(Tag::new).collect(Collectors.toCollection(LinkedHashSet::new)),
-        // TODO(green): format 2 stores the images; format 1 restores none.
-        PostImages.none(),
+        PostImages.of(images.stream().map(ImageEntry::toPostImage).toList()),
         Instant.parse(publishedAt),
         Instant.parse(updatedAt));
   }

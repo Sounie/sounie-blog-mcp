@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 import nz.sounie.blogmcp.catalog.domain.post.PostEvent;
+import nz.sounie.blogmcp.catalog.domain.post.PostImages;
 import nz.sounie.blogmcp.catalog.domain.post.PostPublished;
 import nz.sounie.blogmcp.catalog.domain.post.PostRevised;
 import nz.sounie.blogmcp.catalog.domain.post.PostWithdrawn;
@@ -16,6 +17,7 @@ import nz.sounie.blogmcp.shared.event.CatalogPostPublished;
 import nz.sounie.blogmcp.shared.event.CatalogPostRevised;
 import nz.sounie.blogmcp.shared.event.CatalogPostWithdrawn;
 import nz.sounie.blogmcp.shared.event.IntegrationEvent;
+import nz.sounie.blogmcp.shared.query.CatalogPostImage;
 
 /** Translates catalog domain events into the published language in {@code shared}. */
 final class IntegrationEvents {
@@ -33,8 +35,7 @@ final class IntegrationEvents {
               published.body().text(),
               published.completeness().name(),
               names(published.tags(), Tag::value),
-              // TODO(green): map the post images.
-              List.of(),
+              images(published.images()),
               published.publishedAt(),
               published.updatedAt());
       case PostRevised revised ->
@@ -46,8 +47,7 @@ final class IntegrationEvents {
               revised.body().text(),
               revised.completeness().name(),
               names(revised.tags(), Tag::value),
-              // TODO(green): map the post images.
-              List.of(),
+              images(revised.images()),
               revised.publishedAt(),
               revised.updatedAt(),
               names(revised.changed(), RevisedAspect::name));
@@ -64,5 +64,13 @@ final class IntegrationEvents {
     Set<String> names = new LinkedHashSet<>();
     items.forEach(item -> names.add(name.apply(item)));
     return Collections.unmodifiableSet(names);
+  }
+
+  /** The post images in the published language, in document order. */
+  static List<CatalogPostImage> images(PostImages images) {
+    return images.asList().stream()
+        .map(
+            image -> new CatalogPostImage(image.url().toString(), image.altText(), image.caption()))
+        .toList();
   }
 }

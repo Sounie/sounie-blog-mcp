@@ -1,20 +1,33 @@
 package nz.sounie.blogmcp.catalog.adapter.out;
 
-/** The {@code format} version of the catalog's stored files. */
-final class StoredFormat {
+import java.util.Optional;
+import java.util.Set;
 
-  /** The only format this version reads and writes. */
-  static final int CURRENT = 1;
+/**
+ * The {@code format} versions of one kind of the catalog's stored files: the version this release
+ * writes, and every version it still reads.
+ */
+record StoredFormat(int written, Set<Integer> readable) {
 
-  private StoredFormat() {}
+  /** Sync checkpoint files: format 1 only. */
+  static final StoredFormat CHECKPOINT = new StoredFormat(1, Set.of(1));
+
+  /** Post files: format 2 adds the post images; format 1 is still read, with none (Q9). */
+  static final StoredFormat POST = new StoredFormat(2, Set.of(1, 2));
+
+  StoredFormat {
+    readable = Set.copyOf(readable);
+  }
 
   /**
-   * @throws IllegalArgumentException if the stored format is missing or not {@link #CURRENT}
+   * @throws IllegalArgumentException if the stored format is missing or not readable
    */
-  static void require(Integer stored) {
-    if (!Integer.valueOf(CURRENT).equals(stored)) {
-      throw new IllegalArgumentException(
-          "Unknown format " + stored + "; this version reads format " + CURRENT);
-    }
+  void require(Integer stored) {
+    Optional.ofNullable(stored)
+        .filter(readable::contains)
+        .orElseThrow(
+            () ->
+                new IllegalArgumentException(
+                    "Unknown format " + stored + "; this version reads formats " + readable));
   }
 }

@@ -28,6 +28,7 @@ public record PostSnapshot(
     Objects.requireNonNull(title, "title");
     Objects.requireNonNull(body, "body");
     Objects.requireNonNull(completeness, "completeness");
+    Objects.requireNonNull(images, "images");
     Objects.requireNonNull(publishedAt, "publishedAt");
     Objects.requireNonNull(updatedAt, "updatedAt");
     tags = Collections.unmodifiableSet(new LinkedHashSet<>(tags));
@@ -38,6 +39,6 @@ public record PostSnapshot(
 
   /** The material part of the snapshot. */
   PostContent content() {
-    return new PostContent(url, title, body, completeness, tags, publishedAt);
+    return new PostContent(url, title, body, completeness, tags, images, publishedAt);
   }
 }
