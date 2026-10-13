@@ -8,6 +8,8 @@ branch is under review; the open items are listed in ADR 0010's implementation s
 Image embedding in the in-process `gemma2` provider (ADR 0011, phase 1; glossary "Image pixels" to
 "Vision encoder", AC-SRCH-53 to 65) was approved by the owner on 2026-10-14
 (`feature/gemma2-image-embedding`). It adds a port and a value object only; no aggregate, index, catalog or MCP behaviour changes.
+Indexing post images (ADR 0011, phase 3; section 3.7, glossary "Post image (search)" to "Matched
+image", AC-SRCH-66 to 80) was **approved by the owner on 2026-10-14** (`feature/search-image-entries`).
 Package: `nz.sounie.blogmcp.search`
 Feature tag for acceptance criteria: `SRCH`
 
@@ -48,7 +50,7 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Site ID | The site part of a post ID (`[a-z0-9-]{1,40}`). It is used for the site filter. | `SiteId` (search.domain) |
 | Completeness | Whether the catalog has the `FULL` post text or only a `SUMMARY`. It is also the **indexability rule**: `FULL` posts go through the normal index decision, and `SUMMARY` posts are always excluded (owner decision, Q7). It is not stored in the index and not shown in results, because everything indexed is `FULL`. | `Completeness` (enum with behaviour `decide(...)`) |
 | Excluded (post) | A catalog post that must not be in the index because its completeness is `SUMMARY`. Excluding a post removes any entry it already has. | `IndexDecision.Exclude` |
-| Post to index | The catalog's current state of one post, translated into search language: post ID, completeness, post metadata, title and body. This is the single input to every index decision, whether it came from an event or from a reconcile. | `PostToIndex` |
+| Post to index | The catalog's current state of one post, translated into search language: post ID, completeness, post metadata, title, body and (phase 3) its **post images** in catalog order. This is the single input to every index decision, whether it came from an event or from a reconcile. | `PostToIndex` |
 | Post metadata | Everything about an indexed post that search stores but does **not** embed: site ID, canonical URL, title, tags, published at and updated at. A difference in metadata alone never triggers re-embedding. | `PostMetadata` |
 | Word sequence | The post body after **text normalisation**, as an ordered list of words. Any run of Unicode whitespace (spaces, tabs, newlines, no-break space U+00A0) separates words. Any **overlong word** is split into pieces. | `WordSequence` |
 | Overlong word | A whitespace-free run longer than 64 characters, such as a URL, base64 data or minified code. It is split into consecutive pieces of at most 64 characters, which then count as separate words. | `WordSequence` (rule `MAX_WORD_CHARS = 64`) |
@@ -76,10 +78,23 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Image embedder | Port that turns image pixels into an embedding in the **same vector space** as the provider's query and passage embeddings. Images take no task prefix. It throws `EmbedderUnavailable` if the model cannot embed. | `ImageEmbedder.embedImage(ImagePixels)` (`search.domain.embedding`) |
 | Image capability | Whether the distribution's provider can embed images. A provider declares it by returning an image embedder or nothing. Only the in-process `gemma2` provider has one (ADR 0011); `onnx` and `gemma2-server` are text-only. Asking never loads a model. | `EmbeddingProvider.imageEmbedder()` returning `Optional<ImageEmbedder>` |
 | Similarity | The cosine similarity of two embeddings. Because embeddings are unit length, this is their dot product. Its range is [-1, 1], and higher means more related. | `Similarity` |
-| Index recipe | The identity of the method used to build an index entry: selected model and tokenizer revision identity, chunking and selected passage-budget parameters, and passage-preparation/template version. The tokenizer filesystem path and supported context are deployment/validation details, not recipe identity. Query preparation is excluded because it does not change stored passages. Changing an indexing-relevant part makes every entry stale. | `IndexRecipe` |
-| Content fingerprint | SHA-256 over the index recipe, the normalised title and the normalised body. If two posts have the same fingerprint, they produce the same passages. Tags and other metadata are **not** included. | `ContentFingerprint` |
-| Indexed post | The aggregate: one post's metadata, its content fingerprint and its indexed chunks. | `IndexedPost` |
+| Index recipe | The identity of the method used to build an index entry: selected model and tokenizer revision identity, chunking and selected passage-budget parameters, passage-preparation/template version, and (phase 3, image indexing only) the image part `images-v1`. The tokenizer filesystem path and supported context are deployment/validation details, not recipe identity. Query preparation is excluded because it does not change stored passages. Changing an indexing-relevant part makes every entry stale. | `IndexRecipe`; image part added by `ImageIndexing.appliedTo(IndexRecipe)` |
+| Content fingerprint | SHA-256 over the index recipe, the normalised title, the normalised body and (phase 3, image indexing only) each **settled image**'s URL and description, in catalog order. With no images it is exactly the text-only fingerprint. If two posts have the same fingerprint, they produce the same entries. Tags and other metadata are **not** included. | `ContentFingerprint` |
+| Indexed post | The aggregate: one post's metadata, its content fingerprint, its indexed chunks and (phase 3) its indexed images. | `IndexedPost` |
 | Indexed chunk | A chunk's index and text together with its embedding. | `IndexedChunk` |
+| Post image (search) | (phase 3) Search's own copy of one catalog post image: an absolute `https` URL with a host, alt text and caption (plain text, empty when absent, never null). Parsed from the published language; never a catalog type. | `PostImage` (`search.domain.image`) |
+| Image description | (phase 3) The text that stands for an image in results: its alt text if not blank, else its caption if not blank, else `Image: <url>`. Whitespace-normalised like a chunk. It is never blank. It is **not** embedded: the image is embedded from its pixels alone. | `PostImage.description()` |
+| Image source | (phase 3) Domain port that fetches one post image's pixels, given the image URL and the post's canonical URL (whose host decides the **blog category**). It never throws for an expected outcome; it returns an **image fetch**. The domain knows nothing about addresses; that is the adapter's concern. | `ImageSource.fetch(URI imageUrl, URI postUrl)` (`search.domain.image`), `HttpImageSource` (`search.adapter.out`) |
+| Image fetch | (phase 3) The outcome of fetching one image. One of three variants:<br>• **fetched**: the decoded image pixels;<br>• **rejected**: the image itself can never be indexed (an **image rejection** reason), so retrying is pointless;<br>• **unavailable**: a transient failure (timeout, connection error, server error), so it is worth retrying. | `ImageFetch` (sealed: `Fetched(ImagePixels)`, `Rejected(ImageRejection)`, `Unavailable(String detail)`) |
+| Image rejection | (phase 3) Why an image can never be indexed: `NOT_HTTPS` (the URL, or a redirect target, is not `https`), `ADDRESS_NOT_PERMITTED` (an address of the image host, or of a redirect target, is outside what the blog category permits), `TOO_MANY_REDIRECTS`, `HTTP_STATUS` (a 4xx other than 408 and 429), `TOO_LARGE` (over 10 MiB, or over the image-pixels cap), `UNSUPPORTED_TYPE` (not JPEG, PNG or GIF, including WebP), `UNDECODABLE` or `TOO_SMALL` (a decoded side under 64 px). | `ImageRejection` (enum, `search.domain.image`) |
+| Settled image | (phase 3) A post image whose fate is final for this content: it was either embedded or rejected. Only settled images go into the stored fingerprint. | `ImageAttempt` (`Indexed`, `Skipped`) |
+| Pending image | (phase 3) A post image that was unavailable, or whose embedding failed. It is not recorded and not settled, so the stored fingerprint differs from the current one and the next upsert of the post (the next reconcile at the latest) re-embeds the post and tries again. | `ImageAttempt.Pending` |
+| Image indexing | (phase 3) The strategy, chosen once at composition, for a post's images: **text-only** (no fetching, recipe and fingerprint exactly as before phase 3) when the provider has no image embedder, or **with images** (fetch, embed, recipe part `images-v1`) when it has one. Nothing else asks which one it is. | `ImageIndexing` (sealed: `TextOnly`, `WithImages(ImageSource, ImageEmbedder)`, `search.domain.index`) |
+| Indexed image | (phase 3) One embedded post image: its **image index** (its zero-based position in the post's images, so skipped images leave gaps), URL, image description and embedding. | `IndexedImage` (`search.domain.index`) |
+| Index entry | (phase 3) Either an indexed chunk or an indexed image: anything a query is scored against. | `IndexEntry` (sealed: `IndexedChunk`, `IndexedImage`) |
+| Image host allow-list | Not used (owner decision, 2026-10-14): blogs may serve images from arbitrary domains of their own, so post images may come from **any** `https` host. The blog category, the redirect limit and the size, type and pixel limits are what protect the fetch. | (none) |
+| Address category | (phase 3) Where an address lives, recognised by a rule table that also handles IPv4-mapped IPv6 forms:<br>• `PUBLIC`: every address not in the categories below;<br>• `PRIVATE_NETWORK`: 10/8, 172.16/12, 192.168/16, 100.64/10 (CGNAT, e.g. Tailscale) and `fc00::/7`;<br>• `LOOPBACK`: 127/8 and `::1`;<br>• `NON_ROUTABLE`: link-local 169.254/16 (cloud metadata) and `fe80::/10`, any-local, and multicast.<br>Each category owns `permits(AddressCategory)`, which says which image addresses a blog in that category may use: `PUBLIC` permits `PUBLIC`; `PRIVATE_NETWORK` permits `PUBLIC` and `PRIVATE_NETWORK`; `LOOPBACK` permits `PUBLIC`, `PRIVATE_NETWORK` and `LOOPBACK`; `NON_ROUTABLE` permits `PUBLIC`. No category permits `NON_ROUTABLE`, so an image is never fetched from a link-local, any-local or multicast address. | `AddressCategory` (enum, `search.adapter.out`, package-private), `AddressCategory.of(InetAddress)` |
+| Blog category | (phase 3) The address category of the host of the post's canonical URL, resolved at fetch time. If that host has several addresses, it is the category among them that permits the least, so a host with any public address counts as `PUBLIC`. Every resolved address of the image host, and of each redirect target, must be permitted by it. A post host that does not resolve makes the fetch `Unavailable`. No site configuration flows into search. | `HttpImageSource` (using `AddressCategory`) |
 | Vector index | Port holding every indexed post. In this slice it has an in-memory implementation only, and file persistence is slice 3. | `VectorIndex` (domain port), `InMemoryVectorIndex` (adapter.out) |
 | Index change | What an integration event asks of the index: **upsert** a post (for both a publish and a revise) or **remove** a post (for a withdraw). | `IndexChange` (sealed: `Upsert`, `Remove`) |
 | Index decision | What must happen to one post's entry: **add** (not indexed yet), **re-embed** (the fingerprint differs), **refresh metadata** (same fingerprint, different metadata), **keep** (nothing differs), **exclude** (a summary-only post), **remove** (withdrawn, or an orphan) or **unreadable** (a malformed catalog post whose ID is known: leave its entry untouched and report it as failed). Readable posts go through one entry point, `IndexDecision.forPost(...)`, for both events and reconciles. | `IndexDecision` (sealed: `Add`, `ReEmbed`, `RefreshMetadata`, `Keep`, `Exclude`, `Remove`, `Unreadable`) |
@@ -98,10 +113,13 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Published-date range | An optional `from` date and an optional `to` date, both inclusive. A post is in range when its `publishedAt`, converted to a calendar date in the blog time zone, falls between them. `from` must not be after `to`. | `PublishedDateRange` |
 | Search filters | The site filter and the date range composed into one predicate over post metadata. | `SearchFilters` |
 | Result limit | The number of posts to return, clamped to 1..20. It defaults to 10 when absent. | `ResultLimit` |
-| Chunk hit | The similarity of one indexed chunk to the query. | `ChunkHit` |
-| Post match | One post in the results: its post metadata, its **best chunk hit**'s similarity as the post's score, and that chunk's text as the **snippet**. | `PostMatch` |
-| Best chunk | The chunk hit of a post with the highest similarity. If two are equal, the lower chunk index wins. | `IndexedPost.bestMatch(Embedding)` |
-| Snippet | The first 60 words of the best chunk, without the title line. If the chunk has more words, a trailing ` …` is added and the snippet is marked truncated. It may be empty for a post with an empty body. Trimming was deferred from slice 2 (Q5) and is decided here, in search, rather than in the MCP presenter (slice 3, `docs/domain/app.md` 3.6; proposed, pending owner approval). | `Snippet` (`search.domain.index`), `PostMatch.snippet()` |
+| Chunk hit | Retired by phase 3: generalised to **entry hit**. | (none) |
+| Entry hit | (phase 3) The similarity of one index entry to the query, with the entry's snippet text and what matched. | `EntryHit` |
+| Post match | One post in the results: its post metadata, its **best entry**'s similarity as the post's score, that entry's **snippet**, and (phase 3) the **matched image** when the best entry is an image. | `PostMatch` |
+| Best chunk | Retired by phase 3: generalised to **best entry**. | (none) |
+| Best entry | (phase 3) The entry hit of a post with the highest similarity, over its chunks and its images. If two are equal, a chunk beats an image, then the lower index wins. | `IndexedPost.bestMatch(Embedding)`, `EntryHit.BEST_FIRST` |
+| Matched image | (phase 3) The URL of the indexed image that was a post's best entry. Absent when the best entry is a chunk. | `PostMatch.matchedImage()` returning `Optional<URI>` |
+| Snippet | The first 60 words of the best entry: a chunk's text without the title line, or (phase 3) an indexed image's description. If the chunk has more words, a trailing ` …` is added and the snippet is marked truncated. It may be empty for a post with an empty body. Trimming was deferred from slice 2 (Q5) and is decided here, in search, rather than in the MCP presenter (slice 3, `docs/domain/app.md` 3.6; proposed, pending owner approval). | `Snippet` (`search.domain.index`), `PostMatch.snippet()` |
 | Search results | The post matches ordered by **ranking** and cut to the limit. | `SearchResults` |
 | Ranking | Order by score, highest first. Ties go to the more recent `publishedAt` first, and then to the lower post ID (compared as a string). | `PostMatch.RANKING` |
 | Search posts | Answer a search query. | `SearchPosts` use case |
@@ -132,7 +150,8 @@ tested alone; `Gemma2ImagePreprocessor` only composes them.
 
 ### 3.1 `IndexedPost` (aggregate root, one per post ID)
 
-State: `PostId id`, `PostMetadata metadata`, `ContentFingerprint fingerprint`, `List<IndexedChunk> chunks`.
+State: `PostId id`, `PostMetadata metadata`, `ContentFingerprint fingerprint`, `List<IndexedChunk> chunks`,
+and (phase 3) `List<IndexedImage> images` (empty for text-only image indexing; see 3.7).
 
 Behaviour:
 - **Single decision entry point**: `IndexDecision.forPost(Optional<IndexedPost> existing, PostToIndex post, ContentFingerprint current)`
@@ -152,8 +171,10 @@ Behaviour:
 - `IndexedPost withMetadata(PostMetadata m)`. This returns a copy with the same chunks and
   fingerprint, so it never needs to embed.
 - `Optional<PostMatch> bestMatch(Embedding query)`. This **owns snippet choice**. It scores every
-  chunk, picks the best chunk (ties go to the lower chunk index), and returns empty only when the post
-  has no chunks.
+  index entry (chunks and, from phase 3, images), picks the best entry with `EntryHit.BEST_FIRST`
+  (similarity descending, then chunks before images, then the lower index), and returns empty only
+  when the post has no chunks and no images. An image's snippet is its description, and the match
+  carries its URL as the matched image.
 
 Created only by the domain service `PostIndexer.index(PostToIndex)`. This service builds the
 `WordSequence`, applies the `ChunkingPolicy`, composes the passages, calls `PassageEmbedder.embedPassages`
@@ -176,6 +197,11 @@ Invariants:
    old and new chunks of one post (a contract of the `VectorIndex` port).
 6. **Only full posts**: an indexed post was always built from a `FULL` post to index. A `SUMMARY` post
    never reaches `PostIndexer`, because `Completeness.SUMMARY` turns it into `Exclude` first.
+7. **Images** (phase 3): image indexes are distinct, non-negative and strictly ascending (gaps are
+   allowed, because skipped images are not recorded); otherwise `InvalidIndexedPost`. Each indexed
+   image has an `https` URL, a non-blank description and an embedding in the same space and recipe
+   as the chunks. An indexed image exists only for a settled image, and the stored fingerprint
+   covers exactly the settled images (3.7). `withMetadata` keeps the images.
 
 ### 3.2 `VectorIndex` (domain port; the repository of `IndexedPost`)
 
@@ -217,7 +243,7 @@ approximate-nearest-neighbour structure is needed (ADR 0005).
 | Date-range validity and inclusion | `PublishedDateRange` (factories `unbounded()`, `from(d)`, `to(d)`, `between(a, b)`; `includes(Instant)`; constant `ZONE = Pacific/Auckland`) | It throws `InvalidSearchQuery` with reason `FROM_AFTER_TO`. `includes` converts the instant to a `Pacific/Auckland` calendar date and compares inclusively. The zone is fixed, never passed in, so DST is handled by `java.time` rules. |
 | Site inclusion | `SiteFilter` (`AnySite`, `OnlySite`) with `includes(SiteId)` | |
 | Composition of filters | `SearchFilters` (a list of `Predicate<PostMetadata>`; all must hold) | It is a rule table, so adding a tag filter later means adding a rule. |
-| Best chunk and snippet | `IndexedPost.bestMatch` using `ChunkHit.BEST_FIRST` (similarity descending, then chunk index ascending) | |
+| Best entry and snippet | `IndexedPost.bestMatch` using `EntryHit.BEST_FIRST` (similarity descending, then chunks before images, then index ascending) | Phase 3 generalises `ChunkHit`. Each `IndexEntry` builds its own hit (`hitFor(query)`), so `bestMatch` never asks which kind it has. |
 | Grouping, ranking and tie-breaks, then limit | `SearchResults.rank(Stream<PostMatch>, ResultLimit)` with `PostMatch.RANKING` | Grouping is structural: there is one `bestMatch` per indexed post. |
 | Valid image raster (dimensions, pixel cap, data length, immutability) | `ImagePixels` compact constructor, a rule table of three rules checked in order | It throws `InvalidImagePixels` with a reason. See 3.6. |
 | Whether a provider can embed images | Each `EmbeddingProvider` implementation's `imageEmbedder()` (abstract in the SPI, no default) | Callers use `Optional.map`, never a provider-name check. |
@@ -341,6 +367,81 @@ new concurrency work). The vision encoder is loaded lazily in its own holder, so
 embeds text never extracts or loads its 195 MB. Its files are extracted by `BundledModelFiles`, the
 same way as the text model. Text calls are unchanged: they still pass empty media tensors.
 
+### 3.7 Indexing post images (ADR 0011, phase 3; proposed)
+
+Each image is its own index entry beside the post's text chunks, embedded from its pixels alone, and
+a post scores as its best entry (fixed by ADR 0011). This section decides how that fits the existing
+decide-then-apply and reconcile model without a new index decision.
+
+**Flow.** `PostIndexer.index(post)` is unchanged for text: it chunks, composes and embeds all passages
+in one call, and a text failure still fails the whole post before anything changes (AC-SRCH-17).
+It then hands the post's images to its `ImageIndexing` strategy:
+- `TextOnly` returns no images and fetches nothing.
+- `WithImages` takes each post image in catalog order, calls `ImageSource.fetch(imageUrl, postUrl)`
+  with the post's canonical URL, and turns the
+  `ImageFetch` into an `ImageAttempt` with a pattern switch whose arms each delegate once:
+  - `Fetched(pixels)`: `ImageEmbedder.embedImage(pixels)` gives `Indexed(IndexedImage)`. If the
+    embedder throws `EmbedderUnavailable`, the attempt is `Pending`;
+  - `Rejected(reason)`: `Skipped`. It is settled, with no entry;
+  - `Unavailable(detail)`: `Pending`. It is not settled.
+
+  Images are embedded one at a time (one `embedImage` call each), so one bad image affects only itself.
+
+The aggregate is then built from the chunks, the indexed images, and the fingerprint over the
+**settled** images (`Indexed` and `Skipped`), so the entry is still saved whole.
+
+**Retry (the decision for "a failed image is retried on the next reconcile").** No new state, decision
+or outcome is added. The current fingerprint (used by `IndexDecision.forPost`) covers **all** of the
+post's images, but the stored one covers only the settled ones. A post with a pending image is
+therefore stale: the next upsert of that post (an event, or the next reconcile at the latest) gives
+`ReEmbed`, which re-embeds the text and tries every image again. Once every image is settled, the two
+fingerprints are equal and the post is `Keep` again. Rejected images are settled, so a WebP image or a
+tracking pixel is fetched once per content version, never on every reconcile. The cost of this
+simplicity is that a retry re-embeds the post's text too (accepted by the owner, Q-IMG 7).
+
+**Text-only providers are untouched.** `TextOnly.appliedTo(recipe)` returns the recipe unchanged and
+`TextOnly` fingerprints with an empty image list, which yields exactly today's fingerprint. So the
+`onnx` and `gemma2-server` indexes stay valid, no image is ever fetched, and an images-only revision
+(including those that follow the catalog's format-1 upgrade, catalog Q9) is `Keep`. `WithImages`
+appends `/images-v1` to the recipe, so the `gemma2` index is re-embedded once (ADR 0011
+Consequences).
+
+**Composition.** `app` chooses the strategy once:
+`provider.imageEmbedder().map(e -> ImageIndexing.withImages(new HttpImageSource(errors), e)).orElseGet(ImageIndexing::textOnly)`.
+`HttpImageSource` needs no site configuration: there is no host allow-list, and the address scope
+comes from the post's own canonical URL (owner decision, 2026-10-14). For each fetch it resolves the
+post host once to get the **blog category**, then checks the image host and every redirect target
+against it. A text-only distribution never constructs an `HttpImageSource`.
+
+**Port placement (owner decision, Q-IMG 5).** The plan first put `ImageSource` in
+`search.application`. But `PostIndexer`, a domain service, calls it (through `ImageIndexing`), so ADR
+0006 places it in the domain, for the same reason `ImageEmbedder` is there (Q-IMG 3). It lives in a
+new sub-package `search.domain.image` with `PostImage`, `ImageFetch` and `ImageRejection`. That
+sub-package depends on `embedding` (for `ImagePixels`), and `index` depends on it, so the graph stays
+acyclic (6.1).
+
+| Decision | Owner | Notes |
+|---|---|---|
+| What a valid post image is | `PostImage.of(String url, String altText, String caption)` (`search.domain.image`) | A null field, or a URL that is not absolute `https` with a host, raises `MalformedCatalogPost`. The post becomes `Unreadable` in a reconcile, or is rejected by the listener, like any other malformed field. Both anti-corruption adapters (`SharedCatalogPosts` and `CatalogEventTranslation`) map images, so events and reconciles compute the same fingerprint. |
+| What stands for an image in results | `PostImage.description()` | `Optional` chain over alt text, then caption, then `Image: <url>`; no `if`. |
+| Text-only versus image indexing | `ImageIndexing` (`TextOnly`, `WithImages`), chosen once in `app` | Owns `appliedTo(IndexRecipe)`, the fingerprint's image list and `index(post)`. |
+| What a fetch outcome means for the index | `ImageFetch` variant, mapped to `ImageAttempt` (`Indexed`, `Skipped`, `Pending`) | `ImageAttempt` exposes `entry()` and `settled()` polymorphically, so `WithImages` collects them with a stream. |
+| Retry of a pending image | `ContentFingerprint` over the settled images, compared by the existing `IndexedPost.decideFor` | No new `IndexDecision` variant or `IndexOutcome`. |
+| Image index invariants | `IndexedPost.restore` (invariant 7), `IndexedImage` compact constructor | |
+| Best entry, snippet and matched image | `IndexEntry.hitFor(query)` per entry kind, `EntryHit.BEST_FIRST`, `PostMatch.matchedImage()` | |
+| Scheme | `HttpImageSource` | Only `https`, on any host and port. Checked before every request, including redirects; otherwise `NOT_HTTPS`. There is no host allow-list (owner decision, 2026-10-14). |
+| Which image addresses a blog permits | `AddressCategory` (package-private enum): `AddressCategory.of(InetAddress)` is a rule table, and each category owns `permits(AddressCategory)` | The blog category is the least-permissive category among the post host's resolved addresses. Every resolved address of the image host, and of each redirect target, must be permitted by it; otherwise `Rejected(ADDRESS_NOT_PERMITTED)`, with no request sent to that host. `NON_ROUTABLE` is never permitted. A post host that does not resolve gives `Unavailable`. The categorisation and the permits table are tested on the enum. |
+| Host resolution | `HostResolver` (package-private seam in `search.adapter.out`, wrapping `InetAddress`) | An adapter-only abstraction we own (ADR 0006), not a double of a JDK type. The production resolver uses `InetAddress.getAllByName`. Tests use a fixed-answer resolver, so a "public" image host can redirect to an internal one under WireMock. A WireMock post URL on `localhost` is a `LOOPBACK` blog, and a public IP literal (e.g. `https://93.184.216.34/p`) is a `PUBLIC` blog without DNS. |
+| Redirects | `HttpImageSource` follows them itself (the client never follows redirects), at most 3 | Each target must be `https` and be permitted by the blog category. The fourth redirect is `TOO_MANY_REDIRECTS`. |
+| Response status | `FetchStatus` (package-private) | 2xx: read the body. 3xx with `Location`: redirect. 408, 429, 5xx, timeouts and I/O errors: `Unavailable`. Any other status: `Rejected(HTTP_STATUS)`. |
+| Content type | `ImageContentType` (package-private) | `image/jpeg`, `image/png`, `image/gif` (case-insensitive, parameters ignored) are accepted. Anything else, including a missing header and `image/webp`, is `Rejected(UNSUPPORTED_TYPE)`. |
+| Size | `HttpImageSource` byte cap: 10 MiB (10,485,760 bytes) | A larger `Content-Length` is refused before reading. A body is read only up to the cap, and one byte more is `TOO_LARGE`. |
+| Decoding | `ImageDecoding` (package-private, `ImageIO`) | Reads the declared dimensions first: over 16,777,216 pixels is `TOO_LARGE`, and a side under 64 is `TOO_SMALL`, both without decoding. It decodes the first frame (GIF), drops alpha without compositing, expands palettes and replicates greyscale, as PIL's `convert("RGB")` does (3.6). A decoding failure is `UNDECODABLE`. |
+| Timeouts | `HttpImageSource` constants | Connect 10 s; each response 30 s. Expiry is `Unavailable`. |
+| Logging | `HttpImageSource` | Every outcome other than `Fetched` writes one line to stderr with the URL and the reason (this is the plan's "WebP skipped with a warning"). Nothing is added to the reconcile report. |
+| Stored index format | `IndexFile` / `IndexFileLoader` (`search.adapter.out`) | Writes `"format": 2`, which adds `images`: an array of `{index, url, description, vector}` (vector encoded by `VectorCodec`, like chunks). Reads formats 1 and 2: a format-1 file is read as having no images, and is neither quarantined nor deleted, following catalog Q9. Under `TextOnly` its fingerprint is still current, so nothing is re-embedded; under `WithImages` the recipe differs, so the next reconcile re-embeds it anyway. Any other format is still unreadable and quarantined. The dimension rule covers image vectors as well as chunk vectors. |
+| MCP output | `SearchResultView` (`app.mcp`) and `ToolDefinitions` | An optional `matchedImage` string (`format: uri`) in each result, not in `required`. It is present only for an image match, and the key is omitted (not `null`) otherwise. |
+
 ## 4. Domain events
 
 ### 4.1 Consumed (published language in `nz.sounie.blogmcp.shared.event`)
@@ -348,7 +449,7 @@ same way as the text model. Text calls are unchanged: they still pass empty medi
 | Integration event | Translated to | Effect |
 |---|---|---|
 | `CatalogPostPublished` | `IndexChange.Upsert(PostToIndex)` | A `SUMMARY` post is `Exclude`, so nothing is indexed. A `FULL` post is `Add` if absent. If already present (duplicate delivery, or the reconcile got there first), the fingerprint decides, usually `Keep`. |
-| `CatalogPostRevised` | `IndexChange.Upsert(PostToIndex)` | The completeness is checked first. A revision to `SUMMARY` is `Exclude`, which removes any entry. A revision from `SUMMARY` to `FULL` finds no entry, so it is `Add`. For a `FULL` post that is already indexed, the fingerprint decides between `ReEmbed`, `RefreshMetadata` and `Keep`. The event's `changed` set is **not** used for the decision. The fingerprint is authoritative and also works for reconciles, which have no `changed` set. A tags-only, URL-only or published-at-only revision therefore causes **no re-embedding**. A revision for a `FULL` post that is not indexed (a missed publish) is `Add`. |
+| `CatalogPostRevised` | `IndexChange.Upsert(PostToIndex)` | The completeness is checked first. A revision to `SUMMARY` is `Exclude`, which removes any entry. A revision from `SUMMARY` to `FULL` finds no entry, so it is `Add`. For a `FULL` post that is already indexed, the fingerprint decides between `ReEmbed`, `RefreshMetadata` and `Keep`. The event's `changed` set is **not** used for the decision. The fingerprint is authoritative and also works for reconciles, which have no `changed` set. A tags-only, URL-only or published-at-only revision therefore causes **no re-embedding**. An images-only revision (`changed = {"IMAGES"}`) re-embeds only under image indexing, and is `Keep` for a text-only provider (3.7). A revision for a `FULL` post that is not indexed (a missed publish) is `Add`. |
 | `CatalogPostWithdrawn` | `IndexChange.Remove(PostId)` | `REMOVED`, or `ALREADY_ABSENT` (idempotent). The reason is ignored. |
 
 `CatalogEventListener` (in `search.adapter.in`) subscribes to the in-process bus. The bus is
@@ -405,6 +506,9 @@ event. No other context needs to know about indexing. Outcomes are returned as r
   until phase 3. `SharedCatalogPosts` and `CatalogEventTranslation` do not read `images`, and the
   fingerprint does not include them. So an images-only revision, including the ones that follow the
   catalog's format-1 upgrade (catalog Q9), is `Keep` and re-embeds nothing.
+  **From phase 3 (proposed):** both adapters map `images` into `PostToIndex` through `PostImage.of`
+  (AC-SRCH-66). Whether they reach the fingerprint depends on the image-indexing strategy (3.7):
+  never for a text-only provider, so the paragraph above still holds there.
 - **Reading the contract**: search reads it only through `SharedCatalogPosts` (`search.adapter.out`), which
   implements search's own port `PostCatalog`. It translates **every** state into a `CatalogEntry` and
   **never drops one**:
@@ -461,7 +565,8 @@ event. No other context needs to know about indexing. Outcomes are returned as r
 | `post` | (nothing) | `PostId`, `SiteId`, `PostMetadata`, `MalformedCatalogPost` |
 | `text` | (nothing) | `WordSequence`, `WordCosts`, `ChunkingPolicy`, `PassageTokenBudget`, `Chunk`, `Passage`, `PassageComposition`, `TokenCounter` (port) |
 | `embedding` | `text` | `Embedding`, `Similarity`, `InvalidEmbedding`, `EmbedderUnavailable`, `PassageEmbedder` (port), `ImageEmbedder` (port), `ImagePixels`, `InvalidImagePixels` |
-| `index` | `embedding`, `post`, `text` | `IndexedPost`, `IndexedChunk`, `PostIndexer`, `PostToIndex`, `Completeness`, `PostMatch`, `ChunkHit`, `ContentFingerprint`, `IndexRecipe`, `IndexChange`, `IndexDecision`, `IndexOutcome`, `IndexWork`, `InvalidIndexedPost`, `VectorIndex` (port) |
+| `image` (phase 3) | `embedding` | `PostImage`, `ImageSource` (port), `ImageFetch`, `ImageRejection` |
+| `index` | `embedding`, `image`, `post`, `text` | `IndexedPost`, `IndexedChunk`, `IndexedImage` and `IndexEntry` (phase 3), `ImageIndexing` and `ImageAttempt` (phase 3), `PostIndexer`, `PostToIndex`, `Completeness`, `PostMatch`, `EntryHit` (was `ChunkHit`), `ContentFingerprint`, `IndexRecipe`, `IndexChange`, `IndexDecision`, `IndexOutcome`, `IndexWork`, `InvalidIndexedPost`, `VectorIndex` (port) |
 | `query` | `index`, `post`, `text` | `SearchQuery`, `QueryText`, `InvalidSearchQuery`, `ResultLimit`, `PublishedDateRange`, `SiteFilter`, `SearchFilters`, `SearchResults` |
 | `reconcile` | `index`, `post` | `CatalogEntry`, `ReconcilePlan` |
 
@@ -469,7 +574,7 @@ Nothing in the domain depends on `query`. `PostToIndex`, `Completeness` and `Pos
 not in `post` or `query`, to keep this graph acyclic.
 Outside the domain:
 - `PostCatalog` and `QueryEmbedder` (ports used only by use cases), `ReconcileReport` and the use cases live in `search.application`. `ImageEmbedder` lives in `search.domain.embedding`, next to `PassageEmbedder`, because phase 3's `PostIndexer` (a domain service) calls it (ADR 0006; owner decision 2026-10-13);
-- provider adapters, their preparation strategies/tokenizers, `InMemoryVectorIndex` and `SharedCatalogPosts` live in `search.adapter.out`;
+- provider adapters, their preparation strategies/tokenizers, `InMemoryVectorIndex`, `SharedCatalogPosts` and (phase 3) `HttpImageSource` with its package-private helpers live in `search.adapter.out`;
 - `CatalogEventListener` and `CatalogEventTranslation` live in `search.adapter.in`.
 
 ## 7. Application use cases (`search.application`)
@@ -477,8 +582,8 @@ Outside the domain:
 - `IndexPost.apply(IndexChange)` returns an `IndexOutcome`. It reads as a straight line: decide, then apply the decision.
 - `SearchPosts.search(SearchQuery)` returns `SearchResults`: `embedQuery(query.text())` (the selected adapter prepares it), then `index.all()`, filtered
   by `SearchFilters`, then `bestMatch` for each post, then `SearchResults.rank(limit)`.
-  A `PostMatch` carries the post ID, site ID, canonical URL, title, tags, published at, updated at, score and
-  snippet. It has **no completeness**, because every indexed post is `FULL`.
+  A `PostMatch` carries the post ID, site ID, canonical URL, title, tags, published at, updated at, score,
+  snippet and (phase 3) the optional matched image. It has **no completeness**, because every indexed post is `FULL`.
 - `ReconcileIndex.run()` returns a `ReconcileReport`, with per-post outcomes, failure reasons and the
   orphan-removal-suppressed flag. It reads as a straight line: read the entries, plan, then apply each decision.
 - Port `PostCatalog`: `List<CatalogEntry> currentPosts()`. A malformed state becomes an `Unreadable` or
@@ -977,6 +1082,164 @@ outside the model lock, and this is tested without the model.
 And text embeddings are unchanged: the existing gemma2 text tests (AC-SRCH-51) pass with the same
 vectors, and text calls still pass empty media tensors.
 
+### Indexing post images (ADR 0011, phase 3; proposed)
+
+Where the tests live:
+- **Domain** (pure, under PIT): AC-SRCH-67 to 73, with the `FakeEmbedder` extended to implement
+  `ImageEmbedder` and an in-memory `ImageSource` fake that returns a scripted `ImageFetch` per URL.
+- **Adapters**: AC-SRCH-66 (both anti-corruption adapters), AC-SRCH-74 (real Jackson), AC-SRCH-75
+  (`app.mcp`), and AC-SRCH-76 to 80 against WireMock over https with real `ImageIO` (no double of
+  `HttpClient` or `ImageIO`). `AddressCategory` is also unit-tested alone, and the WireMock tests use the `HostResolver` seam.
+
+Unless an AC says otherwise, "with images" means the `WithImages` strategy and "text-only" means
+`TextOnly`. Post images are written (URL, alt, caption).
+
+**AC-SRCH-66: Post images reach `PostToIndex` from events and from reconciles.**
+Given a `CatalogPostPublished`, and a `CatalogPostState`, each with images
+[(`https://i0.wp.com/a.jpg`, `Swan`, ``), (`https://blog2.sounie.nz/b.png`, ``, `Grapes`)],
+When each is translated,
+Then the `PostToIndex` has those two post images in that order.
+And an image with a null field, or a URL that is not absolute `https` (e.g. `http://x.example/a.jpg`),
+makes the payload malformed: the event is rejected without effect (as in AC-SRCH-18), and the state
+becomes `Unreadable(postId, reason)` (as in AC-SRCH-38).
+
+**AC-SRCH-67: An image's description is its alt text, then its caption, then its URL.**
+Given post images (`https://x.example/a.jpg`, `A black  swan`, `In reeds`),
+(`https://x.example/a.jpg`, `  `, `In reeds`) and (`https://x.example/a.jpg`, ``, ``),
+When their descriptions are taken,
+Then they are `A black swan`, `In reeds` and `Image: https://x.example/a.jpg`.
+And a description of 70 words gives a snippet of its first 60 words plus ` …` (AC-SRCH-39's rule).
+
+**AC-SRCH-68: Text-only providers fetch nothing, and their indexes stay valid.**
+Given text-only image indexing, and a post with two images,
+When it is indexed and its recipe and fingerprint are computed,
+Then the image source is never called, the indexed post has no images, and the recipe ID and the
+fingerprint are exactly those the same post gets with no images (and those of the code before phase 3).
+And an images-only revision of an indexed post is `UNCHANGED`, with no embedder call.
+
+**AC-SRCH-69: Each fetched image is its own entry, embedded alone.**
+Given image indexing, and a post with a 120-word body and images `a.jpg` and `b.png` that both fetch,
+When it is published,
+Then the outcome is `ADDED`, the post has 1 chunk and 2 indexed images, with indexes 0 and 1, the URLs,
+their descriptions, and the image embedder's vectors. `embedImage` was called once per image, and the
+passage embedder received only text passages.
+And the recipe ID is the text-only recipe ID followed by `/images-v1`.
+And restoring an indexed post whose image indexes are `[1, 0]`, `[0, 0]` or `[-1]` raises
+`InvalidIndexedPost`, while `[0, 2]` is accepted.
+
+**AC-SRCH-70: Image changes re-embed under image indexing.**
+Given image indexing and a post indexed with images [`a.jpg` (alt `Swan`)],
+When a revision arrives that adds `b.png`, removes `a.jpg`, or changes `a.jpg`'s alt text to `Black swan`
+(title and body unchanged),
+Then each time the outcome is `RE_EMBEDDED`, and the stored images and descriptions match the revision.
+And the same revision delivered again is `UNCHANGED`.
+
+**AC-SRCH-71: A rejected image is skipped for good.**
+Given image indexing and a post with images `a.jpg` (fetches) and `pixel.gif` (`Rejected(TOO_SMALL)`),
+When it is published,
+Then the outcome is `ADDED`, the post has one indexed image, `a.jpg` with index 0, and no entry for
+`pixel.gif`.
+And a reconcile afterwards gives `UNCHANGED` and does not call the image source.
+
+**AC-SRCH-72: An unavailable image is retried until it is settled.**
+Given image indexing and a post with images `a.jpg` (fetches) and `b.png` (`Unavailable`),
+When it is published,
+Then the outcome is `ADDED`, the post is searchable by its text and by `a.jpg`, and it has no entry for
+`b.png`.
+And when a reconcile runs while `b.png` is still unavailable, the post is `RE_EMBEDDED` and still has
+only `a.jpg`.
+And when a reconcile runs once `b.png` fetches, the post is `RE_EMBEDDED` with both images (indexes 0
+and 1), and the next reconcile is `UNCHANGED`.
+And the same holds when `b.png` fetches but `embedImage` throws `EmbedderUnavailable` for it.
+And a passage-embedder failure still fails the whole post and keeps its old entry (AC-SRCH-17).
+
+**AC-SRCH-73: A post scores as its best entry, which may be an image.**
+Given post A with chunks scoring 0.70 and 0.60 and an image (`https://x.example/swan.jpg`, alt
+`Black swan`) scoring 0.78, and post B with one chunk scoring 0.75,
+When searched,
+Then the results are `[A (0.78), B (0.75)]`, A's snippet is `Black swan` and its matched image is
+`https://x.example/swan.jpg`, and B has no matched image.
+And given a chunk and an image of one post with equal scores, the chunk is the best entry; given two
+images with equal scores, the lower image index is.
+And a post with zero chunks (blank title and body) but one indexed image can be returned through that
+image.
+
+**AC-SRCH-74: Index files move to format 2 with images, and format-1 files still load.**
+Given an indexed post with 2 chunks and 2 images (indexes 0 and 2), saved by `FileVectorIndex`,
+When the index is reopened,
+Then the post is restored with the same images, descriptions and bit-identical vectors, and the file has
+`"format": 2` and an `images` array.
+And given a valid `"format": 1` file (no `images`), it loads with no images, is not quarantined, and a
+text-only reconcile then gives `UNCHANGED`.
+And a file with any other format, or with an image vector of the wrong dimension, is quarantined.
+
+**AC-SRCH-75: `search_posts` results show the matched image.**
+Given search results where one post's best entry is an image and another's is a chunk,
+When `search_posts` returns,
+Then the image match has `matchedImage` set to the image URL, and the chunk match has no
+`matchedImage` key at all. The output schema declares `matchedImage` as an optional string, and the
+results still validate against it.
+
+**AC-SRCH-76: JPEG, PNG and GIF images are fetched as RGB pixels.**
+Given an `HttpImageSource`, and a post URL on `localhost` (a `LOOPBACK` blog, so WireMock's loopback images are permitted), serving a 100 × 80 JPEG, a 100 × 80 PNG with an alpha
+channel, and an animated 64 × 64 GIF, each with its matching content type,
+When each is fetched,
+Then each is `Fetched` with those dimensions, the PNG's RGB samples are its colour samples with alpha
+ignored (not composited on a background), and the GIF gives its first frame.
+
+**AC-SRCH-77: Images come from any https host, and only over https.**
+Given a `localhost` post URL and image URLs on host names unrelated to the post's or any configured
+site's host (the WireMock server, reached under another host name through the test `HostResolver`),
+When they are fetched,
+Then they are `Fetched`: no host allow-list applies (owner decision, 2026-10-14).
+And an `http://` image URL is `Rejected(NOT_HTTPS)` without any request being sent.
+
+**AC-SRCH-78: Image addresses must be permitted by the blog's category.**
+Given `AddressCategory.of`,
+When it categorises sample addresses,
+Then `127.0.0.1` and `::1` are `LOOPBACK`; `10.1.2.3`, `172.16.0.1`, `192.168.1.1`, `100.64.0.1`, `fd00::1`
+and `::ffff:10.1.2.3` are `PRIVATE_NETWORK`; `169.254.169.254`, `fe80::1`, `0.0.0.0` and `224.0.0.1` are
+`NON_ROUTABLE`; and `93.184.216.34` and `2606:4700::1111` are `PUBLIC`.
+And `permits` is exactly the table in the glossary ("Address category"), tested on the enum: `PUBLIC`
+and `NON_ROUTABLE` permit only `PUBLIC`, `PRIVATE_NETWORK` also permits `PRIVATE_NETWORK`, `LOOPBACK`
+also permits `PRIVATE_NETWORK` and `LOOPBACK`, and nothing permits `NON_ROUTABLE`.
+And given a public blog (post URL `https://93.184.216.34/p`) whose image host resolves to a
+private-network or loopback address, the fetch is `Rejected(ADDRESS_NOT_PERMITTED)` and no request is
+sent.
+And given a public blog whose image host resolves to a public address (through the test
+`HostResolver`) and redirects to a target resolving to a private-network or loopback address, the fetch
+is `Rejected(ADDRESS_NOT_PERMITTED)` and no request reaches the target.
+And given a loopback blog (a `localhost` post URL) with a loopback image, the fetch is `Fetched`; and
+given a private-network or loopback blog with an image whose host resolves to a public address, the
+fetch is `Fetched`.
+And given any blog (public, private-network or loopback) with an image at `https://169.254.169.254/a.jpg`,
+the fetch is `Rejected(ADDRESS_NOT_PERMITTED)`.
+And given a post URL whose host does not resolve, the fetch is `Unavailable` (so it is retried on the
+next reconcile).
+And a redirect to an `http` URL is `Rejected(NOT_HTTPS)`.
+And 3 redirects end in `Fetched`, while a 4th redirect is `Rejected(TOO_MANY_REDIRECTS)`.
+
+**AC-SRCH-79: Size, type and pixel limits.**
+Given responses that are:
+- declared with `Content-Length: 10485761`, or streaming 10,485,761 bytes with no length;
+- `image/webp`, `text/html`, or without a content type;
+- `image/jpeg` whose bytes are not an image;
+- a PNG declaring 4,097 × 4,096 pixels;
+- PNGs of 63 × 200, 200 × 63 and 1 × 1 pixels;
+
+When each is fetched,
+Then they are `Rejected` with `TOO_LARGE`, `UNSUPPORTED_TYPE`, `UNDECODABLE`, `TOO_LARGE` and
+`TOO_SMALL` respectively, and one line naming the URL and the reason is written to stderr for each.
+And a body of exactly 10,485,760 bytes is read, and a 64 × 64 PNG is `Fetched`.
+And the oversized PNG is refused without decoding its pixels.
+
+**AC-SRCH-80: Transient failures are unavailable; permanent ones are rejected.**
+Given an allowed image URL whose server answers 500, 503, 429 or 408, does not answer within the
+response timeout, or refuses the connection,
+When it is fetched,
+Then the result is `Unavailable` with a detail naming the cause.
+And when the server answers 404, 403 or 410, the result is `Rejected(HTTP_STATUS)`.
+
 ## 9. Decisions
 
 Model decisions (approved with the model by the owner on 2026-10-02):
@@ -1050,6 +1313,54 @@ Image embedding decisions (ADR 0011 phase 1, AC-SRCH-53 to 65; approved by the o
   - values inside a patch are ordered (p_h, p_w, C); patches are row-major; position ids are
     (x = column, y = row);
   - padding patches are 0 in every pixel value, with position −1.
+
+Image indexing decisions (ADR 0011 phase 3, AC-SRCH-66 to 80; approved by the owner, 2026-10-14):
+- The fixed decisions of ADR 0011 and the plan (each image its own entry, best-entry scoring, the
+  snippet fallback, https only, 10 MB, JPEG/PNG/GIF, WebP skipped) are not reopened, except as
+  below.
+- **No host allow-list (owner decision, 2026-10-14).** Blogs may serve images from arbitrary domains
+  of their own, so post images are fetched from any `https` host. This replaces the "configured
+  sites' hosts and their platform media CDNs" part of ADR 0011 decision 7 and the plan's fixed
+  decisions (both amended).
+- **Image addresses follow the blog's network scope (owner decision, 2026-10-14).** The blog category
+  is the address category of the post's canonical URL host, resolved at fetch time. A public blog
+  permits only public image addresses. A private-network blog also permits private-network addresses
+  (so a blog on an internal network or Tailscale can index images from that network). A loopback blog
+  also permits loopback addresses. Link-local (including cloud metadata), any-local and multicast
+  addresses are never fetched. The rule is checked for the image host and every redirect target.
+  Fetching is also limited by the redirect limit, the 10 MiB cap, the content-type check, the pixel
+  limits and the timeouts.
+- **No new index decision or outcome.** A pending image is retried through the existing staleness
+  check: the stored fingerprint covers only settled images, so the post stays stale until every image
+  is settled (3.7).
+- **Two kinds of failure.** `Rejected` is final for that content (settled, never refetched until the
+  content or recipe changes); `Unavailable` and image-embedder failures are pending (retried). This
+  keeps tracking pixels, WebP and dead links from re-embedding a post on every reconcile.
+- **Text-only providers are byte-for-byte unchanged** in recipe and fingerprint, so phase 3 re-embeds
+  only the `gemma2` index.
+- **Images are mapped by both anti-corruption adapters.** If only `SharedCatalogPosts` mapped them (as
+  the plan's scope line reads), events and reconciles would compute different fingerprints and the
+  post would be re-embedded back and forth.
+- **Index file format 1 is still read**, as having no images, following catalog Q9, instead of the
+  quarantine that unknown formats get.
+- **Skipped images are logged, not reported.** The reconcile report is unchanged.
+- Image fetching runs on the catalog sync thread like the rest of indexing; no concurrency work until
+  the HTTP transport (as for Q9).
+
+Owner decisions on the phase 3 questions (all resolved 2026-10-14, owner):
+- **Q-IMG 5 (resolved): `ImageSource` lives in the domain**, in `search.domain.image`, because
+  `PostIndexer` (domain) calls it (ADR 0006; same reasoning as Q-IMG 3).
+- **Q-IMG 6 (resolved): no media-CDN list and no host allow-list.** Images may come from any `https`
+  host, because blogs may use image domains of their own. Scope is instead decided by the blog
+  category rule above.
+- **Q-IMG 7 (resolved): accepted.** A retry re-embeds the post's text as well as its images, so while
+  an image stays unavailable (or the machine is offline) that post is re-embedded at every reconcile.
+- **Q-IMG 8 (resolved): the fingerprint covers each settled image's URL and description**, so an
+  alt-text or caption edit updates the snippet (by re-embedding the post).
+- **Q-IMG 9 (resolved): accepted.** A 403, 404 or 410 settles the image for that content version.
+- **Q-IMG 10 (resolved): DNS rebinding is an accepted residual risk**, with no connection pinning.
+  Addresses are checked after resolving, but the HTTP client resolves again when it connects. The
+  blog category rule bounds what a fetch may reach, and link-local addresses are never permitted.
 
 Owner decisions (all resolved 2026-10-02, owner):
 - **Q1 (resolved): the catalog change is in this slice.** It adds `shared.query.CatalogPosts` / `CatalogPostState` and

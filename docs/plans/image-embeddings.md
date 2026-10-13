@@ -44,8 +44,15 @@ the single source of truth for progress across sessions. Each phase's PR updates
 - **Query image input.** An absolute local path or an `https://` URL, through a separate tool,
   `find_posts_like_image`.
 - **Untrusted input.**
-  - Post images are fetched only over HTTPS from the configured sites' hosts and their platform
-    media CDNs. Query URLs must not resolve to loopback, link-local or private addresses.
+  - Post images are fetched only over HTTPS (owner decision, 2026-10-14: no host allow-list,
+    because blogs may serve images from arbitrary domains of their own). Images may come from any
+    https host whose address category is permitted by the category of the post's host:
+    - a public blog permits only public image addresses;
+    - a private-network blog also permits private-network addresses;
+    - link-local, any-local and multicast addresses are never fetched.
+
+    DNS rebinding is an accepted residual risk.
+  - Query URLs must not resolve to loopback, link-local or private addresses.
   - At most 10 MB, with content-type checks and timeouts.
   - Supported formats are JPEG, PNG and GIF. WebP is skipped with a warning.
 
@@ -139,13 +146,16 @@ photo yields exactly one post image.
 
 **Scope**
 - `PostToIndex` gains its images, mapped in `SharedCatalogPosts`.
-- New port `ImageSource` in `search.application`, with adapter `HttpImageSource` in
-  `search/adapter/out`.
-  - It applies the host allow-list from the configured sites plus the media CDNs, which need
-    confirming: `*.wp.com`, `*.googleusercontent.com`, `blogger.googleusercontent.com`.
-  - The catalog stores image URLs on any https host (catalog invariant 7), so `HttpImageSource`
-    must also refuse loopback, link-local and private addresses, and check them again after every
-    redirect. This came from the phase 2 review.
+- New port `ImageSource.fetch(URI imageUrl, URI postUrl)`, with adapter `HttpImageSource` in
+  `search/adapter/out`. The port lives in `search.domain.image`, not `search.application`, because
+  `PostIndexer` calls it (owner decision Q-IMG 5, 2026-10-14).
+  - It fetches from any https host: there is no host allow-list (owner decision, 2026-10-14).
+  - The catalog stores image URLs on any https host (catalog invariant 7). So `HttpImageSource`
+    checks every resolved address of the image host, and of each redirect target, against the
+    category of the post's host (`AddressCategory`; search.md 3.7). A public blog permits only
+    public image addresses, and a private-network blog also permits private-network addresses.
+    Link-local, any-local and multicast addresses are never fetched. This came from the phase 2
+    review.
   - It drops decoded images under 64 px, which catches tracking pixels with no declared size
     (catalog Q13).
   - It enforces the size and content-type caps and decodes with `ImageIO`.

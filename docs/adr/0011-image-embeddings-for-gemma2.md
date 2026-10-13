@@ -76,7 +76,12 @@ The owner wants two features:
    - A post scores as its best entry.
    - An image match's snippet is the image's alt text, then its caption, then its URL.
 7. **Image fetching is untrusted input.**
-   - Only HTTPS from the configured sites' hosts and their platform media CDNs.
+   - Only HTTPS. *Amended by the owner on 2026-10-14:* there is no host allow-list, because blogs
+     may serve images from arbitrary domains of their own. Images may come from any https host whose
+     address category is permitted by the category of the post's host. A public blog permits only
+     public image addresses, and a private-network blog also permits private-network addresses.
+     Link-local, any-local and multicast addresses are never fetched. The check is repeated for
+     every redirect target. DNS rebinding is an accepted residual risk.
    - At most 10 MB, with content-type checks and timeouts.
    - A failed image skips only that image.
 8. **Search by image is a separate MCP tool, `find_posts_like_image`.**
