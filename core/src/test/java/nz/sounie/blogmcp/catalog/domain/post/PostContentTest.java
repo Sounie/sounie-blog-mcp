@@ -22,6 +22,7 @@ class PostContentTest {
           new Body("Body"),
           BodyCompleteness.FULL,
           tags("DDD", "Java"),
+          PostImages.none(),
           Instant.parse("2026-09-20T01:20:47Z"));
 
   private static Set<Tag> tags(String... labels) {
@@ -35,7 +36,7 @@ class PostContentTest {
       BodyCompleteness completeness,
       Set<Tag> tags,
       Instant publishedAt) {
-    return new PostContent(url, title, body, completeness, tags, publishedAt);
+    return new PostContent(url, title, body, completeness, tags, PostImages.none(), publishedAt);
   }
 
   static Stream<Arguments> singleChanges() {

@@ -38,8 +38,7 @@ public final class ListCatalogPosts implements CatalogPosts {
         post.body().text(),
         post.completeness().name(),
         IntegrationEvents.names(post.tags(), Tag::value),
-        // TODO(green): map the post images.
-        List.of(),
+        IntegrationEvents.images(post.images()),
         post.publishedAt(),
         post.updatedAt());
   }

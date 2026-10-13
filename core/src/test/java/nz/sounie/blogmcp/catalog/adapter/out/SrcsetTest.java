@@ -1,7 +1,9 @@
 package nz.sounie.blogmcp.catalog.adapter.out;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
+import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -48,6 +50,41 @@ class SrcsetTest {
         new Srcset("\n  https://x.example/300.jpg   300w ,\n  https://x.example/600.jpg 600w  \n");
 
     assertThat(srcset.chosenUrl()).contains("https://x.example/600.jpg");
+  }
+
+  @Test
+  @DisplayName("HTML spec: a candidate URL is a run of non-whitespace and may contain commas")
+  void keeps_a_comma_inside_a_candidate_url() {
+    Srcset srcset =
+        new Srcset(
+            "https://res.cloudinary.com/d/image/upload/w_300,c_fill/a.jpg 300w,"
+                + " https://res.cloudinary.com/d/image/upload/w_600,c_fill/a.jpg 600w");
+
+    assertThat(srcset.chosenUrl())
+        .contains("https://res.cloudinary.com/d/image/upload/w_600,c_fill/a.jpg");
+  }
+
+  @Test
+  void ignores_a_very_long_candidate_without_a_width_descriptor_quickly() {
+    Srcset srcset = new Srcset("data:image/png;base64," + "A".repeat(100_000));
+
+    assertTimeoutPreemptively(
+        Duration.ofSeconds(1), () -> assertThat(srcset.chosenUrl()).isEmpty());
+  }
+
+  @Test
+  void skips_an_x_candidate_before_a_comma_without_a_space() {
+    assertThat(new Srcset("a.jpg 1x,b.jpg 300w").chosenUrl()).contains("b.jpg");
+  }
+
+  @Test
+  void skips_a_candidate_with_an_unparseable_descriptor() {
+    assertThat(new Srcset("a.jpg 300w 200h,b.jpg 600w").chosenUrl()).contains("b.jpg");
+  }
+
+  @Test
+  void reads_candidates_separated_by_a_comma_without_a_space() {
+    assertThat(new Srcset("a.jpg 300w,b.jpg 600w").chosenUrl()).contains("b.jpg");
   }
 
   @ParameterizedTest(name = "\"{0}\"")

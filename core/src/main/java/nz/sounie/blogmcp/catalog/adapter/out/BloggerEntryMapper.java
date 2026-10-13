@@ -33,6 +33,7 @@ final class BloggerEntryMapper {
 
   private final Site site;
   private final HtmlToText htmlToText;
+  private final PostImageExtractor imageExtraction = new PostImageExtractor();
 
   BloggerEntryMapper(Site site, HtmlToText htmlToText) {
     this.site = site;
@@ -85,8 +86,7 @@ final class BloggerEntryMapper {
             new Body(htmlToText.extract(body.html())),
             body.completeness(),
             Tag.setOf(labels(entry)),
-            // TODO(green): extract the post images from a FULL body; a SUMMARY yields none.
-            PostImages.none(),
+            body.images(imageExtraction, url),
             publishedAt,
             updated));
   }
@@ -131,14 +131,47 @@ final class BloggerEntryMapper {
     return node.path(TEXT).asString("");
   }
 
-  /** The full {@code content} when the feed carries it; otherwise the {@code summary}. */
-  private record BodyText(String html, BodyCompleteness completeness) {
+  /**
+   * The full {@code content} when the feed carries it; otherwise the {@code summary}. Only a full
+   * body yields post images: a summary is a truncated excerpt.
+   */
+  private sealed interface BodyText {
+
+    String html();
+
+    BodyCompleteness completeness();
+
+    PostImages images(PostImageExtractor extraction, CanonicalUrl postUrl);
 
     static BodyText of(JsonNode entry) {
       JsonNode content = entry.path("content");
-      return content.has(TEXT)
-          ? new BodyText(text(content), BodyCompleteness.FULL)
-          : new BodyText(text(entry.path("summary")), BodyCompleteness.SUMMARY);
+      return content.has(TEXT) ? new Full(text(content)) : new Summary(text(entry.path("summary")));
+    }
+
+    record Full(String html) implements BodyText {
+
+      @Override
+      public BodyCompleteness completeness() {
+        return BodyCompleteness.FULL;
+      }
+
+      @Override
+      public PostImages images(PostImageExtractor extraction, CanonicalUrl postUrl) {
+        return extraction.extract(html, postUrl);
+      }
+    }
+
+    record Summary(String html) implements BodyText {
+
+      @Override
+      public BodyCompleteness completeness() {
+        return BodyCompleteness.SUMMARY;
+      }
+
+      @Override
+      public PostImages images(PostImageExtractor extraction, CanonicalUrl postUrl) {
+        return PostImages.none();
+      }
     }
   }
 }

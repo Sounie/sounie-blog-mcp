@@ -19,6 +19,7 @@ record PostContent(
     Body body,
     BodyCompleteness completeness,
     Set<Tag> tags,
+    PostImages images,
     Instant publishedAt) {
 
   public PostContent {
@@ -26,6 +27,7 @@ record PostContent(
     Objects.requireNonNull(title, "title");
     Objects.requireNonNull(body, "body");
     Objects.requireNonNull(completeness, "completeness");
+    Objects.requireNonNull(images, "images");
     Objects.requireNonNull(publishedAt, "publishedAt");
     tags = Collections.unmodifiableSet(new LinkedHashSet<>(tags));
   }

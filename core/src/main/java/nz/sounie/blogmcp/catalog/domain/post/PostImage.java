@@ -1,6 +1,7 @@
 package nz.sounie.blogmcp.catalog.domain.post;
 
 import java.net.URI;
+import java.util.Objects;
 
 /**
  * One image that is part of a post's content: an absolute {@code https} URL with a host, plus plain
@@ -9,6 +10,11 @@ import java.net.URI;
 public record PostImage(URI url, String altText, String caption) {
 
   public PostImage {
-    // TODO(green): validate the URL (absolute https with a host) and strip alt text and caption.
+    Objects.requireNonNull(url, "url");
+    if (!"https".equalsIgnoreCase(url.getScheme()) || url.getHost() == null) {
+      throw new IllegalArgumentException("Post image URL must be absolute https: " + url);
+    }
+    altText = Objects.requireNonNull(altText, "altText").strip();
+    caption = Objects.requireNonNull(caption, "caption").strip();
   }
 }
