@@ -99,10 +99,11 @@ and 2,520 patches.
 | Queries ranking their intended image first (official) | 6 of 6 | 6 of 6 |
 
 Phase 1 note: the Java resize matches PIL's `Image.resize(BICUBIC)` byte for byte on all six
-fixtures. The reference's `pixelValuesSum` matches torchvision's antialiased bicubic exactly, not
+fixtures (measured on 2026-10-14 with a one-off PIL/torchvision script, not committed). The reference's `pixelValuesSum` matches torchvision's antialiased bicubic exactly, not
 PIL's. So transformers 5.19's `AutoProcessor` used the torchvision backend, which differs from PIL
 by at most 2 levels in about 0.5% of samples. That costs at most a relative 1.3e-5 in the pixel sum
-(tolerance 1e-4) and stays within the cosine threshold.
+(tolerance 1e-4) and stays within the cosine threshold. These figures come from the same one-off
+script; the committed tests check only the tolerance (AC-SRCH-61) and the cosine (AC-SRCH-62).
 
 Cosine similarity of each query to the best and second-best image, using the official embeddings:
 

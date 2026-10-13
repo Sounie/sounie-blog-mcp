@@ -222,7 +222,8 @@ approximate-nearest-neighbour structure is needed (ADR 0005).
 | Valid image raster (dimensions, pixel cap, data length, immutability) | `ImagePixels` compact constructor, a rule table of three rules checked in order | It throws `InvalidImagePixels` with a reason. See 3.6. |
 | Whether a provider can embed images | Each `EmbeddingProvider` implementation's `imageEmbedder()` (abstract in the SPI, no default) | Callers use `Optional.map`, never a provider-name check. |
 | Target size, patch grid and image token count (provider-internal) | `TargetSize.of(width, height)` and `PatchGrid` | Pure arithmetic; tested without the model (AC-SRCH-56, 57). |
-| Resampling (provider-internal) | `PilBicubicResize` | AC-SRCH-58; exact PIL parity through AC-SRCH-61. |
+| Resampling (provider-internal) | `PilBicubicResize` | AC-SRCH-58; PIL parity checked within tolerance by AC-SRCH-61, and by cosine in AC-SRCH-62. |
+| Resize intermediate within 48 MiB (provider-internal) | `IntermediateSize` compact constructor (target width × source height × 3, in `long`) | It throws `ImageTooLargeToResize`, which `Gemma2OnnxEmbedder` reports as `EmbedderUnavailable` (AC-SRCH-65). |
 | Patch order, rescale, position ids and padding (provider-internal) | `Patchifier`, which accepts only a `ResizedImage` | AC-SRCH-59. |
 | Image input ids (provider-internal) | `ImageInputIds.of(PatchGrid)` | AC-SRCH-60. |
 | Vision output matches the image token count (provider-internal) | `Gemma2VisionEncoder` checks the `image_features` row count against `PatchGrid.imageTokens()` | A mismatch is an `IllegalStateException`, which `Gemma2OnnxEmbedder` turns into `EmbedderUnavailable` (AC-SRCH-65). |
@@ -305,6 +306,11 @@ Invariants, checked in this order by a rule table, each producing at most one `I
    request is refused without needing its bytes. The cap bounds memory: at most 48 MiB of samples. It
    is above a 12-megapixel phone photo (4,032 × 3,024) and far above the catalog's 2,048 px `srcset`
    limit (cap confirmed by the owner, 2026-10-13).
+   The gemma2 provider keeps its resize within the same bound: the image between its horizontal and
+   vertical passes (target width × source height × 3 samples, computed in `long`) may hold at most
+   48 MiB. Only a very tall, narrow image exceeds it, e.g. 1 × 16,777,216, whose 1-pixel width is
+   upscaled to 48. Such an image is valid `ImagePixels`, but the provider refuses it before
+   allocating, as `EmbedderUnavailable` (AC-SRCH-65).
 3. **Data length**: `rgb.length == width × height × 3`, otherwise `DATA_LENGTH_MISMATCH`. A `null`
    array is rejected with `NullPointerException`.
 4. **Immutability**: the compact constructor stores a copy of `rgb`, and the `rgb()` accessor returns a
@@ -963,6 +969,11 @@ When the count is checked,
 Then it fails with `IllegalStateException`, and `embedImage` reports it as `EmbedderUnavailable`.
 This check is tested without the model. The conversion to `EmbedderUnavailable` and the lock
 release are the existing `Gemma2OnnxEmbedder.withModel` path, which image calls reuse.
+And given a valid image too tall and narrow to resize within 48 MiB (e.g. 1 × 16,777,216, see 3.6),
+When it is embedded,
+Then preprocessing refuses it with `ImageTooLargeToResize`, and `embedImage` reports it as
+`EmbedderUnavailable`. Any other preprocessing failure is reported the same way. Preprocessing runs
+outside the model lock, and this is tested without the model.
 And text embeddings are unchanged: the existing gemma2 text tests (AC-SRCH-51) pass with the same
 vectors, and text calls still pass empty media tensors.
 

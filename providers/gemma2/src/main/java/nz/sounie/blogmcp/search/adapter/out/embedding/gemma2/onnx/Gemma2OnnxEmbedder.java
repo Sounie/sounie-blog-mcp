@@ -92,12 +92,24 @@ public final class Gemma2OnnxEmbedder implements EmbeddingProvider {
    * under it. Images take no task prefix.
    */
   private static Embedding embedImage(ImagePixels pixels) {
-    VisionInput input = Gemma2ImagePreprocessor.preprocess(pixels);
+    VisionInput input = preprocess(pixels);
     long[] inputIds = ImageInputIds.of(input.grid());
     return withModel(
         model ->
             EmbeddingFactory.createGemma2Embedding(
                 model.embedImage(inputIds, Vision.INSTANCE.features(input))));
+  }
+
+  /**
+   * Preprocesses without the model lock. A failure, such as an image too large to resize, becomes
+   * {@link EmbedderUnavailable} (AC-SRCH-65).
+   */
+  private static VisionInput preprocess(ImagePixels pixels) {
+    try {
+      return Gemma2ImagePreprocessor.preprocess(pixels);
+    } catch (RuntimeException e) {
+      throw new EmbedderUnavailable("Could not preprocess " + pixels + " for " + MODEL_ID, e);
+    }
   }
 
   @Override
