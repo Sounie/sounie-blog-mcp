@@ -12,9 +12,9 @@ the single source of truth for progress across sessions. Each phase's PR updates
 
 | Phase | Branch | State | Notes |
 |---|---|---|---|
-| 0 Spike and ADR | `feature/image-embeddings-spike` | **In review** | Reference run done 2026-10-13: q8 images 0.99909 to 0.99981 vs official, 6 of 6 rankings. ADR 0011 accepted 2026-10-13; PR open |
+| 0 Spike and ADR | `feature/image-embeddings-spike` | Done | Merged as #20. Reference run 2026-10-13: q8 images 0.99909 to 0.99981 vs official, 6 of 6 rankings. ADR 0011 accepted |
 | 1 Provider image embedding | `feature/gemma2-image-embedding` | Not started | Depends on 0 |
-| 2 Catalog post images | `feature/catalog-post-images` | **In review** | Stacked on phase 0's PR. AC-CAT-33 to 41 done; format 1 read as no images (Q9); https only (Q10) |
+| 2 Catalog post images | `feature/post-images` | **In review** | AC-CAT-33 to 41 done; format 1 read as no images (Q9); https only (Q10) |
 | 3 Search indexes images | `feature/search-image-entries` | Not started | Depends on 1 and 2 |
 | 4 Search by image | `feature/find-posts-like-image` | Not started | Depends on 3 |
 
@@ -109,7 +109,7 @@ the single source of truth for progress across sessions. Each phase's PR updates
 **Exit:** `./gw check pitest` is green, and
 `./gw :providers:gemma2:test -PhuggingFaceMirror=.hf-mirror` passes the parity tests.
 
-## Phase 2: catalog records post images (`feature/catalog-post-images`)
+## Phase 2: catalog records post images (`feature/post-images`)
 
 **Scope**
 - Glossary in `docs/domain/catalog.md`: **Post image** (URL, alt text, caption). ACs from AC-CAT-33.
