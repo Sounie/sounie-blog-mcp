@@ -4,8 +4,9 @@ import java.util.Arrays;
 import java.util.Objects;
 
 /**
- * The start of a post's best chunk, shown with a search result: the first {@link #MAX_WORDS} words,
- * followed by {@code " …"} when the chunk is longer ({@link #truncated()}).
+ * The start of a post's best entry (a chunk's text or an image's description), shown with a search
+ * result: the first {@link #MAX_WORDS} words, followed by {@code " …"} when the text is longer
+ * ({@link #truncated()}).
  */
 public record Snippet(String text, boolean truncated) {
 

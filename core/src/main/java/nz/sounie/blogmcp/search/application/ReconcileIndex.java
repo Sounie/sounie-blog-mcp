@@ -35,7 +35,7 @@ public final class ReconcileIndex {
   /** Read the catalog's entries, plan, then apply each decision in turn. */
   private ReconcileReport reconcile() {
     ReconcilePlan plan =
-        ReconcilePlan.between(catalog.currentPosts(), work.index(), work.indexer().recipe());
+        ReconcilePlan.between(catalog.currentPosts(), work.index(), work.indexer()::fingerprintOf);
     List<PostOutcome> results = plan.decisions().stream().map(this::applyIsolated).toList();
     return ReconcileReport.of(results, plan.orphanRemovalSuppressedBy());
   }

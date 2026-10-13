@@ -3,9 +3,10 @@ package nz.sounie.blogmcp.search.domain.reconcile;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Stream;
+import nz.sounie.blogmcp.search.domain.index.ContentFingerprint;
 import nz.sounie.blogmcp.search.domain.index.IndexDecision;
-import nz.sounie.blogmcp.search.domain.index.IndexRecipe;
 import nz.sounie.blogmcp.search.domain.index.PostToIndex;
 import nz.sounie.blogmcp.search.domain.index.VectorIndex;
 import nz.sounie.blogmcp.search.domain.post.PostId;
@@ -25,8 +26,9 @@ public sealed interface CatalogEntry {
   /** The post ID, when search could read it. */
   Optional<PostId> knownId();
 
-  /** The index decisions this entry plans against the snapshot under the recipe. */
-  Stream<IndexDecision> decisions(VectorIndex snapshot, IndexRecipe recipe);
+  /** The index decisions this entry plans against the snapshot and the current fingerprints. */
+  Stream<IndexDecision> decisions(
+      VectorIndex snapshot, Function<PostToIndex, ContentFingerprint> currentFingerprint);
 
   /**
    * Why this entry stops orphans being removed in this run: the reason of an {@link Unidentified}
@@ -54,9 +56,10 @@ public sealed interface CatalogEntry {
     }
 
     @Override
-    public Stream<IndexDecision> decisions(VectorIndex snapshot, IndexRecipe recipe) {
+    public Stream<IndexDecision> decisions(
+        VectorIndex snapshot, Function<PostToIndex, ContentFingerprint> currentFingerprint) {
       return Stream.of(
-          IndexDecision.forPost(snapshot.find(post.id()), post, post.fingerprintUnder(recipe)));
+          IndexDecision.forPost(snapshot.find(post.id()), post, currentFingerprint.apply(post)));
     }
 
     @Override
@@ -78,7 +81,8 @@ public sealed interface CatalogEntry {
     }
 
     @Override
-    public Stream<IndexDecision> decisions(VectorIndex snapshot, IndexRecipe recipe) {
+    public Stream<IndexDecision> decisions(
+        VectorIndex snapshot, Function<PostToIndex, ContentFingerprint> currentFingerprint) {
       return Stream.of(new IndexDecision.Unreadable(id, reason));
     }
 
@@ -100,7 +104,8 @@ public sealed interface CatalogEntry {
     }
 
     @Override
-    public Stream<IndexDecision> decisions(VectorIndex snapshot, IndexRecipe recipe) {
+    public Stream<IndexDecision> decisions(
+        VectorIndex snapshot, Function<PostToIndex, ContentFingerprint> currentFingerprint) {
       return Stream.empty();
     }
 
