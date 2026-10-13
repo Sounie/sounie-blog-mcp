@@ -16,6 +16,7 @@ import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProviderProfi
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
 import nz.sounie.blogmcp.search.domain.embedding.EmbeddingFactory;
+import nz.sounie.blogmcp.search.domain.embedding.ImageEmbedder;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.query.QueryText;
 import nz.sounie.blogmcp.search.domain.text.Passage;
@@ -100,6 +101,11 @@ public final class Gemma2Embedder implements EmbeddingProvider {
   @Override
   public String passagePreparationVersion() {
     return Gemma2Profile.PASSAGE_PREPARATION_VERSION;
+  }
+
+  @Override
+  public Optional<ImageEmbedder> imageEmbedder() {
+    throw new UnsupportedOperationException("not implemented yet");
   }
 
   @Override

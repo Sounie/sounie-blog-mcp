@@ -99,5 +99,11 @@ class EmbeddingProviderDiscoveryTest {
     public String passagePreparationVersion() {
       return "test-preparation-v1";
     }
+
+    @Override
+    public java.util.Optional<nz.sounie.blogmcp.search.domain.embedding.ImageEmbedder>
+        imageEmbedder() {
+      return java.util.Optional.empty();
+    }
   }
 }
