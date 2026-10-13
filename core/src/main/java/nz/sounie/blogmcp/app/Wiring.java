@@ -14,12 +14,14 @@ import nz.sounie.blogmcp.catalog.application.SyncSite;
 import nz.sounie.blogmcp.catalog.domain.site.SyncInterval;
 import nz.sounie.blogmcp.search.adapter.in.CatalogEventListener;
 import nz.sounie.blogmcp.search.adapter.out.FileVectorIndex;
+import nz.sounie.blogmcp.search.adapter.out.HttpImageSource;
 import nz.sounie.blogmcp.search.adapter.out.SharedCatalogPosts;
 import nz.sounie.blogmcp.search.application.IndexPost;
 import nz.sounie.blogmcp.search.application.IndexWriteLock;
 import nz.sounie.blogmcp.search.application.ReconcileIndex;
 import nz.sounie.blogmcp.search.application.ReconcileReport;
 import nz.sounie.blogmcp.search.application.SearchPosts;
+import nz.sounie.blogmcp.search.domain.index.ImageIndexing;
 import nz.sounie.blogmcp.search.domain.index.PostIndexer;
 import nz.sounie.blogmcp.search.domain.text.ChunkingPolicy;
 import nz.sounie.blogmcp.search.domain.text.PassageComposition;
@@ -60,13 +62,14 @@ public final class Wiring {
         new PassageComposition(budget.titleTokens(), PassageComposition.VERSION);
     PostIndexer indexer =
         new PostIndexer(
-            chunking,
-            composition,
-            adapters.tokenCounter(),
-            adapters.passageEmbedder(),
-            adapters.passageFormatter(),
-            adapters.passagePreparationVersion(),
-            budget);
+                chunking,
+                composition,
+                adapters.tokenCounter(),
+                adapters.passageEmbedder(),
+                adapters.passageFormatter(),
+                adapters.passagePreparationVersion(),
+                budget)
+            .withImageIndexing(imageIndexing(adapters, errors));
     FileVectorIndex index =
         FileVectorIndex.open(
             dataDirectory,
@@ -103,6 +106,17 @@ public final class Wiring {
         new GetPost(posts),
         posts.health(),
         job);
+  }
+
+  /**
+   * Images are indexed only when the provider can embed them; a text-only distribution never
+   * constructs an image source (search.md 3.7).
+   */
+  private static ImageIndexing imageIndexing(Adapters adapters, PrintStream errors) {
+    return adapters
+        .imageEmbedder()
+        .map(embedder -> ImageIndexing.withImages(new HttpImageSource(errors), embedder))
+        .orElseGet(ImageIndexing::textOnly);
   }
 
   public SearchPosts searchPosts() {
