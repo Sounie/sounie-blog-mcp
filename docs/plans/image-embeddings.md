@@ -12,7 +12,7 @@ the single source of truth for progress across sessions. Each phase's PR updates
 
 | Phase | Branch | State | Notes |
 |---|---|---|---|
-| 0 Spike and ADR | `feature/image-embeddings-spike` | **In progress** | Reference run done 2026-10-13: q8 images 0.99909 to 0.99981 vs official, 6 of 6 rankings. Waiting on the owner to accept ADR 0011's thresholds |
+| 0 Spike and ADR | `feature/image-embeddings-spike` | **In review** | Reference run done 2026-10-13: q8 images 0.99909 to 0.99981 vs official, 6 of 6 rankings. ADR 0011 accepted 2026-10-13; PR open |
 | 1 Provider image embedding | `feature/gemma2-image-embedding` | Not started | Depends on 0 |
 | 2 Catalog post images | `feature/catalog-post-images` | Not started | Independent of 1; can run in parallel |
 | 3 Search indexes images | `feature/search-image-entries` | Not started | Depends on 1 and 2 |
@@ -66,9 +66,10 @@ the single source of truth for progress across sessions. Each phase's PR updates
   - the Java threshold is set at ≥ 0.994;
   - q8 is kept and no fp32 fallback is needed.
 
+- ADR 0011 accepted by the owner on 2026-10-13.
+
 **Remaining**
-1. The owner accepts ADR 0011, including its thresholds. Set its status to Accepted.
-2. Open the PR with `scripts/open-pr`. Leave out `docs/blog/`.
+1. The owner reviews and merges the phase 0 PR.
 
 **Exit:** ADR 0011 is Accepted, with real numbers, and the PR is merged.
 

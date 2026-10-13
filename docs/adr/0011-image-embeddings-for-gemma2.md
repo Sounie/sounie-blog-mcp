@@ -4,8 +4,8 @@ Date: 2026-10-13
 
 ## Status
 
-Proposed, with the [Parity](#parity) measurements recorded on 2026-10-13. It becomes Accepted when
-the owner accepts the thresholds. It extends ADR 0010 and leaves ADR 0009's SPI decisions unchanged.
+Accepted by the owner on 2026-10-13, with the [Parity](#parity) measurements and thresholds. It
+extends ADR 0010 and leaves ADR 0009's SPI decisions unchanged.
 
 ## Context
 
