@@ -1,6 +1,7 @@
 package nz.sounie.blogmcp.catalog.adapter.out;
 
 import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.aSnapshot;
+import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.image;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
@@ -91,6 +92,24 @@ abstract class PostRepositoryContract {
         .containsExactlyInAnyOrder(wp1.id(), wp2.id());
     assertThat(repository.findSiteIds())
         .containsExactlyInAnyOrder(TestSites.SOUNIE_WP_ID, TestSites.ELEGANT_ID);
+  }
+
+  @Test
+  @DisplayName("AC-CAT-41: a stored post keeps its images in order, with alt text and caption")
+  void keeps_the_post_images_in_order() {
+    Post post =
+        aSnapshot()
+            .images(
+                image("https://x.example/b.jpg", "Swan", "On the lake"),
+                image("https://x.example/a.jpg", "", "Grapes"))
+            .buildStoredPost();
+
+    repository.save(post);
+
+    assertThat(repository.findById(post.id()).orElseThrow().images().asList())
+        .containsExactly(
+            image("https://x.example/b.jpg", "Swan", "On the lake"),
+            image("https://x.example/a.jpg", "", "Grapes"));
   }
 
   @Test

@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
+import nz.sounie.blogmcp.catalog.domain.post.PostImage;
 import nz.sounie.blogmcp.catalog.domain.post.PostSnapshot;
 import nz.sounie.blogmcp.catalog.domain.post.SourcePostId;
 import nz.sounie.blogmcp.catalog.domain.post.Tag;
@@ -37,6 +38,9 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 class WordPressSourceTest {
 
@@ -88,6 +92,56 @@ class WordPressSourceTest {
   private static PostSnapshot snapshotOf(SourceEntry entry) {
     assertThat(entry).isInstanceOf(SourceEntry.Available.class);
     return ((SourceEntry.Available) entry).snapshot();
+  }
+
+  /** A one-post page (real Jackson) whose {@code content.rendered} is the given HTML. */
+  private static String onePostWithContent(String html) {
+    JsonMapper json = JsonMapper.builder().build();
+    ArrayNode posts = json.createArrayNode();
+    ObjectNode post = posts.addObject();
+    post.put("id", 123)
+        .put("date_gmt", "2026-09-19T08:00:00")
+        .put("modified_gmt", "2026-09-20T01:20:47")
+        .put("link", "https://blog2.sounie.nz/2026/09/20/hello/")
+        .put("status", "publish")
+        .put("type", "post");
+    post.putObject("title").put("rendered", "Images");
+    post.putObject("content").put("rendered", html).put("protected", false);
+    post.putArray("tags");
+    post.putArray("categories");
+    return json.writeValueAsString(posts);
+  }
+
+  @Test
+  @DisplayName("AC-CAT-34: an emoji, a tracking pixel and a photo yield exactly one post image")
+  void emoji_and_tracking_pixel_are_excluded_and_the_photo_is_kept() {
+    stubSinglePageOfPosts(onePostWithContent(PostImageExtractorTest.AC_CAT_34_HTML));
+
+    PostSnapshot snapshot = snapshotOf(fetchFirstPage().entries().getFirst());
+
+    assertThat(snapshot.images().asList())
+        .containsExactly(
+            new PostImage(
+                URI.create("https://blog2.sounie.nz/wp-content/uploads/swan.jpg"), "", ""));
+  }
+
+  @Test
+  @DisplayName("AC-CAT-33: images are recorded in order, and the body text is as without them")
+  void records_post_images_and_leaves_the_body_text_as_without_them() {
+    String html = PostImageExtractorTest.AC_CAT_33_HTML;
+    stubSinglePageOfPosts(onePostWithContent(html));
+
+    PostSnapshot snapshot = snapshotOf(fetchFirstPage().entries().getFirst());
+
+    assertThat(snapshot.images().asList())
+        .containsExactly(
+            new PostImage(
+                URI.create("https://blog2.sounie.nz/wp-content/uploads/swan.jpg"),
+                "A black swan",
+                "Swan in the reeds"),
+            new PostImage(URI.create("https://i0.wp.com/blog2.sounie.nz/grapes.png"), "", ""));
+    assertThat(snapshot.body().text())
+        .isEqualTo(new JsoupHtmlToText().extract(html.replaceAll("<img[^>]*>", "")));
   }
 
   @Test

@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
+import nz.sounie.blogmcp.catalog.domain.post.PostImage;
 import nz.sounie.blogmcp.catalog.domain.post.PostSnapshot;
 import nz.sounie.blogmcp.catalog.domain.post.SourcePostId;
 import nz.sounie.blogmcp.catalog.domain.post.Tag;
@@ -182,5 +183,23 @@ class WordPressPostMapperTest {
     post.put("status", "private");
 
     assertThat(map(post)).isInstanceOf(SourceEntry.NotPublic.class);
+  }
+
+  @Test
+  @DisplayName("AC-CAT-33: the post images come from content.rendered, resolved against the link")
+  void reads_the_post_images_from_the_rendered_content() {
+    ObjectNode post = post();
+    ((ObjectNode) post.get("content"))
+        .put("rendered", PostImageExtractorTest.AC_CAT_33_HTML + "<img src=\"/uploads/c.jpg\">");
+
+    PostSnapshot snapshot = snapshotOf(map(post));
+
+    assertThat(snapshot.images().asList())
+        .extracting(PostImage::url)
+        .containsExactly(
+            URI.create("https://blog2.sounie.nz/wp-content/uploads/swan.jpg"),
+            URI.create("https://i0.wp.com/blog2.sounie.nz/grapes.png"),
+            URI.create("https://blog2.sounie.nz/uploads/c.jpg"));
+    assertThat(snapshot.images().asList().getFirst().caption()).isEqualTo("Swan in the reeds");
   }
 }

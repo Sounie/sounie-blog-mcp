@@ -1,13 +1,16 @@
 package nz.sounie.blogmcp.catalog.application;
 
 import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.aSnapshot;
+import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.image;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import nz.sounie.blogmcp.catalog.adapter.out.InMemoryPostRepository;
 import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
 import nz.sounie.blogmcp.catalog.domain.site.TestSites;
+import nz.sounie.blogmcp.shared.query.CatalogPostImage;
 import nz.sounie.blogmcp.shared.query.CatalogPostState;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,9 +56,30 @@ class ListCatalogPostsTest {
                 "Only a teaser",
                 "SUMMARY",
                 Set.of("DDD", "Java"),
+                List.of(),
                 PUBLISHED,
                 UPDATED));
     assertThat(states.get(1).completeness()).isEqualTo("FULL");
+  }
+
+  @Test
+  @DisplayName("AC-CAT-40: CatalogPostState carries the post images in document order")
+  void current_posts_carry_their_images() {
+    posts.save(
+        aSnapshot()
+            .images(
+                image("https://x.example/a.jpg", "Swan", ""),
+                image("https://x.example/b.jpg", "", "Grapes"))
+            .buildStoredPost());
+
+    assertThat(listCatalogPosts.currentPosts())
+        .singleElement()
+        .satisfies(
+            state ->
+                assertThat(state.images())
+                    .containsExactly(
+                        new CatalogPostImage("https://x.example/a.jpg", "Swan", ""),
+                        new CatalogPostImage("https://x.example/b.jpg", "", "Grapes")));
   }
 
   @Test

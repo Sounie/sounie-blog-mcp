@@ -13,6 +13,7 @@ public record PostPublished(
     Body body,
     BodyCompleteness completeness,
     Set<Tag> tags,
+    PostImages images,
     Instant publishedAt,
     Instant updatedAt)
     implements PostEvent {

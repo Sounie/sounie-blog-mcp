@@ -1,6 +1,7 @@
 package nz.sounie.blogmcp.shared.query;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -16,5 +17,6 @@ public record CatalogPostState(
     String body,
     String completeness,
     Set<String> tags,
+    List<CatalogPostImage> images,
     Instant publishedAt,
     Instant updatedAt) {}

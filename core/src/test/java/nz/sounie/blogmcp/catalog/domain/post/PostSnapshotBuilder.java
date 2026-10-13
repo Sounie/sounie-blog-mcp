@@ -4,6 +4,7 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import nz.sounie.blogmcp.catalog.domain.site.Site;
 import nz.sounie.blogmcp.catalog.domain.site.TestSites;
@@ -20,6 +21,7 @@ public final class PostSnapshotBuilder {
   private String body = "A body.";
   private BodyCompleteness completeness = BodyCompleteness.FULL;
   private Set<Tag> tags = new LinkedHashSet<>();
+  private PostImages images = PostImages.none();
   private Instant publishedAt = DEFAULT_PUBLISHED_AT;
   private Instant updatedAt = DEFAULT_PUBLISHED_AT;
 
@@ -65,6 +67,21 @@ public final class PostSnapshotBuilder {
     return this;
   }
 
+  /** The post images, in document order. */
+  public PostSnapshotBuilder images(PostImage... images) {
+    this.images = PostImages.of(List.of(images));
+    return this;
+  }
+
+  /** An image with no alt text and no caption. */
+  public static PostImage image(String url) {
+    return image(url, "", "");
+  }
+
+  public static PostImage image(String url, String altText, String caption) {
+    return new PostImage(URI.create(url), altText, caption);
+  }
+
   public PostSnapshotBuilder publishedAt(Instant publishedAt) {
     this.publishedAt = publishedAt;
     return this;
@@ -92,6 +109,7 @@ public final class PostSnapshotBuilder {
         new Body(body),
         completeness,
         new LinkedHashSet<>(tags),
+        images,
         publishedAt,
         updatedAt);
   }
@@ -105,6 +123,7 @@ public final class PostSnapshotBuilder {
         new Body(body),
         completeness,
         new LinkedHashSet<>(tags),
+        images,
         publishedAt,
         updatedAt);
   }

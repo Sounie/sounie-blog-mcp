@@ -3,6 +3,7 @@ package nz.sounie.blogmcp.catalog.application;
 import static nz.sounie.blogmcp.catalog.adapter.out.FakeBlogSource.failure;
 import static nz.sounie.blogmcp.catalog.adapter.out.FakeBlogSource.page;
 import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.aSnapshot;
+import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.image;
 import static nz.sounie.blogmcp.catalog.domain.site.TestSites.ELEGANT;
 import static nz.sounie.blogmcp.catalog.domain.site.TestSites.ELEGANT_DEFINITION;
 import static nz.sounie.blogmcp.catalog.domain.site.TestSites.ELEGANT_ID;
@@ -31,6 +32,7 @@ import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
 import nz.sounie.blogmcp.catalog.domain.post.Post;
 import nz.sounie.blogmcp.catalog.domain.post.PostId;
 import nz.sounie.blogmcp.catalog.domain.post.PostIdentityMismatch;
+import nz.sounie.blogmcp.catalog.domain.post.PostImage;
 import nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder;
 import nz.sounie.blogmcp.catalog.domain.post.SourcePostId;
 import nz.sounie.blogmcp.catalog.domain.post.Title;
@@ -42,6 +44,7 @@ import nz.sounie.blogmcp.catalog.domain.sync.SyncCheckpoint;
 import nz.sounie.blogmcp.shared.event.CatalogPostPublished;
 import nz.sounie.blogmcp.shared.event.CatalogPostRevised;
 import nz.sounie.blogmcp.shared.event.CatalogPostWithdrawn;
+import nz.sounie.blogmcp.shared.query.CatalogPostImage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -188,6 +191,7 @@ class SyncSiteTest {
                   "Hello, world.",
                   "FULL",
                   Set.of("DDD"),
+                  List.of(),
                   T1,
                   T2));
     }
@@ -872,5 +876,55 @@ class SyncSiteTest {
     SyncReport second = syncSite.run(SOUNIE_WP_ID, SyncMode.INCREMENTAL);
 
     assertThat(second.outcome()).isEqualTo(SyncOutcome.COMPLETED);
+  }
+
+  // --- post images (phase 2) -----------------------------------------------------------------
+
+  @Nested
+  class PostImagesFlow {
+
+    private static final PostImage SWAN = image("https://x.example/a.jpg", "Swan", "");
+    private static final PostImage GRAPES = image("https://x.example/b.jpg", "", "Grapes");
+
+    @Test
+    @DisplayName("AC-CAT-40: CatalogPostPublished carries the images in the published language")
+    void published_integration_event_carries_the_images() {
+      wordPress.willServe(SOUNIE_WP_ID, page(available(wpPost("123", T1).images(SWAN))));
+
+      syncSite.run(SOUNIE_WP_ID, SyncMode.INCREMENTAL);
+
+      assertThat(events.eventsOfType(CatalogPostPublished.class))
+          .singleElement()
+          .satisfies(
+              published ->
+                  assertThat(published.images())
+                      .containsExactly(
+                          new CatalogPostImage("https://x.example/a.jpg", "Swan", "")));
+    }
+
+    @Test
+    @DisplayName(
+        "AC-CAT-39 / AC-CAT-40: an images-only revision publishes one PostRevised {IMAGES}")
+    void images_only_revision_publishes_one_PostRevised_with_the_new_images() {
+      givenStored(wpPost("123", T1).images(SWAN));
+      wordPress.willServe(SOUNIE_WP_ID, page(available(wpPost("123", T2).images(SWAN, GRAPES))));
+
+      SyncReport report = syncSite.run(SOUNIE_WP_ID, SyncMode.INCREMENTAL);
+
+      assertThat(events.events())
+          .singleElement()
+          .isInstanceOfSatisfying(
+              CatalogPostRevised.class,
+              revised -> {
+                assertThat(revised.changed()).containsExactly("IMAGES");
+                assertThat(revised.images())
+                    .containsExactly(
+                        new CatalogPostImage("https://x.example/a.jpg", "Swan", ""),
+                        new CatalogPostImage("https://x.example/b.jpg", "", "Grapes"));
+              });
+      assertThat(posts.findById(wpId("123")).orElseThrow().images().asList())
+          .containsExactly(SWAN, GRAPES);
+      assertThat(report.revised()).isEqualTo(1);
+    }
   }
 }

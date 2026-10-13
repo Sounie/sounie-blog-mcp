@@ -12,6 +12,7 @@ import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
 import nz.sounie.blogmcp.catalog.domain.post.CanonicalUrl;
 import nz.sounie.blogmcp.catalog.domain.post.CanonicalUrlNotOnSite;
 import nz.sounie.blogmcp.catalog.domain.post.PostId;
+import nz.sounie.blogmcp.catalog.domain.post.PostImages;
 import nz.sounie.blogmcp.catalog.domain.post.PostSnapshot;
 import nz.sounie.blogmcp.catalog.domain.post.SourcePostId;
 import nz.sounie.blogmcp.catalog.domain.post.Tag;
@@ -84,6 +85,8 @@ final class BloggerEntryMapper {
             new Body(htmlToText.extract(body.html())),
             body.completeness(),
             Tag.setOf(labels(entry)),
+            // TODO(green): extract the post images from a FULL body; a SUMMARY yields none.
+            PostImages.none(),
             publishedAt,
             updated));
   }
