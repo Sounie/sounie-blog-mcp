@@ -515,6 +515,27 @@ class HttpImageSourceTest {
     }
 
     @Test
+    @DisplayName(
+        "AC-SRCH-80: prompt headers with a body dripping past the response timeout is unavailable,"
+            + " without waiting for the body")
+    void a_dripping_body_is_unavailable_at_the_deadline() {
+      serve(
+          "/drip.png",
+          image("image/png", TestImages.png(64, 64))
+              .withChunkedDribbleDelay(20, (int) RESPONSE_TIMEOUT.multipliedBy(4).toMillis()));
+      long start = System.nanoTime();
+
+      ImageFetch fetch = fetch("/drip.png", LOOPBACK_POST);
+
+      assertThat(fetch)
+          .isInstanceOfSatisfying(
+              ImageFetch.Unavailable.class,
+              unavailable -> assertThat(unavailable.detail()).isNotBlank());
+      assertThat(Duration.ofNanos(System.nanoTime() - start))
+          .isLessThan(RESPONSE_TIMEOUT.multipliedBy(2));
+    }
+
+    @Test
     @DisplayName("AC-SRCH-80: a refused connection is unavailable")
     void a_refused_connection_is_unavailable() throws IOException {
       int closedPort;
