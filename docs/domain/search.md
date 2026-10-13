@@ -5,6 +5,9 @@ accepted 2026-10-09, and ADR 0010, accepted 2026-10-11) are implemented on
 `feature/provider-distribution`: one Gradle module and jar per provider, SPI discovery,
 provider-specific profiles and budgets, and profile-keyed index paths under `search/indexes/`. The
 branch is under review; the open items are listed in ADR 0010's implementation status.
+Image embedding in the in-process `gemma2` provider (ADR 0011, phase 1; glossary "Image pixels" to
+"Vision encoder", AC-SRCH-53 to 65) was approved by the owner on 2026-10-14
+(`feature/gemma2-image-embedding`). It adds a port and a value object only; no aggregate, index, catalog or MCP behaviour changes.
 Package: `nz.sounie.blogmcp.search`
 Feature tag for acceptance criteria: `SRCH`
 
@@ -68,6 +71,10 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Embed | Turn canonical passage content or raw query text into an embedding through the selected provider and its input-preparation strategies. | `PassageEmbedder.embedPassages(...)`, `QueryEmbedder.embedQuery(QueryPassage)` |
 | Embedder | The selected provider instance is seen through two ports split by consumer (ADR 0006): the **passage embedder** (`modelId()` and `embedPassages(List<Passage>)`, used by indexing) and the **query embedder** (used by search). The same instance implements both ports and applies the provider's independent query and passage preparation. | `PassageEmbedder` (`search.domain.embedding`), `QueryEmbedder` (`search.application`) |
 | Embedding | A vector whose dimension matches the explicitly configured model, with finite values and unit length. | `Embedding` |
+| Image pixels | A decoded image as an 8-bit RGB raster: a width and a height in pixels, and `width × height × 3` bytes, row-major from the top-left pixel, channels interleaved R, G, B, each read as unsigned 0..255. Alpha, palettes and greyscale are already resolved by whoever decodes the file. It is immutable: the bytes are copied in and copied out. Both sides are at least 1, and the image has at most 16,777,216 pixels (4,096 × 4,096). See invariants in 3.6. | `ImagePixels` (`search.domain.embedding`) |
+| Invalid image pixels | The rejection of an image-pixels input, with reason `NON_POSITIVE_DIMENSION`, `TOO_MANY_PIXELS` or `DATA_LENGTH_MISMATCH`. | `InvalidImagePixels` (`search.domain.embedding`) |
+| Image embedder | Port that turns image pixels into an embedding in the **same vector space** as the provider's query and passage embeddings. Images take no task prefix. It throws `EmbedderUnavailable` if the model cannot embed. | `ImageEmbedder.embedImage(ImagePixels)` (`search.domain.embedding`) |
+| Image capability | Whether the distribution's provider can embed images. A provider declares it by returning an image embedder or nothing. Only the in-process `gemma2` provider has one (ADR 0011); `onnx` and `gemma2-server` are text-only. Asking never loads a model. | `EmbeddingProvider.imageEmbedder()` returning `Optional<ImageEmbedder>` |
 | Similarity | The cosine similarity of two embeddings. Because embeddings are unit length, this is their dot product. Its range is [-1, 1], and higher means more related. | `Similarity` |
 | Index recipe | The identity of the method used to build an index entry: selected model and tokenizer revision identity, chunking and selected passage-budget parameters, and passage-preparation/template version. The tokenizer filesystem path and supported context are deployment/validation details, not recipe identity. Query preparation is excluded because it does not change stored passages. Changing an indexing-relevant part makes every entry stale. | `IndexRecipe` |
 | Content fingerprint | SHA-256 over the index recipe, the normalised title and the normalised body. If two posts have the same fingerprint, they produce the same passages. Tags and other metadata are **not** included. | `ContentFingerprint` |
@@ -98,6 +105,28 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Search results | The post matches ordered by **ranking** and cut to the limit. | `SearchResults` |
 | Ranking | Order by score, highest first. Ties go to the more recent `publishedAt` first, and then to the lower post ID (compared as a string). | `PostMatch.RANKING` |
 | Search posts | Answer a search query. | `SearchPosts` use case |
+
+### 2.1 Gemma2 image preprocessing (provider-internal, ADR 0011 phase 1)
+
+These terms live only in `providers/gemma2`
+(`nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.onnx`). They are a Java port of transformers'
+`image_processing_pil_gemma4.py`, and core never sees them. Each step is its own type so it can be
+tested alone; `Gemma2ImagePreprocessor` only composes them.
+
+| Term | Meaning | Code name |
+|---|---|---|
+| Image preprocessing | Turn image pixels into the vision encoder's input: target size, then PIL bicubic resize, then patchify (which rescales). Pure Java, no model. | `Gemma2ImagePreprocessor` |
+| Patch | A 16 × 16 pixel square of the resized image. Flattened it is 768 values, ordered by pixel row, then pixel column, then channel R, G, B. | `Patchifier` |
+| Patch budget | At most 2,520 patches per image (280 image tokens × 9). It is also the fixed length of the vision encoder input. | `Patchifier.MAX_PATCHES` |
+| Target size | The size the image is resized to. Both sides are scaled by one factor so that the area fits the patch budget (`2,520 × 16 × 16` pixels), then each side is floored to a multiple of 48 (16 px × the 3 × 3 pooling). A side that floors to 0 follows the reference processor's fallback (AC-SRCH-57). Always positive multiples of 48, with at most 2,520 patches. | `TargetSize.of(width, height)` |
+| Patch grid | The target size counted in patches: **columns** (`width / 16`) and **rows** (`height / 16`), both multiples of 3. Its real patches are `columns × rows`, and its image tokens are `(columns / 3) × (rows / 3)`. The reference JSON records it as `patchGrid: [columns, rows]`. | `PatchGrid` (from `TargetSize.grid()`) |
+| PIL bicubic resize | A port of PIL's antialiased bicubic resampling (`Image.resize(…, BICUBIC)` on 8-bit RGB): a horizontal pass then a vertical pass, cubic kernel with `a = −0.5` and support 2, with the support widened by the scale factor when downscaling, fixed-point weights, and results rounded and clamped to 0..255. It is not `AffineTransformOp`, which is a different filter. | `PilBicubicResize.resize(ImagePixels, TargetSize)` returning `ResizedImage` |
+| Resized image | Image pixels whose width and height equal a target size. The patchifier only accepts this type, so it never re-checks the size. | `ResizedImage` |
+| Rescale | Each 8-bit sample divided by 255, giving 0.0..1.0. There is **no** mean or standard-deviation normalisation. | `Patchifier` |
+| Patchify | Cut a resized image into patches in row-major order (left to right, then top to bottom), rescale them, give each patch the position id `(x, y)` = (column, row), then pad to the patch budget: padding patches are all 0.0, with position `(−1, −1)`. | `Patchifier.patchify(ResizedImage)` returning `VisionInput` |
+| Vision input | What the vision encoder takes: `pixel_values [1, 2520, 768]`, `pixel_position_ids [1, 2520, 2]` and the patch grid. | `VisionInput` |
+| Image input ids | The text-model input ids for one image with `n` image tokens: `[2, 255999, 258880 × n, 258882, 1]` (begin, start of image, `n` image soft tokens, end of image, end). There is no task prefix. | `ImageInputIds.of(PatchGrid)` |
+| Vision encoder | The q8 `vision_encoder_quantized` ONNX graph from `onnx-community/embeddinggemma-2-ONNX@daa72c51`, in its own session next to the text model. It outputs `image_features [n, 512]`, which the text model takes through its `image_features` input in place of the empty tensor text calls pass. `n` must equal the patch grid's image tokens. | `Gemma2VisionEncoder` (session), `Gemma2OnnxModel` (text model) |
 
 ## 3. Aggregates and value objects
 
@@ -190,6 +219,13 @@ approximate-nearest-neighbour structure is needed (ADR 0005).
 | Composition of filters | `SearchFilters` (a list of `Predicate<PostMetadata>`; all must hold) | It is a rule table, so adding a tag filter later means adding a rule. |
 | Best chunk and snippet | `IndexedPost.bestMatch` using `ChunkHit.BEST_FIRST` (similarity descending, then chunk index ascending) | |
 | Grouping, ranking and tie-breaks, then limit | `SearchResults.rank(Stream<PostMatch>, ResultLimit)` with `PostMatch.RANKING` | Grouping is structural: there is one `bestMatch` per indexed post. |
+| Valid image raster (dimensions, pixel cap, data length, immutability) | `ImagePixels` compact constructor, a rule table of three rules checked in order | It throws `InvalidImagePixels` with a reason. See 3.6. |
+| Whether a provider can embed images | Each `EmbeddingProvider` implementation's `imageEmbedder()` (abstract in the SPI, no default) | Callers use `Optional.map`, never a provider-name check. |
+| Target size, patch grid and image token count (provider-internal) | `TargetSize.of(width, height)` and `PatchGrid` | Pure arithmetic; tested without the model (AC-SRCH-56, 57). |
+| Resampling (provider-internal) | `PilBicubicResize` | AC-SRCH-58; exact PIL parity through AC-SRCH-61. |
+| Patch order, rescale, position ids and padding (provider-internal) | `Patchifier`, which accepts only a `ResizedImage` | AC-SRCH-59. |
+| Image input ids (provider-internal) | `ImageInputIds.of(PatchGrid)` | AC-SRCH-60. |
+| Vision output matches the image token count (provider-internal) | `Gemma2VisionEncoder` checks the `image_features` row count against `PatchGrid.imageTokens()` | A mismatch is an `IllegalStateException`, which `Gemma2OnnxEmbedder` turns into `EmbedderUnavailable` (AC-SRCH-65). |
 
 ### 3.4 Chunking policy (numbers and why)
 
@@ -254,6 +290,50 @@ with floats but must be deterministic: newer `publishedAt` first, then post ID a
 No minimum-similarity threshold is applied (Q4). BGE v1.5 similarities cluster in about [0.6, 1].
 The model card warns that a score above 0.5 does not mean "similar" and recommends relying on relative
 order rather than an absolute cut-off, which is exactly what ranking does.
+
+### 3.6 Image embedding (ADR 0011, phase 1)
+
+Phase 1 adds no aggregate. It adds a value object, a port and a provider capability, so that phase 3
+can index images and phase 4 can search by one.
+
+**`ImagePixels`** (value object, `record ImagePixels(int width, int height, byte[] rgb)` in
+`search.domain.embedding`). It lives in the domain because phase 3's `PostIndexer` will pass it on.
+Invariants, checked in this order by a rule table, each producing at most one `InvalidImagePixels`:
+1. **Positive dimensions**: `width ≥ 1` and `height ≥ 1`, otherwise `NON_POSITIVE_DIMENSION`.
+2. **Pixel cap**: `width × height ≤ 16,777,216` (4,096 × 4,096), computed in `long` so it cannot
+   overflow, otherwise `TOO_MANY_PIXELS`. This is checked before the data length, so an oversized
+   request is refused without needing its bytes. The cap bounds memory: at most 48 MiB of samples. It
+   is above a 12-megapixel phone photo (4,032 × 3,024) and far above the catalog's 2,048 px `srcset`
+   limit (cap confirmed by the owner, 2026-10-13).
+3. **Data length**: `rgb.length == width × height × 3`, otherwise `DATA_LENGTH_MISMATCH`. A `null`
+   array is rejected with `NullPointerException`.
+4. **Immutability**: the compact constructor stores a copy of `rgb`, and the `rgb()` accessor returns a
+   copy. `equals` and `hashCode` compare dimensions and contents (a record's default compares array
+   references), and `toString` shows only the dimensions.
+
+Decoding (JPEG, PNG, GIF to `ImagePixels`) is **not** in phase 1. Phase 3's `HttpImageSource` and
+phase 4's local-file reader own it. They must match PIL's `convert("RGB")`, which drops alpha
+without compositing, expands palettes and replicates greyscale. They should also read the declared
+dimensions before decoding, so the pixel cap stops a decompression bomb early. Phase 1's parity
+tests decode the six fixtures in test code only.
+
+**`ImageEmbedder`** (port, `search.domain.embedding`, next to `PassageEmbedder`, because phase 3's
+`PostIndexer`, a domain service, calls it; ADR 0006): `Embedding embedImage(ImagePixels)`. The embedding
+has the provider's dimension and unit length, like every `Embedding`, and lies in the same space as
+`QueryEmbedder` and `PassageEmbedder` output. Failure to load or run the model raises
+`EmbedderUnavailable`.
+
+**`EmbeddingProvider.imageEmbedder()`** returns `Optional<ImageEmbedder>`. It is abstract, so every
+provider states its answer: `onnx` and `gemma2-server` return `Optional.empty()`, and `gemma2`
+returns its embedder. Calling it never loads a model, because phase 4 asks at startup whether to
+register `find_posts_like_image`.
+
+**In-process `gemma2`** (provider module): `embedImage` runs `Gemma2ImagePreprocessor` (glossary 2.1),
+then the vision encoder, then `Gemma2OnnxModel` with the image input ids and the real
+`image_features`, all under the existing model lock (so image and text calls are serialised, with no
+new concurrency work). The vision encoder is loaded lazily in its own holder, so a process that only
+embeds text never extracts or loads its 195 MB. Its files are extracted by `BundledModelFiles`, the
+same way as the text model. Text calls are unchanged: they still pass empty media tensors.
 
 ## 4. Domain events
 
@@ -374,7 +454,7 @@ event. No other context needs to know about indexing. Outcomes are returned as r
 |---|---|---|
 | `post` | (nothing) | `PostId`, `SiteId`, `PostMetadata`, `MalformedCatalogPost` |
 | `text` | (nothing) | `WordSequence`, `WordCosts`, `ChunkingPolicy`, `PassageTokenBudget`, `Chunk`, `Passage`, `PassageComposition`, `TokenCounter` (port) |
-| `embedding` | `text` | `Embedding`, `Similarity`, `InvalidEmbedding`, `EmbedderUnavailable`, `PassageEmbedder` (port) |
+| `embedding` | `text` | `Embedding`, `Similarity`, `InvalidEmbedding`, `EmbedderUnavailable`, `PassageEmbedder` (port), `ImageEmbedder` (port), `ImagePixels`, `InvalidImagePixels` |
 | `index` | `embedding`, `post`, `text` | `IndexedPost`, `IndexedChunk`, `PostIndexer`, `PostToIndex`, `Completeness`, `PostMatch`, `ChunkHit`, `ContentFingerprint`, `IndexRecipe`, `IndexChange`, `IndexDecision`, `IndexOutcome`, `IndexWork`, `InvalidIndexedPost`, `VectorIndex` (port) |
 | `query` | `index`, `post`, `text` | `SearchQuery`, `QueryText`, `InvalidSearchQuery`, `ResultLimit`, `PublishedDateRange`, `SiteFilter`, `SearchFilters`, `SearchResults` |
 | `reconcile` | `index`, `post` | `CatalogEntry`, `ReconcilePlan` |
@@ -382,7 +462,7 @@ event. No other context needs to know about indexing. Outcomes are returned as r
 Nothing in the domain depends on `query`. `PostToIndex`, `Completeness` and `PostMatch` live in `index`,
 not in `post` or `query`, to keep this graph acyclic.
 Outside the domain:
-- `PostCatalog` and `QueryEmbedder` (ports used only by use cases), `ReconcileReport` and the use cases live in `search.application`;
+- `PostCatalog` and `QueryEmbedder` (ports used only by use cases), `ReconcileReport` and the use cases live in `search.application`. `ImageEmbedder` lives in `search.domain.embedding`, next to `PassageEmbedder`, because phase 3's `PostIndexer` (a domain service) calls it (ADR 0006; owner decision 2026-10-13);
 - provider adapters, their preparation strategies/tokenizers, `InMemoryVectorIndex` and `SharedCatalogPosts` live in `search.adapter.out`;
 - `CatalogEventListener` and `CatalogEventTranslation` live in `search.adapter.in`.
 
@@ -741,6 +821,151 @@ And given a chunk of exactly 60 words, or of 40 words, the snippet is the chunk 
 And given an empty chunk (an empty-body post), the snippet is empty.
 (AC-SRCH-23's fixtures use chunks of 60 words or fewer, so its expectation, "the text of its 0.90 chunk", still holds.)
 
+### Image embedding (ADR 0011, phase 1)
+
+Where the tests live:
+- **Core** (`core/src/test`): AC-SRCH-53 and 54 (`ImagePixels`, pure unit tests, under PIT).
+- **Each provider module**: AC-SRCH-55 (each provider's own answer to `imageEmbedder()`).
+- **`providers/gemma2`**, without the model: AC-SRCH-56 to 61, and the count check in AC-SRCH-65.
+  AC-SRCH-61 needs only the fixtures and the reference JSON.
+- **`providers/gemma2`**, `@Tag("model")`, run with `-PhuggingFaceMirror=.hf-mirror`: AC-SRCH-62 to 64.
+
+The fixtures and `gemma2-image-reference.json` are in `core/src/test/resources/`. Test code decodes a
+fixture into `ImagePixels` by reading its RGB samples and ignoring any alpha, as PIL's
+`convert("RGB")` does. It must not paint the image onto a background.
+
+**AC-SRCH-53: Image pixels hold an immutable RGB raster.**
+Given width 2, height 1 and the bytes `[255, 0, 0, 0, 0, 255]` (a red pixel, then a blue one),
+When `ImagePixels` is created,
+Then its width is 2, its height is 1, and `rgb()` returns those six bytes.
+And changing the caller's array afterwards, or the array `rgb()` returned, does not change the image.
+And two images with the same dimensions and bytes are equal and have equal hash codes. Images that
+differ in one byte, or that have the same bytes but swapped dimensions (1 × 2), are not equal.
+And a 1 × 1 image is accepted, and so is a 4,096 × 4,096 image (exactly 16,777,216 pixels).
+
+**AC-SRCH-54: Invalid image pixels are rejected.**
+Given width 0, height 0, or a negative width or height,
+When `ImagePixels` is created,
+Then `InvalidImagePixels` is raised with reason `NON_POSITIVE_DIMENSION`.
+And given 4,096 × 4,097, or 65,536 × 65,536 (whose `int` product would overflow), with a 3-byte
+array, the reason is `TOO_MANY_PIXELS`, without first complaining about the data length.
+And given 2 × 2 with 11 or 13 bytes, the reason is `DATA_LENGTH_MISMATCH`, and a `null` array raises
+`NullPointerException`.
+
+**AC-SRCH-55: Each provider declares its image capability.**
+Given the provider of each distribution,
+When `imageEmbedder()` is called,
+Then `onnx` (BGE) and `gemma2-server` (LM Studio) return empty, and the in-process `gemma2` returns an
+image embedder.
+And the call loads no model and makes no network call.
+
+**AC-SRCH-56: The target size fits the patch budget and is a multiple of 48.**
+Given an image of 1,024 × 768 (4:3), or 1,600 × 1,200,
+When `TargetSize.of` is computed,
+Then it is 912 × 672, with a patch grid of 57 columns × 42 rows, 2,394 real patches and 266 image
+tokens.
+And given a portrait 768 × 1,024, it is 672 × 912, with 42 columns × 57 rows and the same counts.
+And given a square or tiny image (1,000 × 1,000, 64 × 64 or 1 × 1), it is upscaled or downscaled to
+768 × 768, with 48 × 48 patches, 2,304 real patches and 256 image tokens.
+And given a wide 4,000 × 100 (40:1), it is 5,040 × 96, with 315 × 6 patches, 1,890 real patches and
+210 image tokens.
+And for every size tried, both sides are positive multiples of 48 and the real patches are at most
+2,520.
+
+**AC-SRCH-57: A side that floors to zero uses the reference processor's fallback.**
+Given an extreme aspect ratio where one side's scaled length is below 48, e.g. 10,000 × 10 or
+10 × 10,000,
+When `TargetSize.of` is computed,
+Then the short side is 48, and the long side is the reference processor's value, capped at 13,440
+((2,520 ÷ 9) × 48). The expected sizes are 13,440 × 48 and 48 × 13,440, which give 2,520
+real patches and 280 image tokens.
+(Confirmed against transformers main, `image_processing_pil_gemma4.py`,
+`get_aspect_ratio_preserving_size`: a single side flooring to 0 becomes 48, and the other becomes
+min(floor(long ÷ short) × 48, 13,440). Both sides can never floor to zero, because the scaled area is
+at least 48 × 48; the reference raises `ValueError` in that case.)
+
+**AC-SRCH-58: The resize is PIL's antialiased bicubic.**
+Given a 1,024 × 768 image of the single colour (10, 200, 30),
+When it is resized to 912 × 672,
+Then every pixel is still (10, 200, 30).
+And given an image whose size already equals the target, the result has the same bytes.
+And given a 96 × 96 image of alternating black and white one-pixel columns, resized to 48 × 48,
+every pixel outside the two outermost columns at each edge is grey, 127 or 128 in every channel,
+because downscaling widens the kernel. Unfiltered sampling would give 0 or 255.
+And given a 4 × 1 image `[black, black, white, white]` resized to 8 × 1, every sample stays within
+0..255 (the bicubic overshoot is clamped), and at least one is 0 and one is 255.
+And the result is a `ResizedImage` whose size equals the target size.
+
+**AC-SRCH-59: Patchify cuts, rescales, positions and pads.**
+Given a 48 × 48 resized image whose pixel at `(x, y)` is `(x, y, 255)`,
+When it is patchified,
+Then `pixel_values` has 2,520 rows of 768 values. Row `k` for `k < 9` is the patch at column
+`k mod 3`, row `k div 3`. Inside a patch, value `(py × 16 + px) × 3 + c` is that pixel's channel `c`
+divided by 255, so 255 becomes exactly 1.0 and 0 becomes 0.0, with no further normalisation.
+And position id `k` is `(k mod 3, k div 3)` for `k < 9`.
+And rows 9 to 2,519 are all 0.0, with position `(−1, −1)`.
+And the patch grid is 3 × 3, with 9 real patches and 1 image token.
+And a 912 × 672 resized image gives exactly 2,394 real patches and 126 padding patches.
+
+**AC-SRCH-60: Image input ids wrap the image tokens.**
+Given a patch grid with 266 image tokens,
+When the image input ids are built,
+Then they are 270 ids: `2`, `255999`, then 266 × `258880`, then `258882`, `1`. There is no task
+prefix.
+And given 1 image token, they are `[2, 255999, 258880, 258882, 1]`.
+
+**AC-SRCH-61: Preprocessing matches the reference for all six fixtures.**
+Given each of the six fixtures in `gemma2-image-reference.json`, decoded into `ImagePixels`,
+When `Gemma2ImagePreprocessor` runs,
+Then the decoded width and height equal the JSON's, and the input ids, `patches` (2,520),
+`realPatches`, `patchGrid` (`[columns, rows]`) and `imageTokens` equal the JSON's exactly.
+And the sum of all `pixel_values` (padding included), accumulated in `double`, is within a relative
+1e-4 of `pixelValuesSum` (tolerance accepted by the owner, 2026-10-13).
+(A pixel sum cannot detect a wrong patch or channel order. AC-SRCH-59 and AC-SRCH-62 catch that.)
+
+**AC-SRCH-62: Java image embeddings match the official model.**
+Given the gemma2 provider's image embedder and each of the six fixtures,
+When `embedImage` is called,
+Then the embedding has 768 values and unit length, and its cosine with the fixture's reference
+`embedding` is at least 0.994 (ADR 0011 Parity).
+And the lowest measured cosine is written into ADR 0011's Parity row "Image embeddings, Java vs
+official" in the same PR.
+
+**AC-SRCH-63: Each test query ranks its intended image first.**
+Given the six Java image embeddings from AC-SRCH-62, and the six reference queries embedded through
+the same provider's `embedQuery` (with the Gemma2 query prefix),
+When each query is compared with every image,
+Then each query's highest similarity is its intended image, for 6 of 6. The pairs are stated in
+the test by file name, because the JSON lists queries and images in different orders:
+- "a black swan swimming on a lake" with `black-swan-in-reeds.png`;
+- "grapes growing on a vine in the garden" with `grapes-on-trellis.png`;
+- "motor racing at a race track" with `race-car-at-circuit.png`;
+- "pub quiz question about sloths" with `quiz-slide-sloth.png`;
+- "rugby match in a stadium at night" with `rugby-stadium-smoke.png`;
+- "managing images in a web service" with `image-management-services.jpg`.
+
+Only the order is asserted, never a score.
+
+**AC-SRCH-64: The vision encoder is bundled and runs offline.**
+Given the gemma2 provider, with no network access,
+When an image is embedded,
+Then the q8 `vision_encoder_quantized.onnx` and `.onnx_data` from
+`onnx-community/embeddinggemma-2-ONNX` at revision `daa72c51243991dfcaf9f9137d2c573d8f7790c0` are read
+from the provider's bundled `embeddinggemma-2-onnx/` resources. They are pinned like the text model
+(AC-SRCH-51), with checksums in `gradle/verification-metadata.xml`, and extracted into the process's
+temporary model directory.
+And the provider's model identity, profile key and index recipe are unchanged by phase 1, so existing
+text indexes stay valid.
+
+**AC-SRCH-65: Image failures surface as an unavailable embedder, and text is unchanged.**
+Given a vision output whose row count differs from the patch grid's image tokens,
+When the count is checked,
+Then it fails with `IllegalStateException`, and `embedImage` reports it as `EmbedderUnavailable`.
+This check is tested without the model. The conversion to `EmbedderUnavailable` and the lock
+release are the existing `Gemma2OnnxEmbedder.withModel` path, which image calls reuse.
+And text embeddings are unchanged: the existing gemma2 text tests (AC-SRCH-51) pass with the same
+vectors, and text calls still pass empty media tensors.
+
 ## 9. Decisions
 
 Model decisions (approved with the model by the owner on 2026-10-02):
@@ -787,6 +1012,33 @@ ADR 0009 accepted 2026-10-09, ADR 0010 accepted 2026-10-11; implemented):
   another profile's entries. The keys and paths (`search/indexes/<profileKey>/…`) are in
   `docs/domain/app.md` and ADR 0010 decision 8.
 - No domain event is emitted for a startup composition choice, and no aggregate changes.
+
+Image embedding decisions (ADR 0011 phase 1, AC-SRCH-53 to 65; approved by the owner, 2026-10-14):
+- The preprocessing, runtime, threshold and scope are fixed by ADR 0011 and
+  `docs/plans/image-embeddings.md`, and are not reopened here.
+- `ImagePixels` is a domain value object (`search.domain.embedding`), so phase 3's `PostIndexer` can
+  carry it. `ImageEmbedder` is a domain port in the same sub-package, next to `PassageEmbedder`
+  (see Q-IMG 3 and 6.1).
+- `imageEmbedder()` is abstract in the SPI, with no default, so a new provider cannot be text-only by
+  accident.
+- Preprocessing parity (AC-SRCH-61) needs no model, so it runs in the normal test task. Only the
+  embedding and ranking checks are `@Tag("model")`.
+- Owner decisions on the Q-IMG questions (all resolved 2026-10-13, owner):
+  1. **Pixel cap (resolved):** keep 16,777,216 pixels (4,096 × 4,096) in `ImagePixels` (AC-SRCH-53, 54).
+  2. **`pixelValuesSum` tolerance (resolved):** a relative 1e-4 is accepted (AC-SRCH-61).
+  3. **Port placement (resolved):** `ImageEmbedder` lives in `search.domain.embedding`, next to
+     `PassageEmbedder`, because phase 3's `PostIndexer`, a domain service, will call it (ADR 0006).
+  4. **Resize test vector (resolved):** no exact resize test vector is added; AC-SRCH-61 and 62 cover
+     resize parity with the reference.
+- Reference behaviour confirmed by the researcher from transformers main
+  (`image_processing_pil_gemma4.py`: `get_aspect_ratio_preserving_size`, `convert_image_to_patches`,
+  `_preprocess`, `pad_along_first_dim`), so AC-SRCH-57 and 59 are confirmed:
+  - a single side flooring to 0 becomes 48 (`side_mult`), and the other becomes
+    min(floor(long ÷ short) × 48, 13,440), where 13,440 = (2,520 // 9) × 48; both sides zero raises
+    `ValueError`;
+  - values inside a patch are ordered (p_h, p_w, C); patches are row-major; position ids are
+    (x = column, y = row);
+  - padding patches are 0 in every pixel value, with position −1.
 
 Owner decisions (all resolved 2026-10-02, owner):
 - **Q1 (resolved): the catalog change is in this slice.** It adds `shared.query.CatalogPosts` / `CatalogPostState` and
