@@ -8,6 +8,7 @@ final class Gemma2ImagePreprocessor {
   private Gemma2ImagePreprocessor() {}
 
   static VisionInput preprocess(ImagePixels pixels) {
-    throw new UnsupportedOperationException("not implemented yet");
+    TargetSize target = TargetSize.of(pixels.width(), pixels.height());
+    return Patchifier.patchify(PilBicubicResize.resize(pixels, target));
   }
 }

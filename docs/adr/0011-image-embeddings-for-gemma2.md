@@ -95,8 +95,14 @@ and 2,520 patches.
 |---|---|---|
 | Query embeddings, q8 ONNX vs official | 0.99995 to 0.99998 | ≥ 0.999 (validates the pooling) |
 | Image embeddings, q8 ONNX (Python preprocessing) vs official | 0.99909 to 0.99981 | ≥ 0.999 |
-| Image embeddings, Java vs official | measured in phase 1 | ≥ 0.994 (worst q8 result, 0.99909, minus 0.005 for resize drift) |
+| Image embeddings, Java vs official | 0.99908 to 0.99980 (phase 1, 2026-10-14; lowest `race-car-at-circuit.png`) | ≥ 0.994 (worst q8 result, 0.99909, minus 0.005 for resize drift) |
 | Queries ranking their intended image first (official) | 6 of 6 | 6 of 6 |
+
+Phase 1 note: the Java resize matches PIL's `Image.resize(BICUBIC)` byte for byte on all six
+fixtures. The reference's `pixelValuesSum` matches torchvision's antialiased bicubic exactly, not
+PIL's. So transformers 5.19's `AutoProcessor` used the torchvision backend, which differs from PIL
+by at most 2 levels in about 0.5% of samples. That costs at most a relative 1.3e-5 in the pixel sum
+(tolerance 1e-4) and stays within the cosine threshold.
 
 Cosine similarity of each query to the best and second-best image, using the official embeddings:
 
