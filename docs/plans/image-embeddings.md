@@ -13,7 +13,7 @@ the single source of truth for progress across sessions. Each phase's PR updates
 | Phase | Branch | State | Notes |
 |---|---|---|---|
 | 0 Spike and ADR | `feature/image-embeddings-spike` | Done | Merged as #20. Reference run 2026-10-13: q8 images 0.99909 to 0.99981 vs official, 6 of 6 rankings. ADR 0011 accepted |
-| 1 Provider image embedding | `feature/gemma2-image-embedding` | **In review** | AC-SRCH-53 to 65 done; Java vs official 0.99908 to 0.99980, 6 of 6 rankings |
+| 1 Provider image embedding | `feature/gemma2-image-embedding` | Done | Merged as #22. AC-SRCH-53 to 65 done; Java vs official 0.99908 to 0.99980, 6 of 6 rankings |
 | 2 Catalog post images | `feature/post-images` | **In review** | AC-CAT-33 to 41 done; format 1 read as no images (Q9); https only (Q10) |
 | 3 Search indexes images | `feature/search-image-entries` | Not started | Depends on 1 and 2 |
 | 4 Search by image | `feature/find-posts-like-image` | Not started | Depends on 3 |
@@ -81,7 +81,8 @@ the single source of truth for progress across sessions. Each phase's PR updates
   - Copy them into `embeddinggemma-2-onnx/`.
   - Regenerate checksums with `scripts/update-verification-metadata`; never edit them by hand.
 - Core SPI:
-  - New port `ImageEmbedder` in `search.application`: `Embedding embedImage(ImagePixels)`.
+  - New port `ImageEmbedder` in `search.domain.embedding`, next to `PassageEmbedder` (owner
+    decision, 2026-10-13): `Embedding embedImage(ImagePixels)`.
   - `ImagePixels` is a value object that validates width, height and RGB data.
   - `EmbeddingProvider` (`core/.../search/application/embedding/spi/EmbeddingProvider.java`) gains
     `Optional<ImageEmbedder> imageEmbedder()`. `onnx` and `gemma2-server` return empty.
@@ -108,6 +109,9 @@ the single source of truth for progress across sessions. Each phase's PR updates
 
 **Exit:** `./gw check pitest` is green, and
 `./gw :providers:gemma2:test -PhuggingFaceMirror=.hf-mirror` passes the parity tests.
+
+**Dependencies:** every build, test and runtime dependency of the image path is listed in
+[gemma2-vision-dependencies.md](../reference/gemma2-vision-dependencies.md).
 
 ## Phase 2: catalog records post images (`feature/post-images`)
 
