@@ -76,7 +76,7 @@ public final class OnnxEmbedder implements EmbeddingProvider {
 
   @Override
   public Optional<ImageEmbedder> imageEmbedder() {
-    throw new UnsupportedOperationException("not implemented yet");
+    return Optional.empty();
   }
 
   @Override

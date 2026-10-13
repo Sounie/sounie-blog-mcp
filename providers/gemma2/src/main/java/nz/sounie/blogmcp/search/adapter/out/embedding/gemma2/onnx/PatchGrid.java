@@ -5,13 +5,16 @@ package nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.onnx;
  */
 record PatchGrid(int columns, int rows) {
 
+  /** The vision encoder pools 3 × 3 patches into one image token. */
+  static final int POOLING = 3;
+
   /** {@code columns × rows}. */
   int realPatches() {
-    throw new UnsupportedOperationException("not implemented yet");
+    return columns * rows;
   }
 
   /** {@code (columns / 3) × (rows / 3)}, after the vision encoder's 3 × 3 pooling. */
   int imageTokens() {
-    throw new UnsupportedOperationException("not implemented yet");
+    return (columns / POOLING) * (rows / POOLING);
   }
 }

@@ -13,6 +13,7 @@ import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
 import nz.sounie.blogmcp.search.domain.embedding.EmbeddingFactory;
 import nz.sounie.blogmcp.search.domain.embedding.ImageEmbedder;
+import nz.sounie.blogmcp.search.domain.embedding.ImagePixels;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.query.QueryText;
 import nz.sounie.blogmcp.search.domain.text.Passage;
@@ -39,6 +40,16 @@ public final class Gemma2OnnxEmbedder implements EmbeddingProvider {
     static final Gemma2OnnxModel INSTANCE = Gemma2OnnxModel.load();
 
     private Model() {}
+  }
+
+  /**
+   * The vision encoder, in its own holder so that only the first image call loads it; text-only
+   * processes never do (ADR 0011).
+   */
+  private static final class Vision {
+    static final Gemma2VisionEncoder INSTANCE = Gemma2VisionEncoder.load();
+
+    private Vision() {}
   }
 
   @Override
@@ -73,7 +84,20 @@ public final class Gemma2OnnxEmbedder implements EmbeddingProvider {
 
   @Override
   public Optional<ImageEmbedder> imageEmbedder() {
-    throw new UnsupportedOperationException("not implemented yet");
+    return Optional.of(Gemma2OnnxEmbedder::embedImage);
+  }
+
+  /**
+   * Preprocesses outside the lock (pure Java), then runs the vision encoder and the text model
+   * under it. Images take no task prefix.
+   */
+  private static Embedding embedImage(ImagePixels pixels) {
+    VisionInput input = Gemma2ImagePreprocessor.preprocess(pixels);
+    long[] inputIds = ImageInputIds.of(input.grid());
+    return withModel(
+        model ->
+            EmbeddingFactory.createGemma2Embedding(
+                model.embedImage(inputIds, Vision.INSTANCE.features(input))));
   }
 
   @Override

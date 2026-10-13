@@ -105,7 +105,8 @@ public final class Gemma2Embedder implements EmbeddingProvider {
 
   @Override
   public Optional<ImageEmbedder> imageEmbedder() {
-    throw new UnsupportedOperationException("not implemented yet");
+    // No server documents image embedding for this model (ADR 0011).
+    return Optional.empty();
   }
 
   @Override

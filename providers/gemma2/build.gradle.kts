@@ -16,13 +16,16 @@ dependencies {
     // Reads core's gemma2-image-reference.json in the image parity tests (ADR 0011).
     testImplementation(libs.jackson.databind)
 
-    listOf("onnx", "onnx_data").forEach { fileExtension ->
-        huggingFaceAssets("onnx-community:embeddinggemma-2-ONNX:daa72c51243991dfcaf9f9137d2c573d8f7790c0") {
-            artifact {
-                name = "model_quantized"
-                classifier = "onnx"
-                type = fileExtension
-                extension = fileExtension
+    // The q8 text model (ADR 0010) and the q8 vision encoder (ADR 0011), each a graph and its weights.
+    listOf("model_quantized", "vision_encoder_quantized").forEach { graph ->
+        listOf("onnx", "onnx_data").forEach { fileExtension ->
+            huggingFaceAssets("onnx-community:embeddinggemma-2-ONNX:daa72c51243991dfcaf9f9137d2c573d8f7790c0") {
+                artifact {
+                    name = graph
+                    classifier = "onnx"
+                    type = fileExtension
+                    extension = fileExtension
+                }
             }
         }
     }
@@ -31,7 +34,11 @@ dependencies {
 tasks.processResources {
     from(huggingFaceAssets) {
         into("embeddinggemma-2-onnx")
-        rename { name -> "model_quantized." + name.substringAfterLast('.') }
+        // The resolved file is <graph>.<extension> or <graph>-<revision>-onnx.<extension>, depending on
+        // the repository; the jar keeps <graph>.<extension>.
+        rename { name ->
+            name.substringBefore('-').substringBefore('.') + "." + name.substringAfterLast('.')
+        }
     }
 }
 
