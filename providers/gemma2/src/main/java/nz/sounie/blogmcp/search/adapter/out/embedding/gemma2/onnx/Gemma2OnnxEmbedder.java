@@ -1,6 +1,7 @@
 package nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.onnx;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.Gemma2InputPreparation;
@@ -11,6 +12,7 @@ import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProviderProfi
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
 import nz.sounie.blogmcp.search.domain.embedding.EmbeddingFactory;
+import nz.sounie.blogmcp.search.domain.embedding.ImageEmbedder;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.query.QueryText;
 import nz.sounie.blogmcp.search.domain.text.Passage;
@@ -67,6 +69,11 @@ public final class Gemma2OnnxEmbedder implements EmbeddingProvider {
   @Override
   public String passagePreparationVersion() {
     return Gemma2Profile.PASSAGE_PREPARATION_VERSION;
+  }
+
+  @Override
+  public Optional<ImageEmbedder> imageEmbedder() {
+    throw new UnsupportedOperationException("not implemented yet");
   }
 
   @Override

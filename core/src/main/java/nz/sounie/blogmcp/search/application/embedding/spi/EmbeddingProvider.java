@@ -1,6 +1,8 @@
 package nz.sounie.blogmcp.search.application.embedding.spi;
 
+import java.util.Optional;
 import nz.sounie.blogmcp.search.application.QueryEmbedder;
+import nz.sounie.blogmcp.search.domain.embedding.ImageEmbedder;
 import nz.sounie.blogmcp.search.domain.embedding.PassageEmbedder;
 import nz.sounie.blogmcp.search.domain.query.QueryText;
 import nz.sounie.blogmcp.search.domain.text.Passage;
@@ -22,4 +24,10 @@ public interface EmbeddingProvider extends PassageEmbedder, QueryEmbedder {
    * #preparePassage} changes, so existing entries are re-embedded.
    */
   String passagePreparationVersion();
+
+  /**
+   * This provider's image embedder, or empty if it is text-only (ADR 0011). Asking never loads a
+   * model.
+   */
+  Optional<ImageEmbedder> imageEmbedder();
 }

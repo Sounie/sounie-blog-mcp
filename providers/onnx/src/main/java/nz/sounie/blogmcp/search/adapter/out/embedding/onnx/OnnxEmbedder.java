@@ -4,12 +4,14 @@ import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.embedding.onnx.bgesmallenv15q.BgeSmallEnV15QuantizedEmbeddingModel;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProviderProfile;
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
+import nz.sounie.blogmcp.search.domain.embedding.ImageEmbedder;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.query.QueryText;
 import nz.sounie.blogmcp.search.domain.text.Passage;
@@ -70,6 +72,11 @@ public final class OnnxEmbedder implements EmbeddingProvider {
   @Override
   public String passagePreparationVersion() {
     return "onnx-bge-document-v1";
+  }
+
+  @Override
+  public Optional<ImageEmbedder> imageEmbedder() {
+    throw new UnsupportedOperationException("not implemented yet");
   }
 
   @Override
