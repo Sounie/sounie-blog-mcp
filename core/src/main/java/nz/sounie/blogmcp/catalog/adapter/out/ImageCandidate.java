@@ -1,8 +1,10 @@
 package nz.sounie.blogmcp.catalog.adapter.out;
 
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Optional;
 import nz.sounie.blogmcp.catalog.domain.post.CanonicalUrl;
+import nz.sounie.blogmcp.catalog.domain.post.PostImage;
 import org.jsoup.nodes.Element;
 
 /**
@@ -26,7 +28,15 @@ record ImageCandidate(
 
   /** Reads the candidate from an {@code <img>} element. */
   static ImageCandidate of(Element img, CanonicalUrl postUrl) {
-    throw new UnsupportedOperationException("ImageCandidate.of is not implemented yet");
+    return new ImageCandidate(
+        postUrl,
+        img.attr("src"),
+        img.attr("srcset"),
+        img.attr("class"),
+        img.attr("width"),
+        img.attr("height"),
+        img.attr("alt").replaceAll("\\s+", " ").strip(),
+        captionOf(img));
   }
 
   /**
@@ -34,6 +44,39 @@ record ImageCandidate(
    * neither yields a URL, or the URL does not parse. Never upgrades {@code http}.
    */
   Optional<URI> resolvedUrl() {
-    throw new UnsupportedOperationException("ImageCandidate.resolvedUrl is not implemented yet");
+    return new Srcset(srcset)
+        .chosenUrl()
+        .or(() -> Optional.of(src.strip()).filter(url -> !url.isEmpty()))
+        .flatMap(this::resolved);
+  }
+
+  /**
+   * The post image this candidate describes, if it has a URL.
+   *
+   * @throws IllegalArgumentException if the URL is not absolute https, which {@link
+   *     ImageExclusion#NOT_HTTPS} excludes beforehand
+   */
+  Optional<PostImage> toPostImage() {
+    return resolvedUrl().map(url -> new PostImage(url, altText, caption));
+  }
+
+  private Optional<URI> resolved(String url) {
+    try {
+      return Optional.of(postUrl.value().resolve(new URI(url)));
+    } catch (URISyntaxException e) {
+      return Optional.empty();
+    }
+  }
+
+  private static String captionOf(Element img) {
+    return Optional.ofNullable(img.closest("figure"))
+        .flatMap(ImageCandidate::figcaptionOf)
+        .map(Element::text)
+        .orElse("");
+  }
+
+  /** The figure's own {@code <figcaption>}, not one of a nested figure. */
+  private static Optional<Element> figcaptionOf(Element figure) {
+    return figure.children().stream().filter(child -> child.nameIs("figcaption")).findFirst();
   }
 }

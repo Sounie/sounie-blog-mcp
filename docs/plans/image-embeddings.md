@@ -14,7 +14,7 @@ the single source of truth for progress across sessions. Each phase's PR updates
 |---|---|---|---|
 | 0 Spike and ADR | `feature/image-embeddings-spike` | **In review** | Reference run done 2026-10-13: q8 images 0.99909 to 0.99981 vs official, 6 of 6 rankings. ADR 0011 accepted 2026-10-13; PR open |
 | 1 Provider image embedding | `feature/gemma2-image-embedding` | Not started | Depends on 0 |
-| 2 Catalog post images | `feature/catalog-post-images` | Not started | Independent of 1; can run in parallel |
+| 2 Catalog post images | `feature/catalog-post-images` | **In review** | Stacked on phase 0's PR. AC-CAT-33 to 41 done; format 1 read as no images (Q9); https only (Q10) |
 | 3 Search indexes images | `feature/search-image-entries` | Not started | Depends on 1 and 2 |
 | 4 Search by image | `feature/find-posts-like-image` | Not started | Depends on 3 |
 
@@ -139,6 +139,11 @@ photo yields exactly one post image.
   `search/adapter/out`.
   - It applies the host allow-list from the configured sites plus the media CDNs, which need
     confirming: `*.wp.com`, `*.googleusercontent.com`, `blogger.googleusercontent.com`.
+  - The catalog stores image URLs on any https host (catalog invariant 7), so `HttpImageSource`
+    must also refuse loopback, link-local and private addresses, and check them again after every
+    redirect. This came from the phase 2 review.
+  - It drops decoded images under 64 px, which catches tracking pixels with no declared size
+    (catalog Q13).
   - It enforces the size and content-type caps and decodes with `ImageIO`.
   - It is tested with WireMock.
 - Domain:

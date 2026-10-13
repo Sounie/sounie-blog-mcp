@@ -16,8 +16,7 @@ public enum RevisedAspect {
   URL(PostContent::url),
   PUBLISHED_AT(PostContent::publishedAt),
   /** Compared as an ordered list, including alt text and caption (phase 2). */
-  // TODO(green): read PostContent::images; this stub never reports a difference.
-  IMAGES(content -> PostImages.none());
+  IMAGES(PostContent::images);
 
   private final Function<PostContent, Object> valueIn;
 
