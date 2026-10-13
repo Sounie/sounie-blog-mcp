@@ -589,7 +589,9 @@ Taken as recommended, for approval with the 3b checkpoint (no separate questions
    ```json
    {"syncEveryHours": 24,
     "sites": [{"id": "sounie-wp", "platform": "WORDPRESS", "baseUrl": "https://blog2.sounie.nz"},
-              {"id": "elegant", "platform": "BLOGGER", "baseUrl": "https://blog.elegant-solutions.london"}]}
+              {"id": "elegant", "platform": "BLOGGER", "baseUrl": "https://blog.elegant-solutions.london"},
+              {"id":  "ms-elegant", "platform":  "BLOGGER", "baseUrl":  "https://ms-blog.elegant-solutions.london"}]
+   }
    ```
    `syncEveryHours` is optional (default 24, minimum 1).
 3. Register it with Claude Code:
