@@ -81,7 +81,8 @@ the single source of truth for progress across sessions. Each phase's PR updates
   - Copy them into `embeddinggemma-2-onnx/`.
   - Regenerate checksums with `scripts/update-verification-metadata`; never edit them by hand.
 - Core SPI:
-  - New port `ImageEmbedder` in `search.application`: `Embedding embedImage(ImagePixels)`.
+  - New port `ImageEmbedder` in `search.domain.embedding`, next to `PassageEmbedder` (owner
+    decision, 2026-10-13): `Embedding embedImage(ImagePixels)`.
   - `ImagePixels` is a value object that validates width, height and RGB data.
   - `EmbeddingProvider` (`core/.../search/application/embedding/spi/EmbeddingProvider.java`) gains
     `Optional<ImageEmbedder> imageEmbedder()`. `onnx` and `gemma2-server` return empty.
@@ -108,6 +109,9 @@ the single source of truth for progress across sessions. Each phase's PR updates
 
 **Exit:** `./gw check pitest` is green, and
 `./gw :providers:gemma2:test -PhuggingFaceMirror=.hf-mirror` passes the parity tests.
+
+**Dependencies:** every build, test and runtime dependency of the image path is listed in
+[gemma2-vision-dependencies.md](../reference/gemma2-vision-dependencies.md).
 
 ## Phase 2: catalog records post images (`feature/post-images`)
 

@@ -122,7 +122,8 @@ scores.
 
 ## Consequences
 
-- The `gemma2` jar grows by about 195 MB.
+- The `gemma2` jar grows by about 195 MB. Every build, test and runtime dependency of the image
+  path is listed in [gemma2-vision-dependencies.md](../reference/gemma2-vision-dependencies.md).
 - The image recipe joins the index recipe, so enabling images re-embeds every post once.
 - Each image costs one vision-encoder pass, then about 270 tokens through the text model.
 - The catalog's stored post format and the search index file format both move to version 2.
