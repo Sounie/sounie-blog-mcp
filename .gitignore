@@ -3,6 +3,9 @@
 .gradle/
 .claude/settings.local.json
 build/
+.hf-mirror/
+.venv-spike/
+__pycache__/
 .idea/
 *.iml
 .DS_Store
