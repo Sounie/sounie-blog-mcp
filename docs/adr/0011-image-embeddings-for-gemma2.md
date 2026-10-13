@@ -4,9 +4,8 @@ Date: 2026-10-13
 
 ## Status
 
-Proposed. It becomes Accepted once the measurements under [Parity](#parity) are filled in from the
-official-weights reference run (`scripts/gemma2-image-reference.py`) and the owner accepts the
-thresholds. It extends ADR 0010 and leaves ADR 0009's SPI decisions unchanged.
+Proposed, with the [Parity](#parity) measurements recorded on 2026-10-13. It becomes Accepted when
+the owner accepts the thresholds. It extends ADR 0010 and leaves ADR 0009's SPI decisions unchanged.
 
 ## Context
 
@@ -87,14 +86,32 @@ The owner wants two features:
 
 ## Parity
 
-To be filled in from the official-weights reference run:
+Measured on 2026-10-13 with `scripts/gemma2-image-reference.py`. It ran the official weights in
+fp32 PyTorch (transformers 5.19) and the bundled q8 ONNX graphs on the same processor output, over
+the six fixtures in `core/src/test/resources/`. Every image used 266 image tokens, 270 input ids
+and 2,520 patches.
 
 | Measure | Value | Threshold |
 |---|---|---|
-| Query embeddings, q8 ONNX vs official | _pending_ | ≥ 0.999 (validates the pooling) |
-| Image embeddings, q8 ONNX (Python preprocessing) vs official | _pending_ | _set from measurement_ |
-| Image embeddings, Java vs official | measured in PR 1 | _set from measurement_ |
-| Queries ranking their intended image first (official) | _pending_ | 6 of 6 |
+| Query embeddings, q8 ONNX vs official | 0.99995 to 0.99998 | ≥ 0.999 (validates the pooling) |
+| Image embeddings, q8 ONNX (Python preprocessing) vs official | 0.99909 to 0.99981 | ≥ 0.999 |
+| Image embeddings, Java vs official | measured in phase 1 | ≥ 0.994 (worst q8 result, 0.99909, minus 0.005 for resize drift) |
+| Queries ranking their intended image first (official) | 6 of 6 | 6 of 6 |
+
+Cosine similarity of each query to the best and second-best image, using the official embeddings:
+
+| Query | Intended image | Next best |
+|---|---|---|
+| a black swan swimming on a lake | 0.777 | 0.555 |
+| grapes growing on a vine in the garden | 0.782 | 0.574 |
+| motor racing at a race track | 0.670 | 0.598 (rugby) |
+| pub quiz question about sloths | 0.728 | 0.571 |
+| rugby match in a stadium at night | 0.748 | 0.572 |
+| managing images in a web service | 0.674 | 0.551 |
+
+The q8 vision encoder meets its threshold, so the fp32 fallback isn't needed. The smallest ranking
+margin is motor racing, at 0.072. The ranking test in phase 1 therefore checks the order, not the
+scores.
 
 ## Consequences
 

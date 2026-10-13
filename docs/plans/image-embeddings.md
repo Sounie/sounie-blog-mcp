@@ -12,7 +12,7 @@ the single source of truth for progress across sessions. Each phase's PR updates
 
 | Phase | Branch | State | Notes |
 |---|---|---|---|
-| 0 Spike and ADR | `feature/image-embeddings-spike` | **In progress** | Waiting on the official-weights reference run, which the owner runs because it needs the network |
+| 0 Spike and ADR | `feature/image-embeddings-spike` | **In progress** | Reference run done 2026-10-13: q8 images 0.99909 to 0.99981 vs official, 6 of 6 rankings. Waiting on the owner to accept ADR 0011's thresholds |
 | 1 Provider image embedding | `feature/gemma2-image-embedding` | Not started | Depends on 0 |
 | 2 Catalog post images | `feature/catalog-post-images` | Not started | Independent of 1; can run in parallel |
 | 3 Search indexes images | `feature/search-image-entries` | Not started | Depends on 1 and 2 |
@@ -57,23 +57,18 @@ the single source of truth for progress across sessions. Each phase's PR updates
 - The ADR 0011 draft.
 - `.gitignore` entries for `.hf-mirror/`, `.venv-spike/` and `__pycache__/`.
 - The `ms-elegant` site added to `docs/domain/app.md`.
+- The official-weights reference, `core/src/test/resources/gemma2-image-reference.json` (2026-10-13).
+  The owner ran it outside the sandbox, since it needs huggingface.co.
+- The ADR's Parity section, filled in:
+  - q8 image embeddings measured 0.99909 to 0.99981 against official, and queries 0.99995 to
+    0.99998;
+  - all 6 queries ranked their intended image first;
+  - the Java threshold is set at ≥ 0.994;
+  - q8 is kept and no fp32 fallback is needed.
 
 **Remaining**
-1. The owner runs the following outside the sandbox:
-   ```
-   ! cd /Users/sounie/Development/sounie-blog-mcp && R=core/src/test/resources && .venv-spike/bin/python scripts/gemma2-image-reference.py --mirror .hf-mirror --out $R/gemma2-image-reference.json $R/image-management-services.jpg $R/grapes-on-trellis.png $R/race-car-at-circuit.png $R/quiz-slide-sloth.png $R/rugby-stadium-smoke.png $R/black-swan-in-reeds.png 2>&1 | tee build/gemma2-image-reference.log
-   ```
-   The JSON's `"repo"` must then read `google/embeddinggemma-2`. As of 2026-10-13 it still says
-   `onnx-community`, from the earlier ONNX-only run.
-2. Analyse the run:
-   - query `onnxQ8Cosine` (expected ≥ 0.999);
-   - image `onnxQ8Cosine`;
-   - whether all 6 queries rank their intended image first using the official embeddings.
-3. Fill in the ADR's Parity table and set the thresholds. A suggested Java-vs-official threshold is
-   the measured q8 gap minus 0.005.
-4. If q8 misses, switch the decision to the fp32 vision encoder and record that in the ADR.
-5. The owner accepts the ADR. Commit the fixtures, JSON, script, ADR, this plan and `.gitignore`,
-   but not `docs/blog/`. Open the PR with `scripts/open-pr`.
+1. The owner accepts ADR 0011, including its thresholds. Set its status to Accepted.
+2. Open the PR with `scripts/open-pr`. Leave out `docs/blog/`.
 
 **Exit:** ADR 0011 is Accepted, with real numbers, and the PR is merged.
 
