@@ -1,7 +1,6 @@
 package nz.sounie.blogmcp.search.adapter.out;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintStream;
 import java.net.InetAddress;
 import java.net.URI;
@@ -10,11 +9,16 @@ import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import javax.net.ssl.SSLContext;
 import nz.sounie.blogmcp.search.domain.image.ImageFetch;
@@ -32,6 +36,8 @@ import nz.sounie.blogmcp.search.domain.image.ImageSource;
  *       that is not permitted.
  *   <li>Redirects are followed here, never by the client: at most {@value #MAX_REDIRECTS}.
  *   <li>Bodies are capped at {@value #MAX_BYTES} bytes, types at JPEG, PNG and GIF.
+ *   <li>Each response, headers and body together, must complete within the response timeout;
+ *       otherwise the exchange is cancelled and the fetch is {@code Unavailable}.
  * </ul>
  *
  * <p>Each outcome other than {@code Fetched} writes one line, with the URL and the reason, to the
@@ -52,7 +58,7 @@ public final class HttpImageSource implements ImageSource {
   private static final String USER_AGENT =
       "blog-mcp/0.1 (+https://github.com/Sounie/sounie-blog-mcp)";
 
-  /** Checks on a successful response's headers, in order, before its body is read. */
+  /** Checks on a response's headers, in order, before its body is kept. */
   private static final List<Function<HttpHeaders, Optional<ImageRejection>>> HEADER_RULES =
       List.of(
           headers ->
@@ -125,8 +131,38 @@ public final class HttpImageSource implements ImageSource {
     if (!blog.permitsAll(addressesOf(url))) {
       return rejected(ImageRejection.ADDRESS_NOT_PERMITTED);
     }
-    return respond(
-        client.send(request(url), HttpResponse.BodyHandlers.ofInputStream()), blog, redirectsLeft);
+    return respond(exchange(url), blog, redirectsLeft);
+  }
+
+  /**
+   * The whole response, headers and body, within the response timeout; on expiry the exchange is
+   * cancelled, so a server that drips its body cannot stall indexing.
+   */
+  private HttpResponse<Optional<byte[]>> exchange(URI url)
+      throws IOException, InterruptedException {
+    CompletableFuture<HttpResponse<Optional<byte[]>>> pending =
+        client.sendAsync(request(url), HttpImageSource::bodyFor);
+    try {
+      return pending.get(responseTimeout.toMillis(), TimeUnit.MILLISECONDS);
+    } catch (TimeoutException e) {
+      pending.cancel(true);
+      throw new HttpTimeoutException("No complete response within " + responseTimeout);
+    } catch (ExecutionException e) {
+      throw new IOException(e.getCause().toString(), e.getCause());
+    }
+  }
+
+  /** A body the headers already refuse (or a redirect's, or an error's) is not kept. */
+  private static HttpResponse.BodySubscriber<Optional<byte[]>> bodyFor(
+      HttpResponse.ResponseInfo info) {
+    return new CappedBody(refusal(info.headers()).isPresent() ? 0 : MAX_BYTES);
+  }
+
+  private static Optional<ImageRejection> refusal(HttpHeaders headers) {
+    return HEADER_RULES.stream()
+        .map(rule -> rule.apply(headers))
+        .flatMap(Optional::stream)
+        .findFirst();
   }
 
   private List<InetAddress> addressesOf(URI url) throws UnknownHostException {
@@ -146,16 +182,14 @@ public final class HttpImageSource implements ImageSource {
   }
 
   private ImageFetch respond(
-      HttpResponse<InputStream> response, BlogCategory blog, int redirectsLeft)
+      HttpResponse<Optional<byte[]>> response, BlogCategory blog, int redirectsLeft)
       throws IOException, InterruptedException {
-    try (InputStream body = response.body()) {
-      return switch (FetchStatus.of(response)) {
-        case SUCCESS -> image(response.headers(), body);
-        case REDIRECT -> redirect(response, blog, redirectsLeft);
-        case TRANSIENT -> new ImageFetch.Unavailable("HTTP status " + response.statusCode());
-        case PERMANENT -> rejected(ImageRejection.HTTP_STATUS);
-      };
-    }
+    return switch (FetchStatus.of(response)) {
+      case SUCCESS -> image(response.headers(), response.body());
+      case REDIRECT -> redirect(response, blog, redirectsLeft);
+      case TRANSIENT -> new ImageFetch.Unavailable("HTTP status " + response.statusCode());
+      case PERMANENT -> rejected(ImageRejection.HTTP_STATUS);
+    };
   }
 
   private ImageFetch redirect(HttpResponse<?> response, BlogCategory blog, int redirectsLeft)
@@ -170,26 +204,13 @@ public final class HttpImageSource implements ImageSource {
     return response.uri().resolve(response.headers().firstValue("Location").orElseThrow());
   }
 
-  private static ImageFetch image(HttpHeaders headers, InputStream body) throws IOException {
-    Optional<ImageRejection> refused =
-        HEADER_RULES.stream()
-            .map(rule -> rule.apply(headers))
-            .flatMap(Optional::stream)
-            .findFirst();
+  /** The body is empty when it had more than {@link #MAX_BYTES} bytes. */
+  private static ImageFetch image(HttpHeaders headers, Optional<byte[]> body) {
+    Optional<ImageRejection> refused = refusal(headers);
     if (refused.isPresent()) {
       return rejected(refused.get());
     }
-    return capped(body)
-        .map(ImageDecoding::decode)
-        .orElseGet(() -> rejected(ImageRejection.TOO_LARGE));
-  }
-
-  /**
-   * The body, unless it has more than {@link #MAX_BYTES} bytes; never reads more than one extra.
-   */
-  private static Optional<byte[]> capped(InputStream body) throws IOException {
-    byte[] bytes = body.readNBytes(MAX_BYTES + 1);
-    return Optional.of(bytes).filter(read -> read.length <= MAX_BYTES);
+    return body.map(ImageDecoding::decode).orElseGet(() -> rejected(ImageRejection.TOO_LARGE));
   }
 
   private static ImageFetch rejected(ImageRejection reason) {

@@ -367,7 +367,7 @@ new concurrency work). The vision encoder is loaded lazily in its own holder, so
 embeds text never extracts or loads its 195 MB. Its files are extracted by `BundledModelFiles`, the
 same way as the text model. Text calls are unchanged: they still pass empty media tensors.
 
-### 3.7 Indexing post images (ADR 0011, phase 3; proposed)
+### 3.7 Indexing post images (ADR 0011, phase 3; approved and implemented)
 
 Each image is its own index entry beside the post's text chunks, embedded from its pixels alone, and
 a post scores as its best entry (fixed by ADR 0011). This section decides how that fits the existing
@@ -425,7 +425,7 @@ sub-package depends on `embedding` (for `ImagePixels`), `post` (for `MalformedCa
 |---|---|---|
 | What a valid post image is | `PostImage.of(String url, String altText, String caption)` (`search.domain.image`) | A null field, or a URL that is not absolute `https` with a host, raises `MalformedCatalogPost`. The post becomes `Unreadable` in a reconcile, or is rejected by the listener, like any other malformed field. Both anti-corruption adapters (`SharedCatalogPosts` and `CatalogEventTranslation`) map images, so events and reconciles compute the same fingerprint. |
 | What stands for an image in results | `PostImage.description()` | `Optional` chain over alt text, then caption, then `Image: <url>`; no `if`. |
-| Text-only versus image indexing | `ImageIndexing` (`TextOnly`, `WithImages`), chosen once in `app` | Owns `appliedTo(IndexRecipe)`, the fingerprint's image list and `index(post)`. |
+| Text-only versus image indexing | `ImageIndexing` (`TextOnly`, `WithImages`), chosen once in `app` | Owns `appliedTo(IndexRecipe)`, the fingerprint's image list (`fingerprinted(post)`) and one `ImageAttempt` per post image (`attempt(post)`), which `PostIndexer.index(post)` turns into indexed images and the settled-image fingerprint. |
 | What a fetch outcome means for the index | `ImageFetch` variant, mapped to `ImageAttempt` (`Indexed`, `Skipped`, `Pending`) | `ImageAttempt` exposes `entry()` and `settled()` polymorphically, so `WithImages` collects them with a stream. |
 | Retry of a pending image | `ContentFingerprint` over the settled images, compared by the existing `IndexedPost.decideFor` | No new `IndexDecision` variant or `IndexOutcome`. |
 | Image index invariants | `IndexedPost.restore` (invariant 7), `IndexedImage` compact constructor | |
@@ -438,7 +438,7 @@ sub-package depends on `embedding` (for `ImagePixels`), `post` (for `MalformedCa
 | Content type | `ImageContentType` (package-private) | `image/jpeg`, `image/png`, `image/gif` (case-insensitive, parameters ignored) are accepted. Anything else, including a missing header and `image/webp`, is `Rejected(UNSUPPORTED_TYPE)`. |
 | Size | `HttpImageSource` byte cap: 10 MiB (10,485,760 bytes) | A larger `Content-Length` is refused before reading. A body is read only up to the cap, and one byte more is `TOO_LARGE`. |
 | Decoding | `ImageDecoding` (package-private, `ImageIO`) | Reads the declared dimensions first: over 16,777,216 pixels is `TOO_LARGE`, and a side under 64 is `TOO_SMALL`, both without decoding. It decodes the first frame (GIF), drops alpha without compositing, expands palettes and replicates greyscale, as PIL's `convert("RGB")` does (3.6). A decoding failure is `UNDECODABLE`. |
-| Timeouts | `HttpImageSource` constants | Connect 10 s; each response 30 s. Expiry is `Unavailable`. |
+| Timeouts | `HttpImageSource` constants | Connect 10 s; each response 30 s, covering its headers and its whole body (a body that drips past the deadline cancels the exchange). Expiry is `Unavailable`. |
 | Logging | `HttpImageSource` | Every outcome other than `Fetched` writes one line to stderr with the URL and the reason (this is the plan's "WebP skipped with a warning"). Nothing is added to the reconcile report. |
 | Stored index format | `IndexFile` / `IndexFileLoader` (`search.adapter.out`) | Writes `"format": 2`, which adds `images`: an array of `{index, url, description, vector}` (vector encoded by `VectorCodec`, like chunks). Reads formats 1 and 2: a format-1 file is read as having no images, and is neither quarantined nor deleted, following catalog Q9. Under `TextOnly` its fingerprint is still current, so nothing is re-embedded; under `WithImages` the recipe differs, so the next reconcile re-embeds it anyway. Any other format is still unreadable and quarantined. The dimension rule covers image vectors as well as chunk vectors. |
 | MCP output | `SearchResultView` (`app.mcp`) and `ToolDefinitions` | An optional `matchedImage` string (`format: uri`) in each result, not in `required`. It is present only for an image match, and the key is omitted (not `null`) otherwise. |
@@ -1083,7 +1083,7 @@ outside the model lock, and this is tested without the model.
 And text embeddings are unchanged: the existing gemma2 text tests (AC-SRCH-51) pass with the same
 vectors, and text calls still pass empty media tensors.
 
-### Indexing post images (ADR 0011, phase 3; proposed)
+### Indexing post images (ADR 0011, phase 3; approved and implemented)
 
 Where the tests live:
 - **Domain** (pure, under PIT): AC-SRCH-67 to 73, with the `FakeEmbedder` extended to implement
