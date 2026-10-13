@@ -3,6 +3,7 @@ package nz.sounie.blogmcp.search.adapter.out;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import nz.sounie.blogmcp.search.domain.index.PostToIndex;
 import nz.sounie.blogmcp.search.domain.post.PostId;
@@ -33,6 +34,7 @@ class SharedCatalogPostsTest {
         "Body",
         completeness,
         Set.of("Java"),
+        List.of(),
         AT,
         AT);
   }
@@ -128,6 +130,7 @@ class SharedCatalogPostsTest {
             "Body",
             "FULL",
             new java.util.HashSet<>(java.util.Arrays.asList("Java", null)),
+            List.of(),
             AT,
             AT);
     CatalogPostState valid = state("elegant:7", "elegant", "FULL");

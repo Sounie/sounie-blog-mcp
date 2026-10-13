@@ -2,7 +2,9 @@ package nz.sounie.blogmcp.catalog.adapter.out;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.aSnapshot;
+import static nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder.image;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.io.ByteArrayOutputStream;
@@ -26,6 +28,7 @@ import java.util.stream.Stream;
 import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
 import nz.sounie.blogmcp.catalog.domain.post.Post;
 import nz.sounie.blogmcp.catalog.domain.post.PostId;
+import nz.sounie.blogmcp.catalog.domain.post.PostImages;
 import nz.sounie.blogmcp.catalog.domain.post.PostRepository;
 import nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder;
 import nz.sounie.blogmcp.catalog.domain.post.Tag;
@@ -37,6 +40,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -233,6 +237,100 @@ class FilePostRepositoryTest extends PostRepositoryContract {
         .singleElement()
         .asString()
         .contains(file.toString(), "will be fetched again by a reconcile");
+    assertThat(reopened.health()).isEqualTo(StorageHealth.DAMAGED);
+  }
+
+  @Test
+  @DisplayName("AC-CAT-41: images survive a restart, and the file is written as format 2")
+  void post_images_survive_a_restart_in_a_format_2_file() throws IOException {
+    Post post =
+        aSnapshot()
+            .sourcePostId("123")
+            .images(
+                image("https://x.example/b.jpg", "Swan", "On the lake"),
+                image("https://i0.wp.com/blog2.sounie.nz/a.jpg", "", ""))
+            .buildStoredPost();
+    repository.save(post);
+
+    FilePostRepository reopened = reopen();
+
+    assertThat(reopened.findById(post.id()).orElseThrow().images().asList())
+        .containsExactly(
+            image("https://x.example/b.jpg", "Swan", "On the lake"),
+            image("https://i0.wp.com/blog2.sounie.nz/a.jpg", "", ""));
+    assertSamePost(reopened.findById(post.id()), post);
+    JsonNode stored = JSON.readTree(Files.readString(fileOf(post.id())));
+    assertThat(stored.get("format").asInt()).isEqualTo(2);
+    assertThat(stored.get("images").values())
+        .extracting(
+            image -> image.get("url").asString(),
+            image -> image.get("altText").asString(),
+            image -> image.get("caption").asString())
+        .containsExactly(
+            tuple("https://x.example/b.jpg", "Swan", "On the lake"),
+            tuple("https://i0.wp.com/blog2.sounie.nz/a.jpg", "", ""));
+    assertThat(reopened.health()).isEqualTo(StorageHealth.HEALTHY);
+  }
+
+  @Test
+  @DisplayName("AC-CAT-41: a post without images is still written as format 2")
+  void a_post_without_images_is_written_as_format_2() throws IOException {
+    Post post = POST_123.buildStoredPost();
+
+    repository.save(post);
+
+    JsonNode stored = JSON.readTree(Files.readString(fileOf(post.id())));
+    assertThat(stored.get("format").asInt()).isEqualTo(2);
+    assertThat(stored.get("images").isArray()).isTrue();
+    assertThat(stored.get("images").isEmpty()).isTrue();
+  }
+
+  @Test
+  @DisplayName("AC-CAT-41 / Q9: a valid format-1 file loads with no images and is not quarantined")
+  void a_format_1_file_loads_with_no_images_and_is_not_quarantined() {
+    Path file =
+        FormatOnePostFile.write(
+            dataDirectory, "sounie-wp", "123", "https://blog2.sounie.nz/2026/09/20/hello/", BASE);
+
+    FilePostRepository opened = reopen();
+
+    Post post = opened.findById(POST_123.postId()).orElseThrow();
+    assertThat(post.images()).isEqualTo(PostImages.none());
+    assertThat(post.title().value()).isEqualTo("Same");
+    assertThat(post.updatedAt()).isEqualTo(BASE);
+    assertThat(file).isRegularFile();
+    assertThat(file.resolveSibling("123.json.corrupt")).doesNotExist();
+    assertThat(opened.health()).isEqualTo(StorageHealth.HEALTHY);
+    assertThat(errorLines()).isEmpty();
+  }
+
+  static Stream<Arguments> unsupportedFormats() {
+    return Stream.of(
+        Arguments.of(
+            "missing format",
+            corruptJson(
+                json -> {
+                  json.remove("format");
+                  return json;
+                })),
+        Arguments.of("format 3", corruptJson(json -> json.put("format", 3))),
+        Arguments.of("format 0", corruptJson(json -> json.put("format", 0))));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("unsupportedFormats")
+  @DisplayName("AC-CAT-41: a post file with a missing or unknown format is still quarantined")
+  void a_post_file_with_a_missing_or_unknown_format_is_quarantined(
+      String kind, UnaryOperator<byte[]> corrupt) throws IOException {
+    Post post = POST_123.buildStoredPost();
+    repository.save(post);
+    Path file = fileOf(post.id());
+    Files.write(file, corrupt.apply(Files.readAllBytes(file)));
+
+    FilePostRepository reopened = reopen();
+
+    assertThat(reopened.findById(post.id())).isEmpty();
+    assertThat(file.resolveSibling("123.json.corrupt")).isRegularFile();
     assertThat(reopened.health()).isEqualTo(StorageHealth.DAMAGED);
   }
 

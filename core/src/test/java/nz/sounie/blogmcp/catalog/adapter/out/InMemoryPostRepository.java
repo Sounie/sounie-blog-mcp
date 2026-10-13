@@ -77,6 +77,7 @@ public final class InMemoryPostRepository implements PostRepository {
         post.body(),
         post.completeness(),
         new LinkedHashSet<>(post.tags()),
+        post.images(),
         post.publishedAt(),
         post.updatedAt());
   }

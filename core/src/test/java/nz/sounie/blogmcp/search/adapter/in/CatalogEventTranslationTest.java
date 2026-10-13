@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import nz.sounie.blogmcp.search.domain.index.Completeness;
 import nz.sounie.blogmcp.search.domain.index.IndexChange;
@@ -45,6 +46,7 @@ class CatalogEventTranslationTest {
             "Records are classes.",
             "FULL",
             Set.of("Java"),
+            List.of(),
             PUBLISHED,
             UPDATED);
 
@@ -63,6 +65,7 @@ class CatalogEventTranslationTest {
             "Records are classes.",
             "FULL",
             Set.of("Java"),
+            List.of(),
             PUBLISHED,
             UPDATED,
             Set.of("TAGS"));
@@ -85,7 +88,16 @@ class CatalogEventTranslationTest {
   void malformed_payload_is_rejected() {
     CatalogPostPublished event =
         new CatalogPostPublished(
-            "sounie-wp:1", "elegant", URL, "Records", "Body", "FULL", Set.of(), PUBLISHED, UPDATED);
+            "sounie-wp:1",
+            "elegant",
+            URL,
+            "Records",
+            "Body",
+            "FULL",
+            Set.of(),
+            List.of(),
+            PUBLISHED,
+            UPDATED);
 
     assertThatThrownBy(() -> CatalogEventTranslation.toChange(event))
         .isInstanceOf(MalformedCatalogPost.class);

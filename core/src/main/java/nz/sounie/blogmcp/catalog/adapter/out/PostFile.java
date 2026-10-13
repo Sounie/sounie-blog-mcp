@@ -10,6 +10,7 @@ import nz.sounie.blogmcp.catalog.domain.post.BodyCompleteness;
 import nz.sounie.blogmcp.catalog.domain.post.CanonicalUrl;
 import nz.sounie.blogmcp.catalog.domain.post.Post;
 import nz.sounie.blogmcp.catalog.domain.post.PostId;
+import nz.sounie.blogmcp.catalog.domain.post.PostImages;
 import nz.sounie.blogmcp.catalog.domain.post.Tag;
 import nz.sounie.blogmcp.catalog.domain.post.Title;
 
@@ -66,6 +67,8 @@ record PostFile(
         new Body(body),
         BodyCompleteness.valueOf(completeness),
         tags.stream().map(Tag::new).collect(Collectors.toCollection(LinkedHashSet::new)),
+        // TODO(green): format 2 stores the images; format 1 restores none.
+        PostImages.none(),
         Instant.parse(publishedAt),
         Instant.parse(updatedAt));
   }
