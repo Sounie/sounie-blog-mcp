@@ -105,5 +105,11 @@ class EmbeddingProviderDiscoveryTest {
         imageEmbedder() {
       return java.util.Optional.empty();
     }
+
+    @Override
+    public nz.sounie.blogmcp.search.application.embedding.spi.EmbedderShutdown shutDown(
+        java.time.Duration maxWait) {
+      return nz.sounie.blogmcp.search.application.embedding.spi.EmbedderShutdown.DRAINED;
+    }
   }
 }

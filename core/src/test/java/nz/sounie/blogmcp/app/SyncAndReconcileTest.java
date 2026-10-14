@@ -8,18 +8,27 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import nz.sounie.blogmcp.catalog.application.SyncMode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
-/** AC-APP-10: one run syncs, then reconciles; failures are logged and never stop later runs. */
+/**
+ * AC-APP-10, AC-APP-50: the startup run reconciles, syncs in the startup mode, then reconciles;
+ * every later run syncs INCREMENTAL, then reconciles. Failures are logged and never stop later
+ * steps or runs.
+ */
 class SyncAndReconcileTest {
 
   private final List<String> steps = new CopyOnWriteArrayList<>();
   private final ByteArrayOutputStream stderr = new ByteArrayOutputStream();
   private final PrintStream errors = new PrintStream(stderr, true, StandardCharsets.UTF_8);
+  private final AtomicInteger reconcileCalls = new AtomicInteger();
   private RuntimeException syncFailure;
   private RuntimeException reconcileFailure;
+  private int failingReconcileCall;
 
   private SyncAndReconcile jobStartingIn(SyncMode firstRunMode) {
     return new SyncAndReconcile(
@@ -31,7 +40,9 @@ class SyncAndReconcileTest {
         },
         () -> {
           steps.add("reconcile");
-          if (reconcileFailure != null) {
+          int call = reconcileCalls.incrementAndGet();
+          if (reconcileFailure != null
+              && (failingReconcileCall == 0 || failingReconcileCall == call)) {
             throw reconcileFailure;
           }
         },
@@ -43,31 +54,34 @@ class SyncAndReconcileTest {
     return stderr.toString(StandardCharsets.UTF_8);
   }
 
-  @Test
-  @DisplayName("AC-APP-10: each run syncs first, then reconciles; later runs are INCREMENTAL")
-  void syncs_then_reconciles_and_later_runs_are_incremental() {
-    SyncAndReconcile job = jobStartingIn(SyncMode.RECONCILE);
+  @ParameterizedTest
+  @EnumSource(SyncMode.class)
+  @DisplayName(
+      "AC-APP-50, AC-APP-9: the startup run reconciles, syncs in the startup mode, then reconciles;"
+          + " the next run syncs INCREMENTAL, then reconciles")
+  void the_startup_run_opens_with_a_reconcile_and_later_runs_are_scheduled(SyncMode startupMode) {
+    SyncAndReconcile job = jobStartingIn(startupMode);
 
-    job.run();
     job.run();
     job.run();
 
     assertThat(steps)
         .containsExactly(
-            "sync RECONCILE",
-            "reconcile",
-            "sync INCREMENTAL",
-            "reconcile",
-            "sync INCREMENTAL",
-            "reconcile");
+            "reconcile", "sync " + startupMode, "reconcile", "sync INCREMENTAL", "reconcile");
   }
 
   @Test
-  @DisplayName("AC-APP-9: a healthy store starts with an INCREMENTAL run")
-  void the_first_run_uses_the_startup_mode() {
-    jobStartingIn(SyncMode.INCREMENTAL).run();
+  @DisplayName(
+      "AC-APP-50: a failing startup reconcile is logged, and the sync and second reconcile still run")
+  void a_failing_startup_reconcile_is_logged_and_the_run_continues() {
+    reconcileFailure = new IllegalStateException("index unreadable");
+    failingReconcileCall = 1;
+    SyncAndReconcile job = jobStartingIn(SyncMode.INCREMENTAL);
 
-    assertThat(steps).containsExactly("sync INCREMENTAL", "reconcile");
+    assertThatCode(job::run).doesNotThrowAnyException();
+
+    assertThat(steps).containsExactly("reconcile", "sync INCREMENTAL", "reconcile");
+    assertThat(stderr()).contains("index unreadable");
   }
 
   @Test
@@ -76,9 +90,12 @@ class SyncAndReconcileTest {
     syncFailure = new IllegalStateException("site down");
     SyncAndReconcile job = jobStartingIn(SyncMode.INCREMENTAL);
 
+    job.run();
     assertThatCode(job::run).doesNotThrowAnyException();
 
-    assertThat(steps).containsExactly("sync INCREMENTAL", "reconcile");
+    assertThat(steps)
+        .containsExactly(
+            "reconcile", "sync INCREMENTAL", "reconcile", "sync INCREMENTAL", "reconcile");
     assertThat(stderr()).contains("site down");
   }
 
@@ -89,11 +106,19 @@ class SyncAndReconcileTest {
     SyncAndReconcile job = jobStartingIn(SyncMode.INCREMENTAL);
 
     assertThatCode(job::run).doesNotThrowAnyException();
+    assertThatCode(job::run).doesNotThrowAnyException();
     reconcileFailure = null;
     job.run();
 
     assertThat(steps)
-        .containsExactly("sync INCREMENTAL", "reconcile", "sync INCREMENTAL", "reconcile");
+        .containsExactly(
+            "reconcile",
+            "sync INCREMENTAL",
+            "reconcile",
+            "sync INCREMENTAL",
+            "reconcile",
+            "sync INCREMENTAL",
+            "reconcile");
     assertThat(stderr()).contains("index broken");
   }
 }
