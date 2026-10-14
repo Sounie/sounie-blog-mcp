@@ -19,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import javax.net.ssl.SSLContext;
 import nz.sounie.blogmcp.search.domain.image.ImageFetch;
@@ -137,25 +138,31 @@ public final class HttpImageSource implements ImageSource {
   /**
    * The whole response, headers and body, within the response timeout; on expiry the exchange is
    * cancelled, so a server that drips its body cannot stall indexing.
+   *
+   * <p>Cutting a body short cancels the exchange, and the client may then fail it (for example
+   * "Stream N cancelled" over HTTP/2) instead of delivering the empty body. A failure after a cut
+   * is therefore answered from the cut response's status and headers, whatever the timing.
    */
-  private HttpResponse<Optional<byte[]>> exchange(URI url)
-      throws IOException, InterruptedException {
+  private ImageResponse exchange(URI url) throws IOException, InterruptedException {
+    AtomicReference<HttpResponse.ResponseInfo> cut = new AtomicReference<>();
     CompletableFuture<HttpResponse<Optional<byte[]>>> pending =
-        client.sendAsync(request(url), HttpImageSource::bodyFor);
+        client.sendAsync(request(url), info -> bodyFor(info, () -> cut.set(info)));
     try {
-      return pending.get(responseTimeout.toMillis(), TimeUnit.MILLISECONDS);
+      return ImageResponse.of(pending.get(responseTimeout.toMillis(), TimeUnit.MILLISECONDS));
     } catch (TimeoutException e) {
       pending.cancel(true);
       throw new HttpTimeoutException("No complete response within " + responseTimeout);
     } catch (ExecutionException e) {
-      throw new IOException(e.getCause().toString(), e.getCause());
+      return Optional.ofNullable(cut.get())
+          .map(info -> ImageResponse.cut(info, url))
+          .orElseThrow(() -> new IOException(e.getCause().toString(), e.getCause()));
     }
   }
 
   /** A body the headers already refuse (or a redirect's, or an error's) is not kept. */
   private static HttpResponse.BodySubscriber<Optional<byte[]>> bodyFor(
-      HttpResponse.ResponseInfo info) {
-    return new CappedBody(refusal(info.headers()).isPresent() ? 0 : MAX_BYTES);
+      HttpResponse.ResponseInfo info, Runnable onCut) {
+    return new CappedBody(refusal(info.headers()).isPresent() ? 0 : MAX_BYTES, onCut);
   }
 
   private static Optional<ImageRejection> refusal(HttpHeaders headers) {
@@ -181,8 +188,7 @@ public final class HttpImageSource implements ImageSource {
         .build();
   }
 
-  private ImageFetch respond(
-      HttpResponse<Optional<byte[]>> response, BlogCategory blog, int redirectsLeft)
+  private ImageFetch respond(ImageResponse response, BlogCategory blog, int redirectsLeft)
       throws IOException, InterruptedException {
     return switch (FetchStatus.of(response)) {
       case SUCCESS -> image(response.headers(), response.body());
@@ -192,7 +198,7 @@ public final class HttpImageSource implements ImageSource {
     };
   }
 
-  private ImageFetch redirect(HttpResponse<?> response, BlogCategory blog, int redirectsLeft)
+  private ImageFetch redirect(ImageResponse response, BlogCategory blog, int redirectsLeft)
       throws IOException, InterruptedException {
     return redirectsLeft == 0
         ? rejected(ImageRejection.TOO_MANY_REDIRECTS)
@@ -200,7 +206,7 @@ public final class HttpImageSource implements ImageSource {
   }
 
   /** The {@code Location}, resolved against the URL that answered. */
-  private static URI location(HttpResponse<?> response) {
+  private static URI location(ImageResponse response) {
     return response.uri().resolve(response.headers().firstValue("Location").orElseThrow());
   }
 

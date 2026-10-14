@@ -10,19 +10,27 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Flow;
 
 /**
- * Collects a response body of at most {@code capacity} bytes. One byte more cancels the exchange
- * and completes with empty, so an oversized body is never read in full. A capacity of 0 discards
- * any non-empty body at once.
+ * Collects a response body of at most {@code capacity} bytes. One byte more cuts the body short: it
+ * reports the cut, completes with empty and cancels the exchange, so an oversized body is never
+ * read in full. A capacity of 0 discards any non-empty body at once.
+ *
+ * <p>The cut is reported before the cancellation because the client may then fail the whole
+ * exchange instead of delivering the empty body; the caller answers from the cut instead.
  */
 final class CappedBody implements HttpResponse.BodySubscriber<Optional<byte[]>> {
 
   private final int capacity;
+  private final Runnable onCut;
   private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
   private final CompletableFuture<Optional<byte[]>> body = new CompletableFuture<>();
   private Flow.Subscription subscription;
 
-  CappedBody(int capacity) {
+  /**
+   * @param onCut run once the body is cut short, before the exchange is cancelled
+   */
+  CappedBody(int capacity, Runnable onCut) {
     this.capacity = capacity;
+    this.onCut = onCut;
   }
 
   @Override
@@ -40,7 +48,7 @@ final class CappedBody implements HttpResponse.BodySubscriber<Optional<byte[]>> 
   public void onNext(List<ByteBuffer> buffers) {
     buffers.forEach(this::append);
     if (bytes.size() > capacity) {
-      // Complete first: the client fails the response if the cancellation is seen before the body.
+      onCut.run();
       body.complete(Optional.empty());
       subscription.cancel();
     }

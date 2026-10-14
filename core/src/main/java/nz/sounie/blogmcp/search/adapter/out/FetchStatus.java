@@ -1,6 +1,5 @@
 package nz.sounie.blogmcp.search.adapter.out;
 
-import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -19,7 +18,7 @@ enum FetchStatus {
   private static final Set<Integer> TRANSIENT_CLIENT_ERRORS = Set.of(408, 429);
   private static final int SERVER_ERRORS = 500;
 
-  private record Rule(Predicate<HttpResponse<?>> matches, FetchStatus status) {}
+  private record Rule(Predicate<ImageResponse> matches, FetchStatus status) {}
 
   private static final List<Rule> RULES =
       List.of(
@@ -29,7 +28,7 @@ enum FetchStatus {
           new Rule(response -> response.statusCode() >= SERVER_ERRORS, TRANSIENT));
 
   /** The first rule that matches decides; anything else is {@link #PERMANENT}. */
-  static FetchStatus of(HttpResponse<?> response) {
+  static FetchStatus of(ImageResponse response) {
     return RULES.stream()
         .filter(rule -> rule.matches().test(response))
         .map(Rule::status)
@@ -37,11 +36,11 @@ enum FetchStatus {
         .orElse(PERMANENT);
   }
 
-  private static boolean hasLocation(HttpResponse<?> response) {
+  private static boolean hasLocation(ImageResponse response) {
     return response.headers().firstValue("Location").isPresent();
   }
 
-  private static int statusClass(HttpResponse<?> response) {
+  private static int statusClass(ImageResponse response) {
     return response.statusCode() / 100;
   }
 }

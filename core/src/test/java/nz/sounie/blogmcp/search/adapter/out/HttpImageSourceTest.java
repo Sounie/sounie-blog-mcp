@@ -25,6 +25,10 @@ import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
@@ -455,6 +459,32 @@ class HttpImageSourceTest {
           .asString()
           .contains(url("/image").toString())
           .contains(reason.name());
+    }
+
+    /**
+     * Cutting a body short cancels the exchange, and the JDK client may then fail it ("Stream N
+     * cancelled" over HTTP/2) instead of delivering the empty body; how often depends on thread
+     * timing. Many concurrent fetches (each with its own client, as in production) make that timing
+     * vary enough for the failure to show up when it is not handled.
+     */
+    @Test
+    @DisplayName(
+        "AC-SRCH-79: a body refused at its headers is rejected even when the client fails the"
+            + " cancelled exchange")
+    void a_body_cut_short_is_rejected_whatever_the_client_does_after_the_cancel() throws Exception {
+      serve("/page", image("text/html", TestImages.png(64, 64)));
+      ExecutorService threads = Executors.newFixedThreadPool(16);
+      try {
+        List<Future<ImageFetch>> fetches =
+            IntStream.range(0, 400)
+                .mapToObj(i -> threads.submit(() -> fetch("/page", LOOPBACK_POST)))
+                .toList();
+        for (Future<ImageFetch> fetch : fetches) {
+          assertRejected(fetch.get(), ImageRejection.UNSUPPORTED_TYPE);
+        }
+      } finally {
+        threads.shutdownNow();
+      }
     }
 
     @ParameterizedTest(name = "length declared: {0}")
