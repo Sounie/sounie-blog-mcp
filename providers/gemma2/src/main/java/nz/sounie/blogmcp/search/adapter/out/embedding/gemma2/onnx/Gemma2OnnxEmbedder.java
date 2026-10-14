@@ -1,5 +1,6 @@
 package nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.onnx;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
@@ -7,6 +8,7 @@ import java.util.function.Function;
 import nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.Gemma2InputPreparation;
 import nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.Gemma2Profile;
 import nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.Gemma2TokenCounter;
+import nz.sounie.blogmcp.search.application.embedding.spi.EmbedderShutdown;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProviderProfile;
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
@@ -140,5 +142,10 @@ public final class Gemma2OnnxEmbedder implements EmbeddingProvider {
     } finally {
       MODEL_LOCK.unlock();
     }
+  }
+
+  @Override
+  public EmbedderShutdown shutDown(Duration maxWait) {
+    throw new UnsupportedOperationException("not implemented yet");
   }
 }

@@ -1,5 +1,6 @@
 package nz.sounie.blogmcp.search.application.embedding.spi;
 
+import java.time.Duration;
 import java.util.Optional;
 import nz.sounie.blogmcp.search.application.QueryEmbedder;
 import nz.sounie.blogmcp.search.domain.embedding.ImageEmbedder;
@@ -30,4 +31,12 @@ public interface EmbeddingProvider extends PassageEmbedder, QueryEmbedder {
    * model.
    */
   Optional<ImageEmbedder> imageEmbedder();
+
+  /**
+   * Tells the provider the process is exiting: from now on it starts no new model call, and every
+   * embed call throws {@link nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable}. Then
+   * waits up to {@code maxWait} for the call already running. Never loads a model that was not
+   * loaded. Safe to call more than once.
+   */
+  EmbedderShutdown shutDown(Duration maxWait);
 }

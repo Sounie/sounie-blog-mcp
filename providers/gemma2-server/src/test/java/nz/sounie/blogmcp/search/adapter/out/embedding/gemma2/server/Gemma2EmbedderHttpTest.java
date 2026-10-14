@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import nz.sounie.blogmcp.search.application.embedding.spi.EmbedderShutdown;
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
 import nz.sounie.blogmcp.search.domain.text.Passage;
@@ -59,6 +60,18 @@ class Gemma2EmbedderHttpTest {
     lmStudio.stubFor(
         post(urlPathEqualTo(EMBEDDINGS))
             .willReturn(aResponse().withHeader("Content-Type", "application/json").withBody(body)));
+  }
+
+  @Test
+  @DisplayName("Provider shutdown: a model server holds no native state, so it drains at once")
+  void shuts_down_drained_at_once_without_calling_the_server() {
+    long start = System.nanoTime();
+
+    EmbedderShutdown outcome = embedder().shutDown(Duration.ofSeconds(5));
+
+    assertThat(outcome).isEqualTo(EmbedderShutdown.DRAINED);
+    assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(1));
+    lmStudio.verify(0, postRequestedFor(urlPathEqualTo(EMBEDDINGS)));
   }
 
   @Test
