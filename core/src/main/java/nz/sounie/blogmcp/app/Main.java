@@ -12,6 +12,7 @@ import nz.sounie.blogmcp.catalog.adapter.out.JsonFileSiteDirectory;
 import nz.sounie.blogmcp.catalog.domain.site.InvalidSitesConfiguration;
 import nz.sounie.blogmcp.catalog.domain.site.SitesConfiguration;
 import nz.sounie.blogmcp.catalog.domain.site.SitesConfigurationMissing;
+import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
 
 /** Starts the stdio MCP server {@code blog-mcp} (app.md 3.4). */
 public final class Main {
@@ -35,8 +36,13 @@ public final class Main {
     SitesConfiguration configuration = load(sites);
     createDataDirectory(paths.dataDirectory());
 
+    EmbeddingProvider provider =
+        EmbeddingProviderDiscovery.discover(Thread.currentThread().getContextClassLoader());
     Wiring wiring =
-        Wiring.assemble(paths.dataDirectory(), sites, Adapters.production(), System.err);
+        Wiring.assemble(paths.dataDirectory(), sites, Adapters.production(provider), System.err);
+    // Covers every exit: end of input (System.exit), SIGTERM and SIGINT (app.md 3.4).
+    Runtime.getRuntime()
+        .addShutdownHook(new Thread(new ShutdownDrain(provider, System.err), "shutdown-drain"));
     BlogMcpTools tools =
         new BlogMcpTools(
             wiring.searchPosts(), wiring.getPost(), siteChoices(configuration), System.err);
