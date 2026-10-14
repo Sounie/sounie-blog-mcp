@@ -140,8 +140,12 @@ public final class Gemma2Embedder implements EmbeddingProvider {
     }
   }
 
+  /**
+   * A model server holds no native state in this process, so there is nothing to drain: returns
+   * {@code DRAINED} at once without calling the server (search glossary: "Provider shutdown").
+   */
   @Override
   public EmbedderShutdown shutDown(Duration maxWait) {
-    throw new UnsupportedOperationException("not implemented yet");
+    return EmbedderShutdown.DRAINED;
   }
 }
