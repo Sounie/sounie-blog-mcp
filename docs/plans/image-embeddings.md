@@ -15,8 +15,8 @@ the single source of truth for progress across sessions. Each phase's PR updates
 | 0 Spike and ADR | `feature/image-embeddings-spike` | Done | Merged as #20. Reference run 2026-10-13: q8 images 0.99909 to 0.99981 vs official, 6 of 6 rankings. ADR 0011 accepted |
 | 1 Provider image embedding | `feature/gemma2-image-embedding` | Done | Merged as #22. AC-SRCH-53 to 65 done; Java vs official 0.99908 to 0.99980, 6 of 6 rankings |
 | 2 Catalog post images | `feature/post-images` | Done | On `main` as 2e3d3d8, 55d78da, 153fdc3. AC-CAT-33 to 41 done; format 1 read as no images (Q9); https only (Q10) |
-| 3 Search indexes images | `feature/search-image-entries` | In review | AC-SRCH-66 to 80 done; no host allow-list, image addresses must be permitted by the post host's address category; by-hand "black swan" check still to do |
-| 4 Search by image | `feature/find-posts-like-image` | Not started | Depends on 3 |
+| 3 Search indexes images | `feature/search-image-entries` | Done | Merged as #26. AC-SRCH-66 to 80 done; no host allow-list, image addresses must be permitted by the post host's address category. Follow-up #28: shutdown waits for a running embedding (no SIGSEGV on exit), a startup reconcile, and reliable rejection of cut image bodies. By-hand "black swan" check still to do |
+| 4 Search by image | `feature/find-posts-like-image` | Not started | Next |
 
 ## Fixed decisions (don't reopen without the owner)
 
