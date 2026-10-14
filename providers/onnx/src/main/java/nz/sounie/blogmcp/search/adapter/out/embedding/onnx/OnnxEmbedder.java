@@ -6,12 +6,10 @@ import dev.langchain4j.model.embedding.onnx.bgesmallenv15q.BgeSmallEnV15Quantize
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Function;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbedderShutdown;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProviderProfile;
-import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
+import nz.sounie.blogmcp.search.application.embedding.spi.ModelGate;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
 import nz.sounie.blogmcp.search.domain.embedding.ImageEmbedder;
 import nz.sounie.blogmcp.search.domain.query.QueryPassage;
@@ -23,10 +21,12 @@ import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 
 /**
  * The local BGE-small-en-v1.5 (quantised) model through LangChain4j. The only class that touches
- * LangChain4j. Serialises its public calls with one lock; loads the model lazily on first use.
+ * LangChain4j. Runs its model calls through one {@link ModelGate}; loads the model lazily on first
+ * use.
  *
- * <p>The model is one per process (it is about 34 MB and its ONNX session is shared), so the lock
- * is too. LangChain4j's own parallelism within one {@code embedAll} call is left alone (ADR 0005).
+ * <p>The model is one per process (it is about 34 MB and its ONNX session is shared), so the gate
+ * is too. One gate call covers a whole {@code embedAll}. LangChain4j's own parallelism within one
+ * {@code embedAll} call is left alone (ADR 0005).
  */
 public final class OnnxEmbedder implements EmbeddingProvider {
 
@@ -34,7 +34,13 @@ public final class OnnxEmbedder implements EmbeddingProvider {
   private static final String MODEL_REVISION = "onnx-bge-small-en-v1.5-q-v1";
   private static final PassageTokenBudget BUDGET = new PassageTokenBudget(400, 100, 64, 465, 512);
 
-  private static final ReentrantLock MODEL_LOCK = new ReentrantLock();
+  /**
+   * The model is looked up inside each gate call, so it loads lazily and under the gate; a failure
+   * to load it ({@link LinkageError}, e.g. a missing native library) or to run it becomes {@link
+   * nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable}.
+   */
+  private static final ModelGate GATE = new ModelGate(MODEL_ID);
+
   private final BgeTokenCounter tokens = new BgeTokenCounter();
 
   /** Loaded by the JVM on first access to {@link #INSTANCE}, so the model loads lazily. */
@@ -84,12 +90,12 @@ public final class OnnxEmbedder implements EmbeddingProvider {
   @Override
   public List<Embedding> embedPassages(List<Passage> passages) {
     // LangChain4j rejects an empty list; no passages simply need no embeddings.
-    return passages.isEmpty() ? List.of() : withModel(model -> embedAll(model, passages));
+    return passages.isEmpty() ? List.of() : GATE.call(() -> embedAll(Model.INSTANCE, passages));
   }
 
   @Override
   public Embedding embedQuery(QueryPassage query) {
-    return withModel(model -> toEmbedding(model.embed(query.text()).content()));
+    return GATE.call(() -> toEmbedding(Model.INSTANCE.embed(query.text()).content()));
   }
 
   private static List<Embedding> embedAll(EmbeddingModel model, List<Passage> passages) {
@@ -101,23 +107,9 @@ public final class OnnxEmbedder implements EmbeddingProvider {
     return new Embedding(embedding.dimension(), embedding.vector());
   }
 
-  /**
-   * Runs one call on the model under the model lock. A failure to load the model ({@link
-   * LinkageError}, e.g. a missing native library) or to run it becomes {@link EmbedderUnavailable}.
-   */
-  private static <T> T withModel(Function<EmbeddingModel, T> call) {
-    MODEL_LOCK.lock();
-    try {
-      return call.apply(Model.INSTANCE);
-    } catch (RuntimeException | LinkageError e) {
-      throw new EmbedderUnavailable("The local embedding model " + MODEL_ID + " failed", e);
-    } finally {
-      MODEL_LOCK.unlock();
-    }
-  }
-
+  /** Never loads the model: the gate only refuses new calls and waits for the running one. */
   @Override
   public EmbedderShutdown shutDown(Duration maxWait) {
-    throw new UnsupportedOperationException("not implemented yet");
+    return GATE.shutDown(maxWait);
   }
 }

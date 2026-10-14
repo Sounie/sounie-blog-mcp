@@ -3,14 +3,13 @@ package nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.onnx;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Function;
 import nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.Gemma2InputPreparation;
 import nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.Gemma2Profile;
 import nz.sounie.blogmcp.search.adapter.out.embedding.gemma2.Gemma2TokenCounter;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbedderShutdown;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProviderProfile;
+import nz.sounie.blogmcp.search.application.embedding.spi.ModelGate;
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
 import nz.sounie.blogmcp.search.domain.embedding.Embedding;
 import nz.sounie.blogmcp.search.domain.embedding.EmbeddingFactory;
@@ -24,14 +23,19 @@ import nz.sounie.blogmcp.search.domain.text.TokenCounter;
 /**
  * Google EmbeddingGemma 2 in process: the bundled q8 ONNX model from {@code
  * onnx-community/embeddinggemma-2-ONNX} on ONNX Runtime, with no model server and no network (ADR
- * 0010). Serialises its public calls with one lock; loads the model lazily on first use.
+ * 0010). Runs its model calls through one {@link ModelGate}; loads the model lazily on first use.
  */
 public final class Gemma2OnnxEmbedder implements EmbeddingProvider {
 
   private static final String MODEL_REVISION = "daa72c51243991dfcaf9f9137d2c573d8f7790c0";
   private static final String MODEL_ID = "onnx-community/embeddinggemma-2-ONNX@daa72c51-q8";
   private static final String PROFILE_KEY = "gemma2-onnx-q8-daa72c51-v1";
-  private static final ReentrantLock MODEL_LOCK = new ReentrantLock();
+
+  /**
+   * One per process, like the model. The model is looked up inside each gate call, so it loads
+   * lazily and under the gate.
+   */
+  private static final ModelGate GATE = new ModelGate(MODEL_ID);
 
   private static final class Tokenizer {
     static final Gemma2TokenCounter INSTANCE = new Gemma2TokenCounter();
@@ -90,20 +94,20 @@ public final class Gemma2OnnxEmbedder implements EmbeddingProvider {
   }
 
   /**
-   * Preprocesses outside the lock (pure Java), then runs the vision encoder and the text model
-   * under it. Images take no task prefix.
+   * Preprocesses outside the gate (pure Java), then runs the vision encoder and the text model in
+   * one gate call. Images take no task prefix.
    */
   private static Embedding embedImage(ImagePixels pixels) {
     VisionInput input = preprocess(pixels);
     long[] inputIds = ImageInputIds.of(input.grid());
-    return withModel(
-        model ->
+    return GATE.call(
+        () ->
             EmbeddingFactory.createGemma2Embedding(
-                model.embedImage(inputIds, Vision.INSTANCE.features(input))));
+                Model.INSTANCE.embedImage(inputIds, Vision.INSTANCE.features(input))));
   }
 
   /**
-   * Preprocesses without the model lock. A failure, such as an image too large to resize, becomes
+   * Preprocesses outside the model gate. A failure, such as an image too large to resize, becomes
    * {@link EmbedderUnavailable} (AC-SRCH-65).
    */
   private static VisionInput preprocess(ImagePixels pixels) {
@@ -114,38 +118,30 @@ public final class Gemma2OnnxEmbedder implements EmbeddingProvider {
     }
   }
 
+  /**
+   * One gate call per passage, so the longest a shutdown waits is one inference (app.md 3.4). A
+   * post cut off mid-way fails as a whole.
+   */
   @Override
   public List<Embedding> embedPassages(List<Passage> passages) {
-    return withModel(model -> passages.stream().map(p -> embed(model, p.text())).toList());
+    return passages.stream().map(passage -> embed(passage.text())).toList();
   }
 
   @Override
   public Embedding embedQuery(QueryPassage query) {
-    return withModel(model -> embed(model, query.text()));
+    return embed(query.text());
   }
 
-  private static Embedding embed(Gemma2OnnxModel model, String preparedText) {
-    return EmbeddingFactory.createGemma2Embedding(
-        model.embed(Tokenizer.INSTANCE.modelInputIds(preparedText)));
+  private static Embedding embed(String preparedText) {
+    return GATE.call(
+        () ->
+            EmbeddingFactory.createGemma2Embedding(
+                Model.INSTANCE.embed(Tokenizer.INSTANCE.modelInputIds(preparedText))));
   }
 
-  /**
-   * Runs one call on the model under the model lock. A failure to load the model ({@link
-   * LinkageError}, e.g. a missing native library) or to run it becomes {@link EmbedderUnavailable}.
-   */
-  private static <T> T withModel(Function<Gemma2OnnxModel, T> call) {
-    MODEL_LOCK.lock();
-    try {
-      return call.apply(Model.INSTANCE);
-    } catch (RuntimeException | LinkageError e) {
-      throw new EmbedderUnavailable("The local embedding model " + MODEL_ID + " failed", e);
-    } finally {
-      MODEL_LOCK.unlock();
-    }
-  }
-
+  /** Never loads the model: the gate only refuses new calls and waits for the running one. */
   @Override
   public EmbedderShutdown shutDown(Duration maxWait) {
-    throw new UnsupportedOperationException("not implemented yet");
+    return GATE.shutDown(maxWait);
   }
 }
