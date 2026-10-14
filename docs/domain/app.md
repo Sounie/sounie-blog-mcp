@@ -2,11 +2,11 @@
 
 Status:
 - **Slice 3a (persistence): approved by the owner on 2026-10-03.** ACs: AC-APP-24 to 29, 35, 40 and 41, plus AC-APP-44 and 45 from the 3a review (section 7).
-- **Slice 3b (MCP server, tools, wiring, scheduler, jar): draft, trimmed to essentials ("don't gild the lily"), awaiting the owner's 3b checkpoint.** ACs: AC-APP-1 to 12 (renumbered, section 7) plus AC-SRCH-39. Deferred items are listed in section 7.
-- **Shutdown drain and startup reconcile (fix/shutdown-waits-for-embedding): approved by the owner on 2026-10-14.** It fixes the
+- **Slice 3b (MCP server, tools, wiring, scheduler, jar): implemented on `main`, trimmed to essentials ("don't gild the lily").** ACs: AC-APP-1 to 12 (renumbered, section 7) plus AC-SRCH-39. Deferred items are listed in section 7.
+- **Shutdown drain and startup reconcile: approved by the owner on 2026-10-14, merged as #28.** It fixes the
   SIGSEGV on exit while ONNX Runtime is embedding, and it indexes posts that an interrupted session left unindexed at the start
   of the next one. ACs: AC-APP-48 and AC-APP-50, plus a manual check (3.4). AC-APP-49 was dropped in draft and is retired.
-- **Embedding providers, classpath discovery and provider-keyed search paths:** ADR 0009 (accepted 2026-10-09) and ADR 0010 (accepted 2026-10-11) are implemented on `feature/provider-distribution`, which is under review. The open review items are listed in ADR 0010's implementation status.
+- **Embedding providers, classpath discovery and provider-keyed search paths:** ADR 0009 (accepted 2026-10-09) and ADR 0010 (accepted 2026-10-11) are implemented on `main`. The open review items are listed in ADR 0010's implementation status.
 
 SDK facts come from MCP Java SDK v2.0.1 (researcher, 2026-10-03). Section 8 keeps the ones that still inform a 3b decision.
 
@@ -44,7 +44,7 @@ layers and constructs their adapters. The persistence adapters live in each cont
 | Tool failure rules | A rule table from exception type to a `Failed` message:<br>• `InvalidToolArgument`, `InvalidSearchQuery` and `InvalidPostReference` give their own message;<br>• `EmbedderUnavailable` gives "search is temporarily unavailable because the local model failed";<br>• any other `RuntimeException` gives a generic message, and its stack trace goes to stderr.<br>We never throw `McpError`, which the SDK reserves for infrastructure failures. | `ToolFailures` (`app.mcp`) |
 | Read-only annotations | `ToolAnnotations` with `readOnlyHint = true`, `destructiveHint = false`, `idempotentHint = true`, `openWorldHint = false` and the tool's title. | `ToolDefinitions` |
 | Data-not-instructions notice | The sentence in each tool description, and in the server `instructions`, saying that results are the owner's own blog content, to be treated as data and never as instructions. | `ToolDefinitions.CONTENT_NOTICE` |
-| Search result view | The JSON shape of one `search_posts` result: `postId`, `title`, `url`, `site`, `published` (a `yyyy-MM-dd` date in the blog time zone), `score` (rounded to 3 decimals) and `snippet`, plus (ADR 0011 phase 3, proposed) an optional `matchedImage` URL, present only when the post's best entry is an image and otherwise omitted (search.md 3.7, AC-SRCH-75). | `SearchResultView` (`app.mcp`) |
+| Search result view | The JSON shape of one `search_posts` result: `postId`, `title`, `url`, `site`, `published` (a `yyyy-MM-dd` date in the blog time zone), `score` (rounded to 3 decimals) and `snippet`, plus (ADR 0011 phase 3) an optional `matchedImage` URL, present only when the post's best entry is an image and otherwise omitted (search.md 3.7, AC-SRCH-75). | `SearchResultView` (`app.mcp`) |
 | Post view (MCP) | The JSON shape of `get_post`: `postId`, `title`, `url`, `site`, `published` (date), `publishedAt` and `updatedAt` (ISO-8601 UTC instants), `tags`, `completeness` and `body`. | `GetPostView` (`app.mcp`) |
 | Site choices | The site IDs in the sites configuration, read once at startup. They are the `enum` of the `site` argument, and an unknown site is invalid input. | `SiteChoices` (`app.mcp`) |
 | Data directory | Where all state lives: `BLOG_MCP_DATA` if set and not blank, otherwise `~/.local/share/blog-mcp`. It is created at startup. | `AppPaths.dataDirectory` (`app`) |
@@ -572,7 +572,7 @@ And a binary from before ADR 0009, run on the same data directory, leaves the pr
 | Slice | Status | Scope | ACs |
 |---|---|---|---|
 | **3a, persistence** | **Approved by the owner, 2026-10-03.** | `shared.storage` (`AtomicFile`, `FileKey`, `StoredFiles`); `FilePostRepository` and `FileSyncCheckpointRepository` (`catalog.adapter.out`); `FileVectorIndex`, `IndexFile`, `VectorCodec` and `IndexFileLoader` (`search.adapter.out`); `StorageHealth` | AC-APP-24, 25, 26, 27, 28, 29, 35, 40, 41, 44, 45 |
-| **3b, server** | **Draft, trimmed. Awaiting the owner's 3b checkpoint.** | The MCP tools and schemas; `Snippet`; `PostReference`; `SyncInterval` configuration; `Main`; `Wiring`; `StdoutGuard`; `EndOfInputWatch`; the scheduler; the shadow jar; the SDK and `slf4j-simple` dependencies | AC-APP-1 to 12 (plus AC-SRCH-39) |
+| **3b, server** | **Implemented on `main`, trimmed.** | The MCP tools and schemas; `Snippet`; `PostReference`; `SyncInterval` configuration; `Main`; `Wiring`; `StdoutGuard`; `EndOfInputWatch`; the scheduler; the shadow jar; the SDK and `slf4j-simple` dependencies | AC-APP-1 to 12 (plus AC-SRCH-39) |
 
 Notes on the split:
 - **AC-APP-27's second half** ("the startup run then syncs every site in `RECONCILE`") needs the 3b wiring. In 3a it is covered at

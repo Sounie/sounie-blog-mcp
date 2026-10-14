@@ -1,15 +1,16 @@
 # Search bounded context
 
 Status: Existing model decisions approved by the owner on 2026-10-02. Embedding providers (ADR 0009,
-accepted 2026-10-09, and ADR 0010, accepted 2026-10-11) are implemented on
-`feature/provider-distribution`: one Gradle module and jar per provider, SPI discovery,
-provider-specific profiles and budgets, and profile-keyed index paths under `search/indexes/`. The
-branch is under review; the open items are listed in ADR 0010's implementation status.
+accepted 2026-10-09, and ADR 0010, accepted 2026-10-11) are implemented on `main`: one Gradle
+module and jar per provider, SPI discovery, provider-specific profiles and budgets, and
+profile-keyed index paths under `search/indexes/`. The open items are listed in ADR 0010's
+implementation status.
 Image embedding in the in-process `gemma2` provider (ADR 0011, phase 1; glossary "Image pixels" to
-"Vision encoder", AC-SRCH-53 to 65) was approved by the owner on 2026-10-14
-(`feature/gemma2-image-embedding`). It adds a port and a value object only; no aggregate, index, catalog or MCP behaviour changes.
+"Vision encoder", AC-SRCH-53 to 65) was approved by the owner on 2026-10-14 and merged as #22. It
+adds a port and a value object only; no aggregate, index, catalog or MCP behaviour changes.
 Indexing post images (ADR 0011, phase 3; section 3.7, glossary "Post image (search)" to "Matched
-image", AC-SRCH-66 to 80) was **approved by the owner on 2026-10-14** (`feature/search-image-entries`).
+image", AC-SRCH-66 to 80) was **approved by the owner on 2026-10-14** and merged as #26. The provider
+shutdown (AC-APP-48) and the cut-body fix for `HttpImageSource` followed in #28.
 Package: `nz.sounie.blogmcp.search`
 Feature tag for acceptance criteria: `SRCH`
 
@@ -77,7 +78,7 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Invalid image pixels | The rejection of an image-pixels input, with reason `NON_POSITIVE_DIMENSION`, `TOO_MANY_PIXELS` or `DATA_LENGTH_MISMATCH`. | `InvalidImagePixels` (`search.domain.embedding`) |
 | Image embedder | Port that turns image pixels into an embedding in the **same vector space** as the provider's query and passage embeddings. Images take no task prefix. It throws `EmbedderUnavailable` if the model cannot embed. | `ImageEmbedder.embedImage(ImagePixels)` (`search.domain.embedding`) |
 | Image capability | Whether the distribution's provider can embed images. A provider declares it by returning an image embedder or nothing. Only the in-process `gemma2` provider has one (ADR 0011); `onnx` and `gemma2-server` are text-only. Asking never loads a model. | `EmbeddingProvider.imageEmbedder()` returning `Optional<ImageEmbedder>` |
-| Provider shutdown | (fix/shutdown-waits-for-embedding, approved 2026-10-14) Telling the provider the process is exiting. From that moment it **starts no new model call**. It then waits up to the given time for the call already running to finish, and reports `DRAINED` or `TIMED_OUT`. Every embed call after that (query, passage or image) throws `EmbedderUnavailable` without touching the model, so indexing treats it like any other embedder failure (AC-SRCH-17; an image attempt is `Pending`). It never loads a model that was not loaded. It is safe to call more than once. Abstract in the SPI, like `imageEmbedder()`: `gemma2-server` holds no native state and returns `DRAINED` at once. See app.md 3.4 and AC-APP-48. | `EmbeddingProvider.shutDown(Duration maxWait)` returning `EmbedderShutdown` (enum, `search.application.embedding.spi`) |
+| Provider shutdown | (approved 2026-10-14, #28) Telling the provider the process is exiting. From that moment it **starts no new model call**. It then waits up to the given time for the call already running to finish, and reports `DRAINED` or `TIMED_OUT`. Every embed call after that (query, passage or image) throws `EmbedderUnavailable` without touching the model, so indexing treats it like any other embedder failure (AC-SRCH-17; an image attempt is `Pending`). It never loads a model that was not loaded. It is safe to call more than once. Abstract in the SPI, like `imageEmbedder()`: `gemma2-server` holds no native state and returns `DRAINED` at once. See app.md 3.4 and AC-APP-48. | `EmbeddingProvider.shutDown(Duration maxWait)` returning `EmbedderShutdown` (enum, `search.application.embedding.spi`) |
 | Model gate | Runs the in-process provider's native model calls one at a time, and owns the shutdown order: refuse new calls first, then wait for the running one. It also turns a failure inside a call into `EmbedderUnavailable` naming the model. It is JDK-only and has no model of its own, so it is tested without one. `OnnxEmbedder` and `Gemma2OnnxEmbedder` each hold one per process, replacing their `MODEL_LOCK` and `withModel`. | `ModelGate` (`search.application.embedding.spi`) |
 | Similarity | The cosine similarity of two embeddings. Because embeddings are unit length, this is their dot product. Its range is [-1, 1], and higher means more related. | `Similarity` |
 | Index recipe | The identity of the method used to build an index entry: selected model and tokenizer revision identity, chunking and selected passage-budget parameters, passage-preparation/template version, and (phase 3, image indexing only) the image part `images-v1`. The tokenizer filesystem path and supported context are deployment/validation details, not recipe identity. Query preparation is excluded because it does not change stored passages. Changing an indexing-relevant part makes every entry stale. | `IndexRecipe`; image part added by `ImageIndexing.appliedTo(IndexRecipe)` |
@@ -121,7 +122,7 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Best chunk | Retired by phase 3: generalised to **best entry**. | (none) |
 | Best entry | (phase 3) The entry hit of a post with the highest similarity, over its chunks and its images. If two are equal, a chunk beats an image, then the lower index wins. | `IndexedPost.bestMatch(Embedding)`, `EntryHit.BEST_FIRST` |
 | Matched image | (phase 3) The URL of the indexed image that was a post's best entry. Absent when the best entry is a chunk. | `PostMatch.matchedImage()` returning `Optional<URI>` |
-| Snippet | The first 60 words of the best entry: a chunk's text without the title line, or (phase 3) an indexed image's description. If the chunk has more words, a trailing ` …` is added and the snippet is marked truncated. It may be empty for a post with an empty body. Trimming was deferred from slice 2 (Q5) and is decided here, in search, rather than in the MCP presenter (slice 3, `docs/domain/app.md` 3.6; proposed, pending owner approval). | `Snippet` (`search.domain.index`), `PostMatch.snippet()` |
+| Snippet | The first 60 words of the best entry: a chunk's text without the title line, or (phase 3) an indexed image's description. If the chunk has more words, a trailing ` …` is added and the snippet is marked truncated. It may be empty for a post with an empty body. Trimming was deferred from slice 2 (Q5) and is decided here, in search, rather than in the MCP presenter (slice 3, `docs/domain/app.md` 3.6). | `Snippet` (`search.domain.index`), `PostMatch.snippet()` |
 | Search results | The post matches ordered by **ranking** and cut to the limit. | `SearchResults` |
 | Ranking | Order by score, highest first. Ties go to the more recent `publishedAt` first, and then to the lower post ID (compared as a string). | `PostMatch.RANKING` |
 | Search posts | Answer a search query. | `SearchPosts` use case |
@@ -503,13 +504,13 @@ event. No other context needs to know about indexing. Outcomes are returned as r
 - **Contract check (completeness)**: the existing `CatalogPostPublished` and `CatalogPostRevised` already carry
   `completeness` as a `String` (`FULL` or `SUMMARY`), so no event change is needed. `CatalogPostWithdrawn`
   does not need it. `CatalogPostState` is new and includes it, as part of AC-SRCH-31.
-- **Contract change (post images, ADR 0011 phase 2, proposed in `catalog.md` 3.6 and section 4):**
+- **Contract change (post images, ADR 0011 phase 2, in `catalog.md` 3.6 and section 4):**
   `CatalogPostPublished`, `CatalogPostRevised` and `CatalogPostState` gain
   `List<shared.query.CatalogPostImage> images`, and `changed` may contain `"IMAGES"`. Search ignores both
   until phase 3. `SharedCatalogPosts` and `CatalogEventTranslation` do not read `images`, and the
   fingerprint does not include them. So an images-only revision, including the ones that follow the
   catalog's format-1 upgrade (catalog Q9), is `Keep` and re-embeds nothing.
-  **From phase 3 (proposed):** both adapters map `images` into `PostToIndex` through `PostImage.of`
+  **From phase 3:** both adapters map `images` into `PostToIndex` through `PostImage.of`
   (AC-SRCH-66). Whether they reach the fingerprint depends on the image-indexing strategy (3.7):
   never for a text-only provider, so the paragraph above still holds there.
 - **Reading the contract**: search reads it only through `SharedCatalogPosts` (`search.adapter.out`), which
@@ -925,7 +926,7 @@ Then the `Unidentified` entry produces no decision, O is **not** removed in that
 And when a later reconcile has no unidentified entry, O is `REMOVED`.
 And given a catalog listing the post ID `sounie-wp:4` twice, the plan contains exactly one `IndexDecision.Unreadable` for it, whose reason mentions "duplicate". Its existing entry is unchanged, it is reported `FAILED`, and every other post is still planned and applied (the reconcile is not aborted).
 
-### Snippet trimming (slice 3; proposed in `docs/domain/app.md`, pending owner approval)
+### Snippet trimming (slice 3; `docs/domain/app.md`)
 
 **AC-SRCH-39: A snippet is at most 60 words of the best chunk.**
 Given a best chunk of 300 words `w1 … w300`,

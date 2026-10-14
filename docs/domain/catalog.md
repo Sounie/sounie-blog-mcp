@@ -33,7 +33,7 @@ It is **not** responsible for:
 | Platform | The blogging software behind a site: `WORDPRESS` or `BLOGGER`. In the sites configuration, platform names match case-insensitively (`wordpress`, `WordPress` and `WORDPRESS` are all accepted). | `Platform` |
 | Base URL | Absolute `https` URL of the site (scheme, host and optionally a path, but no query or fragment). Its host is the **site host**. | `Site.baseUrl()` |
 | Sites configuration | The validated set of all sites, plus the sync interval (slice 3b, owner decision 2026-10-03). It is valid only as a whole (see invariants). It is read from `sites.json`; the file keeps that name. | `SitesConfiguration` |
-| Sync interval | (slice 3b, proposed in `docs/domain/app.md` 3.8) How long the app waits between the end of one sync-and-reconcile run and the start of the next. It is set by `"syncEveryHours"` in `sites.json`: a whole number, at least 1, default **24** when omitted. It is consumed only by the `app` scheduler. The daily reconcile rule is unchanged, so with 24 hours each run is in practice a reconcile. | `SyncInterval`, `SyncIntervalSetting` (sealed: `Omitted`, `WholeHours`, `Unparseable`), both in `catalog.domain.site` |
+| Sync interval | (slice 3b, `docs/domain/app.md` 3.8) How long the app waits between the end of one sync-and-reconcile run and the start of the next. It is set by `"syncEveryHours"` in `sites.json`: a whole number, at least 1, default **24** when omitted. It is consumed only by the `app` scheduler. The daily reconcile rule is unchanged, so with 24 hours each run is in practice a reconcile. | `SyncInterval`, `SyncIntervalSetting` (sealed: `Omitted`, `WholeHours`, `Unparseable`), both in `catalog.domain.site` |
 | Post | One published blog post as the catalog knows it. It is the aggregate root. | `Post` |
 | Source post ID | The platform's own identifier for a post, as a string. WordPress: the numeric `id`. Blogger: the digits after `.post-` in `id.$t`. Never derived from the slug or URL, because those can change. | `SourcePostId` |
 | Post ID | The catalog-wide identity of a post: site ID plus source post ID. Its external form is `<siteId>:<sourcePostId>`, e.g. `sounie-wp:123`. | `PostId` |
@@ -44,11 +44,11 @@ It is **not** responsible for:
 | Body | The post content as plain text, produced from the platform HTML by **text extraction**. | `Body` |
 | Body completeness | Whether the body is the `FULL` post text or only a `SUMMARY` (a truncated excerpt from a short feed). | `BodyCompleteness` |
 | Text extraction | Turning HTML into plain text: drop `script`/`style`, decode entities, put a paragraph break after block elements, keep whitespace inside `pre`, and collapse other whitespace. | `HtmlToText` port (adapter-implemented) |
-| Post image | (phase 2, proposed) One image that is part of a post's content. It has a **URL** (absolute `https`, with a host), **alt text** and a **caption**. Alt text and caption are plain text, trimmed, and **empty when absent** (never null), like `Title` and `Body`. An empty `alt=""` and a missing `alt` are therefore the same. | `PostImage` (`catalog.domain.post`) |
-| Post images | (phase 2, proposed) The ordered list of a post's post images: document order, and **at most one image per URL** (the first occurrence wins, with its alt text and caption). It may be empty. Two lists are equal only with the same images in the same order. | `PostImages` (`catalog.domain.post`) |
+| Post image | (phase 2) One image that is part of a post's content. It has a **URL** (absolute `https`, with a host), **alt text** and a **caption**. Alt text and caption are plain text, trimmed, and **empty when absent** (never null), like `Title` and `Body`. An empty `alt=""` and a missing `alt` are therefore the same. | `PostImage` (`catalog.domain.post`) |
+| Post images | (phase 2) The ordered list of a post's post images: document order, and **at most one image per URL** (the first occurrence wins, with its alt text and caption). It may be empty. Two lists are equal only with the same images in the same order. | `PostImages` (`catalog.domain.post`) |
 | Alt text | The `alt` attribute of an `<img>`, with entities decoded and whitespace collapsed. | `PostImage.altText()` |
 | Caption | The text of the `<figcaption>` of the nearest `<figure>` that encloses the `<img>`, extracted like a body and collapsed to one line. Images outside a `<figure>` have an empty caption. | `PostImage.caption()` |
-| Image extraction | (phase 2, proposed) Reading the post images out of the same content HTML that text extraction reads. It chooses each image's source (see *srcset choice*), resolves it against the post's canonical URL, and drops it if an *image exclusion* applies. Excluded images are dropped silently: they are not skipped entries and raise no sync warning. | `PostImageExtractor` (`catalog.adapter.out`, jsoup) |
+| Image extraction | (phase 2) Reading the post images out of the same content HTML that text extraction reads. It chooses each image's source (see *srcset choice*), resolves it against the post's canonical URL, and drops it if an *image exclusion* applies. Excluded images are dropped silently: they are not skipped entries and raise no sync warning. | `PostImageExtractor` (`catalog.adapter.out`, jsoup) |
 | Srcset choice | Which URL an `<img>` contributes: the `srcset` candidate with the **largest width descriptor (`w`) that is at most 2048**. If there is no such candidate, the `src` attribute is used. If neither yields a URL, the `<img>` contributes nothing. | `Srcset` (`catalog.adapter.out`) |
 | Image exclusion | One rule that drops an `<img>`: `EMOJI` (class `emoji` or `wp-smiley`); `TOO_SMALL` (a declared `width` or `height` attribute below 64, which also covers 1×1 and 0×0 **tracking pixels**; a value that is not a whole number of pixels, such as `100%`, counts as not declared); `NOT_HTTPS` (the resolved URL is not absolute `https`, which covers `data:` URIs, `http:` URLs and unparseable URLs). Duplicates are not an exclusion rule: `PostImages` owns them. | `ImageExclusion` (enum rule table, `catalog.adapter.out`) |
 | Post snapshot | What a blog source currently says about one post, already mapped to catalog language. It is the input to publish and revise. | `PostSnapshot` |
@@ -69,8 +69,8 @@ It is **not** responsible for:
 | Sync outcome | `COMPLETED` (every page was handled), `PARTIAL` (failed after at least one page was handled), `FAILED` (no page was handled) or `SKIPPED` (a sync for the same site was already running). | `SyncOutcome` |
 | Skipped entry | A source entry that was not applied, with its source post ID (if readable) and reason: `MALFORMED`, `NOT_PUBLIC` or `DUPLICATE_CANONICAL_URL`. An unresolvable WordPress tag ID is *not* a skip; it is a `SyncWarning` of kind `SOURCE_NOTE` (AC-CAT-8). | `SkippedEntry` |
 | Get post | Look up one post by post ID or by URL. | `GetPost` use case |
-| Post reference | (slice 3, proposed in `docs/domain/app.md` 3.7, pending owner approval) The free text given to `get_post`. It is a **URL** if the trimmed text starts with a scheme and `://`, and a **post ID** otherwise. A reference of either form that does not parse is `InvalidPostReference`. | `PostReference` (sealed `ById`, `ByUrl`), `GetPost.byReference(String)` |
-| Post file / checkpoint file | (slice 3, proposed) The persisted form of one post or one checkpoint: one JSON file each under the data directory, written atomically. An unreadable file is quarantined, and the startup sync becomes a reconcile (`docs/domain/app.md` 3.3). From phase 2, post files are written as format 2 (they carry post images). Format 1 files are still read, as posts with no images known. They are not quarantined, and the next sync that sees such a post records its images (Q9). | `FilePostRepository`, `FileSyncCheckpointRepository` (`adapter.out`) |
+| Post reference | (slice 3, `docs/domain/app.md` 3.7) The free text given to `get_post`. It is a **URL** if the trimmed text starts with a scheme and `://`, and a **post ID** otherwise. A reference of either form that does not parse is `InvalidPostReference`. | `PostReference` (sealed `ById`, `ByUrl`), `GetPost.byReference(String)` |
+| Post file / checkpoint file | (slice 3) The persisted form of one post or one checkpoint: one JSON file each under the data directory, written atomically. An unreadable file is quarantined, and the startup sync becomes a reconcile (`docs/domain/app.md` 3.3). From phase 2, post files are written as format 2 (they carry post images). Format 1 files are still read, as posts with no images known. They are not quarantined, and the next sync that sees such a post records its images (Q9). | `FilePostRepository`, `FileSyncCheckpointRepository` (`adapter.out`) |
 
 ## 3. Aggregates
 
@@ -119,7 +119,7 @@ Behaviour and invariants:
 `Site(SiteId id, Platform platform, URI baseUrl)` is an immutable value that the catalog reads but never
 changes. `SitesConfiguration` validates the whole list and reports **all** violations together in
 one `InvalidSitesConfiguration` exception:
-- (slice 3b, proposed; `docs/domain/app.md` 3.8, AC-APP-8 and 10) an optional top-level `syncEveryHours`, which must be a whole JSON
+- (slice 3b; `docs/domain/app.md` 3.8, AC-APP-8 and 10) an optional top-level `syncEveryHours`, which must be a whole JSON
   number of at least 1 if present (default 24 hours). A value below 1, or one that is not a whole number (`"24"`, `24.5`, `true`,
   `null`), is a violation reported with the others;
 - at least one site. An empty list is invalid, and a **missing** configuration file is a startup error (`SitesConfigurationMissing`, raised by the `SiteDirectory` adapter) naming the path it looked at (owner decision, Q6; AC-CAT-25);
@@ -151,7 +151,7 @@ behind the domain port `SiteDirectory`.
 - `GetPost(PostId | url)` returns `Optional<PostView>`. URL lookup **normalises**: lower-case scheme and host, `http` is treated as `https`, the fragment is dropped, the default port is dropped, and a trailing slash on the path is ignored. The query string is kept.
 - Scheduling (run at startup in the background, then every 6 hours) lives in an inbound adapter.
 
-### 3.6 Post images (phase 2, ADR 0011; proposed)
+### 3.6 Post images (phase 2, ADR 0011)
 
 Each decision has one owning type, tested there; callers compose them without branching.
 
@@ -190,7 +190,7 @@ in-process event bus. `search` subscribes to those and never imports `catalog.do
 | `PostRevised` | `Post.revise` with a material change | same full state as `PostPublished`, plus `Set<RevisedAspect> changed` (`TITLE`, `BODY`, `COMPLETENESS`, `TAGS`, `URL`, `PUBLISHED_AT`, and from phase 2 `IMAGES`) so that search can skip re-embedding when only tags or the URL changed |
 | `PostWithdrawn` | `Post.withdraw` (reconcile found the post missing; the post was seen as not public; or its site was removed from the configuration) | post ID, site ID, canonical URL, reason |
 
-**Published language for post images (phase 2, proposed).** One record,
+**Published language for post images (phase 2).** One record,
 `nz.sounie.blogmcp.shared.query.CatalogPostImage(String url, String altText, String caption)`, is used by
 `CatalogPostPublished`, `CatalogPostRevised` and `CatalogPostState`, each of which gains
 `List<CatalogPostImage> images` (document order, no duplicate URLs, alt text and caption empty when
@@ -406,7 +406,7 @@ When `GetPost` is called with either one,
 Then an empty result is returned (not an exception).
 And when it is called with `not-an-id` or a non-URL string, then `InvalidPostReference` is raised.
 
-### Post images (phase 2, ADR 0011; proposed)
+### Post images (phase 2, ADR 0011)
 
 **AC-CAT-33: Post images are recorded in document order with alt text and caption.**
 Given a WordPress entry whose `content.rendered` is `<p>Intro</p><figure><img src="https://blog2.sounie.nz/wp-content/uploads/swan.jpg" alt="A black  swan"><figcaption>Swan in the <em>reeds</em></figcaption></figure><p>More</p><img src="https://i0.wp.com/blog2.sounie.nz/grapes.png">`,

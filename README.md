@@ -6,13 +6,14 @@ and read my blog posts.
 It syncs posts from WordPress and Blogger sites, stores them as plain text on disk, and indexes them with a
 local embedding model. Each embedding provider has its own runnable jar, and you choose a provider by choosing which jar
 to run; provider details stay outside the core search domain. Search runs entirely on your machine:
-no API keys, and no calls to hosted models. The only network traffic is fetching the blogs' public feeds.
+no API keys, and no calls to hosted models. The only network traffic is fetching the blogs' public feeds and,
+with the `gemma2` jar, the images inside their posts.
 
 ## Tools
 
 | Tool | What it does |
 |---|---|
-| `search_posts` | Semantic search over all configured sites. You can limit it to one `site`, a `from`/`to` publication date range (`yyyy-MM-dd`, New Zealand time) and a `limit` of 1–20 results (default 10). Each result has a title, URL, date, relevance score and snippet, plus a `postId`. |
+| `search_posts` | Semantic search over all configured sites. You can limit it to one `site`, a `from`/`to` publication date range (`yyyy-MM-dd`, New Zealand time) and a `limit` of 1–20 results (default 10). Each result has a title, URL, date, relevance score and snippet, plus a `postId`. When the post matched through one of its images, the result also has `matchedImage` (the image's URL), and the snippet comes from the image's alt text or caption. |
 | `get_post` | Returns one post in full as plain text, looked up by `postId` (e.g. `sounie-wp:123`) or by URL. |
 
 Both tools are marked read-only. Their descriptions tell the model to treat post text as data, never as
@@ -33,11 +34,32 @@ This builds one runnable jar per embedding provider. You choose a provider by ch
 | Jar | Embedding model |
 |---|---|
 | `providers/onnx/build/libs/blog-mcp-onnx.jar` | BGE-small-en-v1.5 (quantised), in process |
-| `providers/gemma2/build/libs/blog-mcp-gemma2.jar` | EmbeddingGemma 2 (q8 ONNX), in process; about 370 MB, and needs no model server |
+| `providers/gemma2/build/libs/blog-mcp-gemma2.jar` | EmbeddingGemma 2 (q8 ONNX), in process; about 370 MB, and needs no model server. The only jar that also indexes post images |
 | `providers/gemma2-server/build/libs/blog-mcp-gemma2-server.jar` | EmbeddingGemma 2 via LM Studio, which must be serving `text-embedding-embeddinggemma-2` on `http://localhost:1234/v1` (override with `BLOG_MCP_EMBEDDING_ENDPOINT`) |
 
 Each provider keeps its own search index in the data directory. The first run of a jar builds that
 provider's index; later runs, including after switching back from another jar, reuse it.
+
+The model files come from huggingface.co. If you can't reach it, add `-PhuggingFaceMirror=<dir>`
+pointing at a local copy with the same `<org>/<repo>/resolve/<revision>/…` layout.
+
+### Image search (`gemma2` only)
+
+The `gemma2` jar also embeds the images inside each post's content, each as its own entry beside the
+post's text, so a text query can find a post by what its pictures show. A post scores as its best entry.
+
+- Only images in the post body are indexed. Emoji, tracking pixels, `data:` URIs, non-`https` URLs and
+  images under 64 px are skipped.
+- Images are fetched over HTTPS only, up to 10 MiB each, as JPEG, PNG or GIF. WebP and other formats are
+  skipped with a line on stderr.
+- An image may come from any host, but its addresses must suit the blog's own host: a blog on a public
+  address can only load images from public addresses. A blog on a private network can also load images
+  from that network.
+- An image that fails for a temporary reason, such as a timeout or a server error, is retried at the next
+  reconcile. One that can never be indexed, such as a 404 or an unsupported format, is not retried until
+  the post changes.
+
+The `onnx` and `gemma2-server` jars index text only.
 
 ## Configure
 
@@ -113,13 +135,19 @@ Keep another option, such as `--transport stdio`, between `--env` and the server
 
 - **First start:** the server answers straight away. Search results stay incomplete until the first sync and
   index build finish, which takes from tens of seconds to a few minutes.
-- **Later starts:** the stored index is served immediately. A background sync and reconcile job then runs, and
-  repeats every `syncEveryHours`.
+- **Later starts:** the stored index is served immediately. A background job then reconciles the index with the
+  stored posts, syncs every site, and reconciles again. After that it syncs and reconciles every
+  `syncEveryHours`.
+- **Interrupted sessions:** posts are saved one at a time, so a session that ends mid-sync keeps every post it
+  saved. The opening reconcile of the next session indexes any that were saved but not yet indexed, and the
+  next sync carries on fetching the rest.
 - **Storage:** one JSON file per post, checkpoint and indexed post, each written atomically. An unreadable file
   is renamed to `*.corrupt` and fetched again rather than crashing the server. If the embedding provider/profile
   changes, the affected entries are re-embedded automatically.
 - **Logs** go to stderr, which most clients show in their MCP logs. Stdout carries only the protocol.
-- The server exits when the client closes its stdin.
+- **Exit:** the server exits when the client closes its stdin, or on SIGTERM or SIGINT. It first stops starting
+  new embeddings, and waits up to 5 seconds for one already running, so the native model runtime is never
+  torn down mid-call.
 
 ## Development
 
@@ -133,6 +161,7 @@ Java 25 and Gradle, built with domain-driven design and hexagonal architecture. 
 |---|---|
 | `./gw check` | Compile (`-Werror`), Spotless, tests, ArchUnit layering rules, JaCoCo (≥ 90% on domain and application), PMD complexity budget, SpotBugs and FindSecBugs |
 | `./gw pitest` | Mutation testing on the domain packages (≥ 80%) |
+| `./gw jarTest` | Runs each provider jar under a real MCP client |
 | `./gw spotlessApply` | Format the code |
 
 Use `./gw` instead of `./gradlew`. It is a thin wrapper that also works inside the Claude Code sandbox.
