@@ -3,6 +3,9 @@
 Status:
 - **Slice 3a (persistence): approved by the owner on 2026-10-03.** ACs: AC-APP-24 to 29, 35, 40 and 41, plus AC-APP-44 and 45 from the 3a review (section 7).
 - **Slice 3b (MCP server, tools, wiring, scheduler, jar): draft, trimmed to essentials ("don't gild the lily"), awaiting the owner's 3b checkpoint.** ACs: AC-APP-1 to 12 (renumbered, section 7) plus AC-SRCH-39. Deferred items are listed in section 7.
+- **Shutdown drain and startup reconcile (fix/shutdown-waits-for-embedding): approved by the owner on 2026-10-14.** It fixes the
+  SIGSEGV on exit while ONNX Runtime is embedding, and it indexes posts that an interrupted session left unindexed at the start
+  of the next one. ACs: AC-APP-48 and AC-APP-50, plus a manual check (3.4). AC-APP-49 was dropped in draft and is retired.
 - **Embedding providers, classpath discovery and provider-keyed search paths:** ADR 0009 (accepted 2026-10-09) and ADR 0010 (accepted 2026-10-11) are implemented on `feature/provider-distribution`, which is under review. The open review items are listed in ADR 0010's implementation status.
 
 SDK facts come from MCP Java SDK v2.0.1 (researcher, 2026-10-03). Section 8 keeps the ones that still inform a 3b decision.
@@ -59,8 +62,10 @@ layers and constructs their adapters. The persistence adapters live in each cont
 | Stored snapshot | The immutable form that a file repository keeps in memory and on disk. Every `find` restores a **fresh** aggregate from it, so no two threads ever share one mutable `Post` or `SyncCheckpoint`. | `PostFile`, `CheckpointFile` (`catalog.adapter.out`) |
 | Vector encoding | A chunk's embedding stored as the base64 of little-endian IEEE-754 float32 values; vector length is determined by the selected provider profile (384 for ONNX BGE, 768 for EmbeddingGemma 2). It round-trips bit-exactly. | `VectorCodec` (`search.adapter.out`) |
 | Model compatibility | Only the selected provider/profile subtree is opened. Within that subtree, an index file whose stored model ID differs from the current `PassageEmbedder.modelId()` is incompatible and is handled by `IndexFileLoader`; switching provider profiles never opens or deletes another profile's subtree. | `IndexFileLoader` (`search.adapter.out`), returning `IndexFileLoad` (sealed: `Loaded`, `IncompatibleModel`, `Unreadable`) |
-| Sync-and-reconcile job | One background run: `SyncAllSites.run(mode)` and then `ReconcileIndex.run()`, in sequence on one thread. Each step's failure is caught and logged, and the reconcile runs even if the sync step threw. | `SyncAndReconcile` (`app`) |
+| Sync-and-reconcile job | One background run of steps, in sequence on one thread. A **scheduled run** is `SyncAllSites.run(INCREMENTAL)` and then `ReconcileIndex.run()`. The **startup run** (the first run of a session) adds a **startup reconcile** in front: `ReconcileIndex.run()`, then `SyncAllSites.run(startupSyncMode)`, then `ReconcileIndex.run()`. Each step's failure is caught and logged, and the next step still runs. | `SyncAndReconcile` (`app`), with the steps for each run chosen once (3.4) |
+| Startup reconcile | The reconcile that opens the startup run, before any sync step. It indexes posts that an earlier session saved to the catalog but never finished indexing: indexing cut off by the shutdown drain, refused by the drained gate, or with pending images. Such posts get no new catalog event, and a reconcile otherwise runs only after a sync step, which may never complete in short sessions. | `SyncAndReconcile` startup run |
 | Job timer | Our own port that runs a job now and then repeatedly with a **fixed delay** (the sync interval) between the end of one run and the start of the next, on one daemon thread. Runs therefore never overlap. | `JobTimer` (port, `app`), `ExecutorJobTimer` (production) |
+| Shutdown drain | (fix/shutdown-waits-for-embedding, approved 2026-10-14) The JVM shutdown hook, registered once at startup, that calls the provider shutdown (search glossary) with a wait of at most **5 seconds**, so no thread is inside ONNX Runtime when the JVM tears down native libraries. It runs on every JVM exit: end of input (`System.exit(0)`), SIGTERM and SIGINT. It writes one stderr line only if the wait timed out. | `ShutdownDrain` (`app`), constant `MAX_WAIT = 5 s` |
 | Snippet | (search; changed in this slice) The first 60 words of the best chunk. If the chunk is longer, a trailing ` …` is added. | `Snippet` (`search.domain.index`) |
 | Post reference | (catalog; new in this slice) The text given to `get_post`. It is either a **URL** (it starts with a scheme and `://`) or a **post ID** (anything else). | `PostReference` (sealed `ById`, `ByUrl`; `catalog.domain.post`) |
 
@@ -220,13 +225,54 @@ Restarting with the same profile key loads and serves its existing entries immed
    - `McpServer.sync(new StdioServerTransportProvider(McpJsonDefaults.getMapper(), EndOfInputWatch.wrap(System.in), guardedStdout))`;
    - `.serverInfo("blog-mcp", version)`, `.instructions(...)`, `.capabilities(ServerCapabilities.builder().tools(true).build())`;
    - `.tools(searchPostsSpec, getPostSpec)`, `.validateToolInputs(false)`, then `.build()`.
-7. `JobTimer.runNowThenEvery(syncInterval, syncAndReconcile)`. The first run uses `StorageHealth.startupSyncMode()`, and later runs
-   use `INCREMENTAL`. The server already answers from the persisted index while the first run is in progress.
+7. `JobTimer.runNowThenEvery(syncInterval, syncAndReconcile)`. The first run is the **startup run**: the startup reconcile, then a
+   sync in `StorageHealth.startupSyncMode()`, then a reconcile. Later runs are **scheduled runs**: a sync in `INCREMENTAL`, then a
+   reconcile. The server already answers from the persisted index while the first run is in progress.
 8. Wait for end of input. Then call `closeGracefully()` on the server and `System.exit(0)`. `Main` does not rely on the transport's
    threads to keep the JVM alive (UNVERIFIED), and the timer's thread is a daemon.
 
-A run in progress at exit, or a SIGTERM, needs no special handling: every write is atomic and nothing is buffered (3.3), so the
-worst case is that the next start's sync repeats a little work.
+A run in progress at exit, or a SIGTERM, needs no special handling **for data**: every write is atomic and nothing is buffered (3.3),
+so the worst case is that the next start's sync repeats a little work.
+
+**It does need handling for native code** (fix/shutdown-waits-for-embedding). JVM exit runs ONNX Runtime's native static destructors
+while the daemon job thread may still be inside `OrtSession.run`, and the process crashes with SIGSEGV (seen with the `gemma2` jar
+during image indexing; text embedding with `onnx` or `gemma2` can hit it too). The MCP stdio lifecycle reaches this on every
+normal stop: the client closes stdin, then sends SIGTERM. The minimal fix is a **shutdown drain**:
+- Right after step 5, `Main` registers `ShutdownDrain` as a JVM shutdown hook over the provider instance. One hook covers
+  `System.exit` and the signals, so the exit path in step 8 is unchanged.
+- The hook calls `EmbeddingProvider.shutDown(ShutdownDrain.MAX_WAIT)` (5 s). The SPI method lives on the search-owned provider
+  SPI because only search's provider knows its native state. `app`, the only caller, needs no port of its own (ADR 0006).
+- Inside the in-process providers, `ModelGate` (search glossary) makes the decision. It **first** refuses new calls, **then**
+  waits for the running one. In that order, the job thread, which calls the model in a loop, cannot keep taking the lock
+  ahead of the waiting hook.
+- `Gemma2OnnxEmbedder` goes through the gate **once per passage and once per image**, not once per post. The longest wait
+  is then one inference, not a whole post. A post cut off mid-way fails as a whole and keeps its old entry (AC-SRCH-17).
+  An image cut off is `Pending` and is retried by the next reconcile. `OnnxEmbedder` keeps one gate call per
+  `embedAll`, because ADR 0005 leaves LangChain4j's batching alone and BGE is fast.
+- Sessions are **not** closed: the process is exiting, and closing would mean loading a model that was never loaded.
+  Refusing new calls is enough to keep every thread out of native code.
+- `TIMED_OUT` gives one stderr line naming the model, and the exit continues. A single inference longer than 5 s could
+  still crash. The exit stays bounded instead of hanging (AC-APP-12).
+- `ExecutorJobTimer.close()` is unchanged. Interrupting the job does not stop native inference, and the gate is what
+  keeps threads out of native code.
+- Manual verification, in place of an automated end-to-end test (owner decision): rerun the `gemma2` jar and close stdin
+  while the startup reconcile is embedding. Confirm the exit status is 0 and that no `hs_err_pid*.log` is written.
+
+**Startup reconcile** (same fix, owner addition). A post saved to the catalog whose indexing was cut off, or refused by the
+drained gate, and a post with pending images, get no new catalog event in the next session. Until now they waited for a
+reconcile, and the reconcile only ran after a sync step, which a short session may never complete, so they could be put off
+indefinitely. The startup run therefore opens with a reconcile, before the sync step:
+- `SyncAndReconcile` chooses the steps once per run, replacing today's `nextMode` swap, so `run()` has no branch.
+  - The first run takes the **startup run**: `reconcile`, `sync(startupMode)`, `reconcile`.
+  - Every later run takes the **scheduled run**: `sync(INCREMENTAL)`, `reconcile`.
+  - Each step goes through the existing `isolated` wrapper, so a failing startup reconcile is logged and the sync still runs.
+- **No concurrency is added.** The steps run in sequence on the same single timer thread, and runs still never overlap.
+  The first run is simply longer.
+- **Cost.** In a steady state the startup reconcile finds every entry `UNCHANGED` and only reads. After a profile switch or a
+  recipe change, it re-embeds before the first sync, so new posts from that sync arrive a little later.
+- **After damaged storage** (`DAMAGED`), the startup reconcile runs before the `RECONCILE` sync has fetched the quarantined posts
+  again. Their index entries may be dropped and then rebuilt by that sync's events, which means some extra embedding in a
+  case that is already rare. No data is lost.
 
 **Logging:** our code writes diagnostics to an injected `PrintStream` (stderr), as `CatalogEventListener` already does. There is
 no logging framework in our code. The SDK logs only through SLF4J and writes protocol frames only to the stream we give it. We
@@ -234,7 +280,8 @@ bind `slf4j-simple` 2.0.16 (matching `slf4j-api`), configured by a bundled `simp
 (`org.slf4j.simpleLogger.logFile=System.err`, `defaultLogLevel=warn`). This also avoids SLF4J's "no provider" warning.
 
 **Native libraries** keep their defaults: DJL extracts its tokenizer library to its default cache (`~/.djl.ai`), and ONNX Runtime
-to a temporary directory it deletes on normal exit. Native resources are released when the JVM exits.
+to a temporary directory it deletes on normal exit. Native resources are released when the JVM exits, after the shutdown drain
+(above) has stopped new model calls.
 
 **Embedding stays on the sync thread** (closes search Q9; owner-accepted). The whole job already runs on the timer's background
 thread, never on an MCP request thread. With persistence, a first start, a recipe change, or selection of a profile without an
@@ -405,7 +452,7 @@ And the startup run syncs in `INCREMENTAL` mode when `StorageHealth` is `HEALTHY
 **AC-APP-10: Sync and reconcile run at startup and then every `syncEveryHours`.**
 Given a fake `JobTimer` and recording fakes for the two steps,
 When the app starts with `syncEveryHours` omitted (and, separately, set to 6),
-Then the timer is asked to run the job now and then with a **fixed delay** of 24 hours (or 6 hours). Each run syncs first and starts the reconcile only after the sync step returns, and runs after the first use `INCREMENTAL`. With `ExecutorJobTimer`, a run longer than the interval never overlaps the next.
+Then the timer is asked to run the job now and then with a **fixed delay** of 24 hours (or 6 hours). Each run starts its reconcile only after its sync step returns, and runs after the first sync in `INCREMENTAL` (the first run also opens with the startup reconcile, AC-APP-50). With `ExecutorJobTimer`, a run longer than the interval never overlaps the next.
 And given a sync step that throws, the error is logged to stderr, the reconcile still runs, tool calls keep being answered, and the next scheduled run still happens. A reconcile step that throws is likewise logged and does not stop later runs.
 
 **AC-APP-11: Tool calls during a sync see consistent data.**
@@ -418,6 +465,23 @@ Given the base app and the single provider JAR selected by the required build pr
 When the real `McpClient` starts the generated distribution launcher through `StdioClientTransport` and calls `initialize()`, `listTools()` and `callTool("search_posts", {"query": <the fixture topic>})`,
 Then the call returns the fixture post first, and nothing on stderr mentions a missing SLF4J provider or a native-access warning.
 And when the client closes (stdin reaches end of file), the process exits with status 0 within a few seconds.
+
+**AC-APP-48: The provider shutdown stops new model calls, then waits a bounded time for the running one.** (fix/shutdown-waits-for-embedding; `ModelGate`, no model needed)
+Given a `ModelGate` whose call is blocked inside a supplied function (standing in for a native inference),
+When `shutDown(5 s)` is called and the call returns after 1 s,
+Then `shutDown` returns `DRAINED` after the call has returned, not before. A call started on another thread after `shutDown` began throws `EmbedderUnavailable` without running its function.
+And given the running call does not return within the wait, `shutDown` returns `TIMED_OUT` once the wait has passed (tested with a short wait), and new calls are still refused.
+And given no call is running (including a model that was never loaded), `shutDown` returns `DRAINED` at once without running or loading anything, and a second `shutDown` also returns `DRAINED`.
+And `ShutdownDrain` passes `MAX_WAIT` (5 s) to the provider's `shutDown`. It writes one stderr line naming the model on `TIMED_OUT` and nothing on `DRAINED`.
+
+(AC-APP-49 was dropped in draft and is retired. The end-to-end crash check is manual, see 3.4.)
+
+**AC-APP-50: Posts an interrupted session left unindexed are indexed at the start of the next session.** (fix/shutdown-waits-for-embedding; fake steps)
+Given `SyncAndReconcile` with recording fakes for the sync and reconcile steps and first-run mode `INCREMENTAL` (and, separately, `RECONCILE`),
+When it runs twice,
+Then the first run records `reconcile`, `sync(INCREMENTAL)` (or `sync(RECONCILE)`), `reconcile`, in that order, and the second run records `sync(INCREMENTAL)`, `reconcile`.
+And given a startup reconcile that throws, the error is logged to stderr, and the sync and the second reconcile of that run still run.
+(That a reconcile indexes a stored post with no entry, or with pending images, is already covered by search's reconcile ACs; this AC only fixes when it runs.)
 
 ### Persistence (3a, approved)
 
@@ -514,15 +578,18 @@ Notes on the split:
 1 → 1; 2, 3, 5, 6, 7, 17 → 2; 4 → 3; 11, 12, 15 → 4; 13, 14 → 5; 8, 9 → 6; 18 → 7; 21, 38, 39 → 8; 19, 20, 32 → 9;
 30, 31, 36, 37 → 10; 42 → 11; 33, 34 → 12. Old 16 (`PostReference` parsing) and 22 (path resolution) become unit tests on
 `PostReference` and `AppPaths`. Old 10, 23, 43 and 46 are deferred (below). IDs 13 to 23, 30 to 34, 36 to 39, 42, 43 and 46 are
-retired and not reused.
+retired and not reused. AC-APP-49 (dropped from the shutdown-drain draft) is also retired.
 
 **Deferred (add if needed):**
 - **Data directory lock** (old AC-APP-46): a `FileChannel.tryLock` on `<data>/.lock` so two servers cannot share a data directory.
   Only one Claude Code session normally runs the server; add it if two ever collide.
 - **Warming-up note** (old AC-APP-10, `IndexReadiness`): a note in search results until the first sync finishes. Persisted data
   serves at once, so only the very first start is affected.
-- **Shutdown drain** (old AC-APP-33's `ShutdownSignal`, `ShutdownSequence`, the 5 s wait for a running job, closing the tokenizer):
-  writes are atomic, so exiting mid-run loses nothing that the next sync does not redo.
+- **Rest of the shutdown sequence** (old AC-APP-33's `ShutdownSignal`, `ShutdownSequence`, waiting for the whole job run, closing
+  ONNX sessions and the DJL tokenizers): writes are atomic, so exiting mid-run loses nothing that the next sync does not redo.
+  The part that prevents the native crash, the **shutdown drain**, is no longer deferred (3.4, AC-APP-48, plus the startup reconcile, AC-APP-50). It waits
+  only for the in-flight model call, at most 5 s. Token counting through the DJL tokenizer happens outside the model gate and is
+  not drained; no crash has been seen from it.
 - **DJL cache inside the data directory** (old AC-APP-23, `DjlCacheSetting`): DJL keeps its default `~/.djl.ai`. The `cache/djl/`
   path in 3.3 stays reserved.
 - **Schema/parser agreement test** (old AC-APP-43): validating example arguments against the advertised schema with a JSON Schema
