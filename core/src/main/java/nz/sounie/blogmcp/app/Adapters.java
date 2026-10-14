@@ -58,12 +58,10 @@ public record Adapters(
   }
 
   /**
-   * The real blog sources over the JDK HTTP client, the selected provider instance, the tokenizer
-   * and the system clock.
+   * The real blog sources over the JDK HTTP client, the selected provider instance (from {@link
+   * EmbeddingProviderDiscovery}), the tokenizer and the system clock.
    */
-  public static Adapters production() {
-    EmbeddingProvider provider =
-        EmbeddingProviderDiscovery.discover(Thread.currentThread().getContextClassLoader());
+  public static Adapters production(EmbeddingProvider provider) {
     return withProvider(BlogSources.overHttp(), provider, java.time.Clock.systemUTC());
   }
 

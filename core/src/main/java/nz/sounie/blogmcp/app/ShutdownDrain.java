@@ -2,6 +2,8 @@ package nz.sounie.blogmcp.app;
 
 import java.io.PrintStream;
 import java.time.Duration;
+import java.util.Objects;
+import nz.sounie.blogmcp.search.application.embedding.spi.EmbedderShutdown;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
 
 /**
@@ -14,12 +16,23 @@ public final class ShutdownDrain implements Runnable {
   /** The longest the exit waits for a running model call. */
   public static final Duration MAX_WAIT = Duration.ofSeconds(5);
 
+  private final EmbeddingProvider provider;
+  private final PrintStream errors;
+
   public ShutdownDrain(EmbeddingProvider provider, PrintStream errors) {
-    throw new UnsupportedOperationException("not implemented yet");
+    this.provider = Objects.requireNonNull(provider, "provider");
+    this.errors = Objects.requireNonNull(errors, "errors");
   }
 
   @Override
   public void run() {
-    throw new UnsupportedOperationException("not implemented yet");
+    if (provider.shutDown(MAX_WAIT) == EmbedderShutdown.TIMED_OUT) {
+      errors.println(
+          "blog-mcp: exiting while the embedding model "
+              + provider.modelId()
+              + " is still running after "
+              + MAX_WAIT.toSeconds()
+              + " s");
+    }
   }
 }
