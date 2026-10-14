@@ -252,9 +252,15 @@ normal stop: the client closes stdin, then sends SIGTERM. The minimal fix is a *
 - Sessions are **not** closed: the process is exiting, and closing would mean loading a model that was never loaded.
   Refusing new calls is enough to keep every thread out of native code.
 - `TIMED_OUT` gives one stderr line naming the model, and the exit continues. A single inference longer than 5 s could
-  still crash. The exit stays bounded instead of hanging (AC-APP-12).
-- `ExecutorJobTimer.close()` is unchanged. Interrupting the job does not stop native inference, and the gate is what
-  keeps threads out of native code.
+  still crash. The exit stays bounded instead of hanging (AC-APP-12). The same holds for a session's first model use:
+  the lazy model load (and, for images, the vision encoder load) and the first inference run in one gate call, which
+  can take longer than 5 s. This is a bounded residual risk.
+- `ExecutorJobTimer.close()` is unchanged. It interrupts the job thread, which does not stop native inference. For
+  `onnx`, LangChain4j's `embedAll` runs its segments on worker threads, and an interrupted job thread leaves the gate while
+  those workers are still inside ONNX Runtime. `OnnxEmbedder` therefore builds the model on a worker pool it owns (daemon
+  threads, sized like LangChain4j's default, so ADR 0005's parallelism is unchanged). Its shutdown closes the gate, then
+  stops that pool (queued segments are dropped) and waits for its workers within the same 5 s; it reports `TIMED_OUT`
+  if either wait runs out. `gemma2` runs inference on the calling thread, so its gate alone keeps threads out of native code.
 - Manual verification, in place of an automated end-to-end test (owner decision): rerun the `gemma2` jar and close stdin
   while the startup reconcile is embedding. Confirm the exit status is 0 and that no `hs_err_pid*.log` is written.
 

@@ -6,6 +6,11 @@ import dev.langchain4j.model.embedding.onnx.bgesmallenv15q.BgeSmallEnV15Quantize
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbedderShutdown;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProvider;
 import nz.sounie.blogmcp.search.application.embedding.spi.EmbeddingProviderProfile;
@@ -34,20 +39,72 @@ public final class OnnxEmbedder implements EmbeddingProvider {
   private static final String MODEL_REVISION = "onnx-bge-small-en-v1.5-q-v1";
   private static final PassageTokenBudget BUDGET = new PassageTokenBudget(400, 100, 64, 465, 512);
 
+  /** The per-process gate, like the model. */
+  private static final ModelGate SHARED_GATE = new ModelGate(MODEL_ID);
+
   /**
-   * The model is looked up inside each gate call, so it loads lazily and under the gate; a failure
-   * to load it ({@link LinkageError}, e.g. a missing native library) or to run it becomes {@link
-   * nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable}.
+   * The per-process worker pool that LangChain4j's {@code embedAll} runs on. It is ours, so a
+   * shutdown can wait for workers that are still inside ONNX Runtime after the calling thread has
+   * left the gate (e.g. interrupted).
    */
-  private static final ModelGate GATE = new ModelGate(MODEL_ID);
+  private static final ThreadPoolExecutor SHARED_WORKERS = newWorkerPool();
 
   private final BgeTokenCounter tokens = new BgeTokenCounter();
+  private final ModelGate gate;
+  private final ExecutorService workers;
+  private final Supplier<EmbeddingModel> model;
 
   /** Loaded by the JVM on first access to {@link #INSTANCE}, so the model loads lazily. */
   private static final class Model {
-    static final EmbeddingModel INSTANCE = new BgeSmallEnV15QuantizedEmbeddingModel();
+    static final EmbeddingModel INSTANCE = new BgeSmallEnV15QuantizedEmbeddingModel(SHARED_WORKERS);
 
     private Model() {}
+  }
+
+  /**
+   * The production provider: the per-process gate, worker pool and lazily loaded model. The model
+   * is looked up inside each gate call, so it loads under the gate; a failure to load it ({@link
+   * LinkageError}, e.g. a missing native library) or to run it becomes {@link
+   * nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable}.
+   */
+  public OnnxEmbedder() {
+    this(SHARED_GATE, SHARED_WORKERS, () -> Model.INSTANCE);
+  }
+
+  /**
+   * A provider with its own gate and worker pool, and its own model loaded now on those workers;
+   * for tests that shut a provider down without closing the per-process one.
+   */
+  OnnxEmbedder(ModelGate gate, ExecutorService workers) {
+    this(gate, workers, loadedOn(workers));
+  }
+
+  private OnnxEmbedder(ModelGate gate, ExecutorService workers, Supplier<EmbeddingModel> model) {
+    this.gate = gate;
+    this.workers = workers;
+    this.model = model;
+  }
+
+  private static Supplier<EmbeddingModel> loadedOn(ExecutorService workers) {
+    EmbeddingModel loaded = new BgeSmallEnV15QuantizedEmbeddingModel(workers);
+    return () -> loaded;
+  }
+
+  /**
+   * Daemon workers sized like LangChain4j's default pool: one per processor, idle ones time out.
+   */
+  static ThreadPoolExecutor newWorkerPool() {
+    int threads = Runtime.getRuntime().availableProcessors();
+    ThreadPoolExecutor pool =
+        new ThreadPoolExecutor(
+            threads,
+            threads,
+            1,
+            TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(),
+            Thread.ofPlatform().daemon().name("onnx-embedding-", 0).factory());
+    pool.allowCoreThreadTimeOut(true);
+    return pool;
   }
 
   @Override
@@ -90,12 +147,12 @@ public final class OnnxEmbedder implements EmbeddingProvider {
   @Override
   public List<Embedding> embedPassages(List<Passage> passages) {
     // LangChain4j rejects an empty list; no passages simply need no embeddings.
-    return passages.isEmpty() ? List.of() : GATE.call(() -> embedAll(Model.INSTANCE, passages));
+    return passages.isEmpty() ? List.of() : gate.call(() -> embedAll(model.get(), passages));
   }
 
   @Override
   public Embedding embedQuery(QueryPassage query) {
-    return GATE.call(() -> toEmbedding(Model.INSTANCE.embed(query.text()).content()));
+    return gate.call(() -> toEmbedding(model.get().embed(query.text()).content()));
   }
 
   private static List<Embedding> embedAll(EmbeddingModel model, List<Passage> passages) {
@@ -107,9 +164,26 @@ public final class OnnxEmbedder implements EmbeddingProvider {
     return new Embedding(embedding.dimension(), embedding.vector());
   }
 
-  /** Never loads the model: the gate only refuses new calls and waits for the running one. */
+  /**
+   * Shuts the gate (refuse new calls, wait for the running one), then stops the worker pool and
+   * waits for the rest of {@code maxWait} for its workers to leave ONNX Runtime. Workers can
+   * outlive the gate call when its thread is interrupted inside {@code embedAll}. Segments still
+   * queued are dropped, so the wait is at most one inference per worker. Never loads the model.
+   */
   @Override
   public EmbedderShutdown shutDown(Duration maxWait) {
-    return GATE.shutDown(maxWait);
+    long deadline = System.nanoTime() + maxWait.toNanos();
+    EmbedderShutdown gateOutcome = gate.shutDown(maxWait);
+    workers.shutdownNow();
+    return workersStoppedBy(deadline) ? gateOutcome : EmbedderShutdown.TIMED_OUT;
+  }
+
+  private boolean workersStoppedBy(long deadline) {
+    try {
+      return workers.awaitTermination(deadline - System.nanoTime(), TimeUnit.NANOSECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return false;
+    }
   }
 }
