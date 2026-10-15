@@ -11,8 +11,8 @@ jackson2 = "2.22.3"
 jsoup = "1.23.2"
 wiremock = "3.13.2"
 pmd = "7.28.0"
-langchain4j-embeddings-bge-small-en-v15-q = "1.21.0-beta31"
-langchain4j = "1.21.0"
+langchain4j-embeddings-bge-small-en-v15-q = "1.22.0-beta32"
+langchain4j = "1.22.0"
 djl = "0.38.0"
 # ADR 0010: the q8 EmbeddingGemma 2 graph needs 1.31+ (1.20, via LangChain4j, rejects it).
 onnxruntime = "1.31.0"
@@ -43,7 +43,7 @@ slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 findsecbugs = { module = "com.h3xstream.findsecbugs:findsecbugs-plugin", version.ref = "findsecbugs" }
 
 [plugins]
-spotless = { id = "com.diffplug.spotless", version = "8.10.3" }
+spotless = { id = "com.diffplug.spotless", version = "8.10.4" }
 pitest = { id = "info.solidsoft.pitest", version = "1.19.0" }
 shadow = { id = "com.gradleup.shadow", version = "9.6.1" }
 spotbugs = { id = "com.github.spotbugs", version = "6.5.12" }
