@@ -16,7 +16,7 @@ the single source of truth for progress across sessions. Each phase's PR updates
 | 1 Provider image embedding | `feature/gemma2-image-embedding` | Done | Merged as #22. AC-SRCH-53 to 65 done; Java vs official 0.99908 to 0.99980, 6 of 6 rankings |
 | 2 Catalog post images | `feature/post-images` | Done | On `main` as 2e3d3d8, 55d78da, 153fdc3. AC-CAT-33 to 41 done; format 1 read as no images (Q9); https only (Q10) |
 | 3 Search indexes images | `feature/search-image-entries` | Done | Merged as #26. AC-SRCH-66 to 80 done; no host allow-list, image addresses must be permitted by the post host's address category. Follow-up #28: shutdown waits for a running embedding (no SIGSEGV on exit), a startup reconcile, and reliable rejection of cut image bodies. By-hand "black swan" check passed 2026-10-14 |
-| 4 Search by image | `feature/find-posts-like-image` | Not started | Next |
+| 4 Search by image | `feature/find-posts-like-image` | In progress | Model approved 2026-10-15: search.md 3.8 (AC-SRCH-81 to 85) and app.md 3.9 (AC-APP-51 to 54). Q-IMG 11 to 15 answered (query URLs may use any address while stdio-only; related-image fixture `black-swans.png`) |
 
 ## Fixed decisions (don't reopen without the owner)
 
@@ -53,7 +53,12 @@ the single source of truth for progress across sessions. Each phase's PR updates
       in the same non-routable category.
 
     DNS rebinding is an accepted residual risk.
-  - Query URLs must not resolve to loopback, link-local or private addresses.
+  - Query URLs: *amended by the owner on 2026-10-15.* While the server is stdio-only, a query URL
+    may resolve to any address, including loopback, private and link-local ones, because the person
+    running the client is the local user. Https only, the redirect limit, the size and content-type
+    caps and the timeouts still apply. **Revisit when the transport moves from stdio to HTTP**, with
+    the concurrency hardening deferred by ADR 0010 decision 7. (This replaces "Query URLs must not
+    resolve to loopback, link-local or private addresses".)
   - At most 10 MB, with content-type checks and timeouts.
   - Supported formats are JPEG, PNG and GIF. WebP is skipped with a warning.
 
@@ -179,8 +184,9 @@ photo yields exactly one post image.
 ## Phase 4: search by image (`feature/find-posts-like-image`)
 
 **Scope**
-- `ImageQuery` is sealed: `LocalImage(Path)` (absolute, regular file, image extension, at most
-  10 MB) or `RemoteImage(URI)` (HTTPS, not resolving to a private address).
+- `ImageQuery` is sealed: `LocalImage(Path)` (absolute, image extension, readable regular file, at
+  most 10 MB, all checked when it is parsed, owner decision 2026-10-15) or `RemoteImage(URI)` (HTTPS;
+  any address while stdio-only, owner decision 2026-10-15).
 - A use case `FindPostsLikeImage` reuses the filtering and ranking in `SearchPosts`.
 - MCP tool `find_posts_like_image` takes `image`, plus `site`, `from`, `to` and `limit` as in
   `search_posts`. It has its own argument reader, modelled on `SearchPostsArguments`.

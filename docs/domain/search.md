@@ -11,6 +11,9 @@ adds a port and a value object only; no aggregate, index, catalog or MCP behavio
 Indexing post images (ADR 0011, phase 3; section 3.7, glossary "Post image (search)" to "Matched
 image", AC-SRCH-66 to 80) was **approved by the owner on 2026-10-14** and merged as #26. The provider
 shutdown (AC-APP-48) and the cut-body fix for `HttpImageSource` followed in #28.
+Searching by image (ADR 0011, phase 4; section 3.8, glossary "Image query" to "Image search",
+AC-SRCH-81 to 85, plus AC-APP-51 to 54 in `docs/domain/app.md`) is a **draft awaiting owner
+approval** on `feature/find-posts-like-image`.
 Package: `nz.sounie.blogmcp.search`
 Feature tag for acceptance criteria: `SRCH`
 
@@ -88,8 +91,8 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Post image (search) | (phase 3) Search's own copy of one catalog post image: an absolute `https` URL with a host, alt text and caption (plain text, empty when absent, never null). Parsed from the published language; never a catalog type. | `PostImage` (`search.domain.image`) |
 | Image description | (phase 3) The text that stands for an image in results: its alt text if not blank, else its caption if not blank, else `Image: <url>`. Whitespace-normalised like a chunk. It is never blank. It is **not** embedded: the image is embedded from its pixels alone. | `PostImage.description()` |
 | Image source | (phase 3) Domain port that fetches one post image's pixels, given the image URL and the post's canonical URL (whose host decides the **blog category**). It never throws for an expected outcome; it returns an **image fetch**. The domain knows nothing about addresses; that is the adapter's concern. | `ImageSource.fetch(URI imageUrl, URI postUrl)` (`search.domain.image`), `HttpImageSource` (`search.adapter.out`) |
-| Image fetch | (phase 3) The outcome of fetching one image. One of three variants:<br>• **fetched**: the decoded image pixels;<br>• **rejected**: the image itself can never be indexed (an **image rejection** reason), so retrying is pointless;<br>• **unavailable**: a transient failure (timeout, connection error, server error), so it is worth retrying. | `ImageFetch` (sealed: `Fetched(ImagePixels)`, `Rejected(ImageRejection)`, `Unavailable(String detail)`) |
-| Image rejection | (phase 3) Why an image can never be indexed: `NOT_HTTPS` (the URL, or a redirect target, is not `https`), `ADDRESS_NOT_PERMITTED` (an address of the image host, or of a redirect target, is outside what the blog category permits), `TOO_MANY_REDIRECTS`, `HTTP_STATUS` (a 4xx other than 408 and 429), `TOO_LARGE` (over 10 MiB, or over the image-pixels cap), `UNSUPPORTED_TYPE` (not JPEG, PNG or GIF, including WebP), `UNDECODABLE` or `TOO_SMALL` (a decoded side under 64 px). | `ImageRejection` (enum, `search.domain.image`) |
+| Image fetch | (phase 3) The outcome of fetching one image. One of three variants:<br>• **fetched**: the decoded image pixels;<br>• **rejected**: the image itself can never be indexed (an **image rejection** reason), so retrying is pointless;<br>• **unavailable**: a transient failure (timeout, connection error, server error), so it is worth retrying.<br>(phase 4) It is also the outcome of loading a **query image**, from a file or a URL. A query is never retried by the server: the caller sees the reason and may try again. | `ImageFetch` (sealed: `Fetched(ImagePixels)`, `Rejected(ImageRejection)`, `Unavailable(String detail)`) |
+| Image rejection | (phase 3) Why an image can never be used: `NOT_HTTPS` (the URL, or a redirect target, is not `https`), `ADDRESS_NOT_PERMITTED` (an address of the image host, or of a redirect target, is outside what the blog category, or for a query the **query address rule**, permits), `TOO_MANY_REDIRECTS`, `HTTP_STATUS` (a 4xx other than 408 and 429), `TOO_LARGE` (over 10 MiB, or over the image-pixels cap), `UNSUPPORTED_TYPE` (not JPEG, PNG or GIF, including WebP), `UNDECODABLE`, `TOO_SMALL` (a decoded side under 64 px). (phase 4) Each reason owns a one-line **explanation** for the person searching (3.8). | `ImageRejection` (enum, `search.domain.image`), `ImageRejection.explanation()` |
 | Settled image | (phase 3) A post image whose fate is final for this content: it was either embedded or rejected. Only settled images go into the stored fingerprint. | `ImageAttempt` (`Indexed`, `Skipped`) |
 | Pending image | (phase 3) A post image that was unavailable, or whose embedding failed. It is not recorded and not settled, so the stored fingerprint differs from the current one and the next upsert of the post (the next reconcile at the latest) re-embeds the post and tries again. | `ImageAttempt.Pending` |
 | Image indexing | (phase 3) The strategy, chosen once at composition, for a post's images: **text-only** (no fetching, recipe and fingerprint exactly as before phase 3) when the provider has no image embedder, or **with images** (fetch, embed, recipe part `images-v1`) when it has one. Nothing else asks which one it is. | `ImageIndexing` (sealed: `TextOnly`, `WithImages(ImageSource, ImageEmbedder)`, `search.domain.index`) |
@@ -98,6 +101,15 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Image host allow-list | Not used (owner decision, 2026-10-14): blogs may serve images from arbitrary domains of their own, so post images may come from **any** `https` host. The blog category, the redirect limit and the size, type and pixel limits are what protect the fetch. | (none) |
 | Address category | (phase 3) Where an address lives, recognised by a rule table that also handles IPv4-mapped IPv6 forms:<br>• `PUBLIC`: every address not in the categories below;<br>• `PRIVATE_NETWORK`: 10/8, 172.16/12, 192.168/16, 100.64/10 (CGNAT, e.g. Tailscale) and `fc00::/7`;<br>• `LOOPBACK`: 127/8 and `::1`;<br>• `NON_ROUTABLE`: link-local 169.254/16 (cloud metadata) and `fe80::/10`, any-local, and multicast.<br>Each category owns `permits(AddressCategory)`, which says which image addresses a blog in that category may use: `PUBLIC` permits `PUBLIC`; `PRIVATE_NETWORK` permits `PUBLIC` and `PRIVATE_NETWORK`; `LOOPBACK` permits `PUBLIC`, `PRIVATE_NETWORK` and `LOOPBACK`; `NON_ROUTABLE` permits `PUBLIC` and `NON_ROUTABLE`. Only a `NON_ROUTABLE` blog permits `NON_ROUTABLE` images, so a link-local, any-local or multicast image address is fetched only for a blog whose own host is in that same category (owner decision, 2026-10-14). | `AddressCategory` (enum, `search.adapter.out`, package-private), `AddressCategory.of(InetAddress)` |
 | Blog category | (phase 3) The address category of the host of the post's canonical URL, resolved at fetch time. If that host has several addresses, it is the category among them that permits the least, so a host with any public address counts as `PUBLIC`. (`PRIVATE_NETWORK` and `NON_ROUTABLE` permit sets that neither contains the other; a host with addresses in both permits only what both permit, i.e. `PUBLIC`.) Every resolved address of the image host, and of each redirect target, must be permitted by it. A post host that does not resolve makes the fetch `Unavailable`. No site configuration flows into search. | `HttpImageSource` (using `AddressCategory`) |
+| Image query | (phase 4) The image a person searches with: a **local image** or a **remote image**, parsed from one piece of text. Trimmed text that starts with a scheme and `://` (`^[A-Za-z][A-Za-z0-9+.-]*://`, the same test catalog's `PostReference` uses) is a URL, and anything else is a path. Each variant knows how to load itself from a **query image source**, so no caller asks which one it has. | `ImageQuery` (sealed: `LocalImage`, `RemoteImage`; `ImageQuery.parse(String)`, `loadFrom(QueryImageSource)`; `search.domain.image`) |
+| Local image | (phase 4) An absolute file path whose file name ends in `.jpg`, `.jpeg`, `.png` or `.gif` (any case), naming a readable regular file (links followed) of at most 10 MiB. There is no `~` expansion. All of this is checked when the local image is created, before any model is touched (owner decision Q-IMG 13). It is decoded like a post image. | `ImageQuery.LocalImage(Path)` |
+| Remote image | (phase 4) An absolute `https` URL with a host. Its path needs no extension, because the content type decides. While the server is stdio-only, it may resolve to any address (the **query address rule**). | `ImageQuery.RemoteImage(URI)` |
+| Invalid image query | (phase 4) The rejection of an image query, with reason `NOT_ABSOLUTE_PATH` (a relative, `~`-prefixed or unparseable path, including `data:` text), `UNSUPPORTED_EXTENSION` (a path not ending in a supported image extension, including `.webp`), `NOT_A_READABLE_FILE` (nothing at the path, a directory or device, or a file that cannot be read), `FILE_TOO_LARGE` (over 10,485,760 bytes), `NOT_HTTPS` (a URL with another scheme, including `http://` and `file://`) or `MALFORMED_URL` (a URL that does not parse or has no host). | `InvalidImageQuery` (`search.domain.image`) |
+| Query image source | (phase 4) Domain port that loads a query image's pixels: `readFile(Path)` and `fetch(URI)`, each returning an **image fetch**. It is in the domain because `ImageQuery`, a domain type, calls it (ADR 0006). | `QueryImageSource` (`search.domain.image`), `QueryImageLoader` (`search.adapter.out`) |
+| Query address rule | (phase 4; owner decision, 2026-10-15) The addresses a remote query image may come from: **every** address category, for the URL's host and every redirect target, while the server is stdio-only. The person running the client is the local user, who could open any of those addresses anyway. https only, the redirect limit, the size and type caps and the timeouts still apply. **Revisit when the transport moves from stdio to HTTP**, like the concurrency hardening deferred by ADR 0010 decision 7. | `BlogCategory.PERMIT_ALL` (`search.adapter.out`) |
+| Search scope | (phase 4) The part of a query that is not what to look for: the site filter, the published-date range and the result limit. It owns ranking: given the indexed posts and a query embedding, it filters, takes each post's best entry, ranks and cuts to the limit. Text and image queries share it. | `SearchScope` (`search.domain.query`), `SearchScope.rank(Stream<IndexedPost>, Embedding)`; `SearchQuery.scope()` |
+| Image search query | (phase 4) An image query with a search scope. | `ImageSearchQuery` (`search.domain.query`) |
+| Image search | (phase 4) The outcome of finding posts like an image: **ranked** (the search results), **image refused** (an image rejection) or **image unavailable** (a detail). An embedder failure is not an outcome: it stays `EmbedderUnavailable`, as for text search. | `ImageSearch` (sealed: `Ranked(SearchResults)`, `ImageRefused(ImageRejection)`, `ImageUnavailable(String detail)`; `search.application`) |
 | Vector index | Port holding every indexed post. In this slice it has an in-memory implementation only, and file persistence is slice 3. | `VectorIndex` (domain port), `InMemoryVectorIndex` (adapter.out) |
 | Index change | What an integration event asks of the index: **upsert** a post (for both a publish and a revise) or **remove** a post (for a withdraw). | `IndexChange` (sealed: `Upsert`, `Remove`) |
 | Index decision | What must happen to one post's entry: **add** (not indexed yet), **re-embed** (the fingerprint differs), **refresh metadata** (same fingerprint, different metadata), **keep** (nothing differs), **exclude** (a summary-only post), **remove** (withdrawn, or an orphan) or **unreadable** (a malformed catalog post whose ID is known: leave its entry untouched and report it as failed). Readable posts go through one entry point, `IndexDecision.forPost(...)`, for both events and reconciles. | `IndexDecision` (sealed: `Add`, `ReEmbed`, `RefreshMetadata`, `Keep`, `Exclude`, `Remove`, `Unreadable`) |
@@ -126,6 +138,7 @@ posts only through the published language in `nz.sounie.blogmcp.shared` (ADR 000
 | Search results | The post matches ordered by **ranking** and cut to the limit. | `SearchResults` |
 | Ranking | Order by score, highest first. Ties go to the more recent `publishedAt` first, and then to the lower post ID (compared as a string). | `PostMatch.RANKING` |
 | Search posts | Answer a search query. | `SearchPosts` use case |
+| Find posts like image | (phase 4) Answer an image search query: load the query image, embed it with the provider's image embedder, and rank the posts in its scope exactly as a text search does. Offered only by a provider with an image embedder. | `FindPostsLikeImage` use case |
 
 ### 2.1 Gemma2 image preprocessing (provider-internal, ADR 0011 phase 1)
 
@@ -446,6 +459,118 @@ sub-package depends on `embedding` (for `ImagePixels`), `post` (for `MalformedCa
 | Stored index format | `IndexFile` / `IndexFileLoader` (`search.adapter.out`) | Writes `"format": 2`, which adds `images`: an array of `{index, url, description, vector}` (vector encoded by `VectorCodec`, like chunks). Reads formats 1 and 2: a format-1 file is read as having no images, and is neither quarantined nor deleted, following catalog Q9. Under `TextOnly` its fingerprint is still current, so nothing is re-embedded; under `WithImages` the recipe differs, so the next reconcile re-embeds it anyway. Any other format is still unreadable and quarantined. The dimension rule covers image vectors as well as chunk vectors. |
 | MCP output | `SearchResultView` (`app.mcp`) and `ToolDefinitions` | An optional `matchedImage` string (`format: uri`) in each result, not in `required`. It is present only for an image match, and the key is omitted (not `null`) otherwise. |
 
+### 3.8 Searching by image (ADR 0011, phase 4; owner answers to Q-IMG 11 to 14 applied 2026-10-15)
+
+ADR 0011 decision 8 and the plan fix the tool (`find_posts_like_image`), the two inputs (an absolute
+local path or an `https` URL) and the 10 MB cap. The rule that query URLs must not resolve to
+loopback, link-local or private addresses was **lifted by the owner on 2026-10-15 while the server
+is stdio-only** (Q-IMG 12; glossary "Query address rule"). This section decides how the feature reuses text search and the
+phase 3 image fetch, so that no rule exists twice. No aggregate, index entry, recipe or event
+changes: the index is only read.
+
+**Flow.** `FindPostsLikeImage.find(ImageSearchQuery)` reads as a straight line:
+1. `query.image().loadFrom(queryImages)` gives an `ImageFetch`. `LocalImage` calls
+   `readFile(path)` and `RemoteImage` calls `fetch(url)`, so no caller asks which kind it has.
+2. A pattern switch with one delegating arm per variant:
+   - `Fetched(pixels)` gives `Ranked(query.scope().rank(index.all(), imageEmbedder.embedImage(pixels)))`;
+   - `Rejected(reason)` gives `ImageRefused(reason)`;
+   - `Unavailable(detail)` gives `ImageUnavailable(detail)`.
+
+   The image embedder is called only for `Fetched`. `EmbedderUnavailable` propagates, as it does
+   from `SearchPosts`, and the tool layer's existing rule maps it (app.md 3.9).
+
+**Ranking is shared, not copied.** `SearchScope(SiteFilter, PublishedDateRange, ResultLimit)` owns
+`filters()` and `rank(Stream<IndexedPost>, Embedding)`: filter by `SearchFilters`, take
+`bestMatch` per post, then `SearchResults.rank(limit)`. This is the body of today's
+`SearchPosts.search`, moved. `SearchQuery` keeps its components and gains `scope()`, so
+`SearchPosts.search` becomes `query.scope().rank(index.all(), embedQuery(...))` with no change in
+behaviour. An image query therefore gets the same filters, the same best-entry choice (an image
+entry and a text chunk are both candidates), the same snippet and matched image, the same tie-breaks
+and the same limit. There is still no minimum similarity (Q4), so a query image unlike every post still returns
+the closest posts.
+
+**Fetching is shared, not copied.** The phase 3 `HttpImageSource` already owns https only,
+redirects (at most 3, each re-checked), status handling, the content-type check (JPEG, PNG, GIF;
+WebP refused), the 10 MiB cap, the timeouts (connect 10 s, response 30 s) and `ImageDecoding`
+(pixel cap, 64 px floor, first frame, PIL-style RGB).
+- **Remote images.** `HttpImageSource` gains `fetchQueryImage(URI)`. It runs the same request path,
+  but passes the constant `BlogCategory.PERMIT_ALL` (every `AddressCategory`; the **query address
+  rule**) instead of resolving a post host. This uses the existing seam, with no new address
+  machinery and no flag. A host that does not resolve is still `Unavailable`, because the request
+  path resolves it before checking. It writes no stderr line, because the outcome goes back to the
+  caller.
+- **Local images.** `QueryImageLoader.readFile(path)` (`search.adapter.out`, the same package as
+  `ImageDecoding`). The path was already checked when the `LocalImage` was created (below), so this
+  method only guards against the file changing in between:
+  - at most `HttpImageSource.MAX_BYTES` (10,485,760) bytes plus one are read, so a file that has
+    grown past the cap is `Rejected(TOO_LARGE)`;
+  - the bytes then go through `ImageDecoding.decode`, exactly like a fetched body;
+  - an I/O error (for example, the file was deleted since) is `Unavailable(detail)`.
+- `QueryImageLoader` implements `QueryImageSource`. Its `fetch(URI)` delegates to
+  `HttpImageSource.fetchQueryImage`.
+
+**The local file is checked as early as possible (owner decision Q-IMG 13).** The `LocalImage`
+compact constructor runs a rule table in this order, and the first violated rule raises
+`InvalidImageQuery`:
+1. the path is absolute (`NOT_ABSOLUTE_PATH`);
+2. the file name has a supported extension (`UNSUPPORTED_EXTENSION`);
+3. it is a readable regular file, with links followed: `Files.isRegularFile` and `Files.isReadable`
+   (`NOT_A_READABLE_FILE`);
+4. `Files.size` is at most 10,485,760 bytes (`FILE_TOO_LARGE`). An I/O error from `size` counts as
+   `NOT_A_READABLE_FILE`.
+
+Parsing happens in the tool's argument reader, so a bad path fails before the use case runs and
+before any model is loaded. This puts file-system calls inside a value object, which the owner
+accepted so that problems surface earliest. The calls are on the JDK's `Files`, which we don't own,
+so they are tested against real files in a temporary directory, not behind a port we would only
+fake. The byte cap is checked again at read time (above), because the file can change in between.
+The 10 MiB limit is one constant, `ImageQuery.MAX_FILE_BYTES`, and `HttpImageSource.MAX_BYTES`
+refers to it.
+
+**Exposure.** A local image may be any readable image file on the machine. The tool returns only
+blog posts, scores and snippets (ADR 0011 decision 8), never anything read from the file. The one
+thing it reveals is whether an image file exists at a path, which the extension rule limits to image
+file names. A remote image may be on any address, including loopback, private and link-local ones,
+and is fetched with a GET request only. That is acceptable only because the stdio server's caller is
+the local user (Q-IMG 12). **Revisit when stdio → HTTP.**
+
+**Composition.** `app` builds the use case only when the provider has an image embedder:
+`provider.imageEmbedder().map(e -> new FindPostsLikeImage(index, e, new QueryImageLoader(httpImageSource)))`,
+next to the existing choice of `ImageIndexing`. A text-only distribution has no
+`FindPostsLikeImage` and does not offer the tool (app.md 3.9).
+
+**Cost and threading.** No concurrency work (as for Q9). The fetch and the embedding run on the
+MCP request thread. The image embedding goes through the gemma2 `ModelGate`, so during a reconcile
+it waits for at most one running inference. The first image call of a session also loads the vision
+encoder (about 195 MB), so it takes a few seconds longer.
+
+| Decision | Owner | Notes |
+|---|---|---|
+| Path or URL | `ImageQuery.parse(text)` | Trims, then the scheme test (glossary). Search cannot import catalog, so the one-line test is repeated rather than shared. |
+| What a valid local image is | `LocalImage` compact constructor, a rule table of four rules | Absolute, a supported extension (case-insensitive), a readable regular file, at most 10,485,760 bytes; otherwise `InvalidImageQuery` (`NOT_ABSOLUTE_PATH`, `UNSUPPORTED_EXTENSION`, `NOT_A_READABLE_FILE`, `FILE_TOO_LARGE`). A `Path.of` failure is `NOT_ABSOLUTE_PATH`. |
+| What a valid remote image is | `RemoteImage` compact constructor | Absolute, scheme `https` (any case) and a non-blank host; otherwise `NOT_HTTPS` or `MALFORMED_URL`. No extension rule. |
+| Loading each kind | `ImageQuery.loadFrom(QueryImageSource)`, polymorphic on the variant | No switch at the caller. |
+| Read cap when the file has changed | `QueryImageLoader.readFile` | Uses the same 10 MiB constant. |
+| Decoding, pixel cap, 64 px floor (Q-IMG 11), RGB conversion | `ImageDecoding` (unchanged) | Already tested by AC-SRCH-76 and 79, not repeated. |
+| Which addresses a query URL may use | `BlogCategory.PERMIT_ALL`, passed into the existing request path | Owner decision Q-IMG 12, while stdio-only. `AddressCategory` and `BlogCategory.permitsAll` are unchanged. |
+| https, redirects, status, content type, byte cap, timeouts | `HttpImageSource` (unchanged code path) | Already tested by AC-SRCH-77 to 80, so only the wiring is checked again (AC-SRCH-85). |
+| Filtering, best entry, ranking, limit | `SearchScope.rank` | Shared with `SearchPosts`, and already covered by AC-SRCH-22 to 27 and 73. |
+| What each outcome means | `ImageSearch` variants | Produced by the switch in `FindPostsLikeImage`. The tool turns them into answers or tool errors (app.md 3.9). |
+| What the person is told about a refusal | `ImageRejection.explanation()`, one text per constant | See the table below. The tool adds the `image` text in front. |
+
+`ImageRejection.explanation()` texts:
+
+| Reason | Explanation |
+|---|---|
+| `NOT_HTTPS` | it redirects to a URL that is not https |
+| `ADDRESS_NOT_PERMITTED` | its host's address is not one this server may fetch (never produced for a query image while stdio-only) |
+| `TOO_MANY_REDIRECTS` | it redirects more than 3 times |
+| `HTTP_STATUS` | the server answered with an error status |
+| `TOO_LARGE` | it is larger than 10 MB or 16 megapixels |
+| `UNSUPPORTED_TYPE` | it is not a JPEG, PNG or GIF image (WebP is not supported) |
+| `UNDECODABLE` | it cannot be read as a JPEG, PNG or GIF image |
+| `TOO_SMALL` | it is smaller than 64 pixels on a side |
+
 ## 4. Domain events
 
 ### 4.1 Consumed (published language in `nz.sounie.blogmcp.shared.event`)
@@ -558,6 +683,9 @@ event. No other context needs to know about indexing. Outcomes are returned as r
 - **search to mcp (slice 3)**: the `search_posts` tool calls `SearchPosts` and maps its arguments with
   `SearchQuery`'s factories (`ResultLimit.defaultLimit()` when `limit` is absent,
   `PublishedDateRange.unbounded()` when both dates are absent, and so on).
+- **search to mcp (phase 4)**: the `find_posts_like_image` tool, registered only for a provider with
+  an image embedder, calls `FindPostsLikeImage` with an `ImageSearchQuery` built from
+  `ImageQuery.parse` and the same scope mapping as `search_posts` (app.md 3.9).
 
 ### 6.1 Domain sub-packages (ADR 0006)
 
@@ -569,9 +697,9 @@ event. No other context needs to know about indexing. Outcomes are returned as r
 | `post` | (nothing) | `PostId`, `SiteId`, `PostMetadata`, `MalformedCatalogPost` |
 | `text` | (nothing) | `WordSequence`, `WordCosts`, `ChunkingPolicy`, `PassageTokenBudget`, `Chunk`, `Passage`, `PassageComposition`, `TokenCounter` (port) |
 | `embedding` | `text` | `Embedding`, `Similarity`, `InvalidEmbedding`, `EmbedderUnavailable`, `PassageEmbedder` (port), `ImageEmbedder` (port), `ImagePixels`, `InvalidImagePixels` |
-| `image` (phase 3) | `embedding`, `post`, `text` | `PostImage`, `ImageSource` (port), `ImageFetch`, `ImageRejection` |
+| `image` (phase 3) | `embedding`, `post`, `text` | `PostImage`, `ImageSource` (port), `ImageFetch`, `ImageRejection`; (phase 4) `ImageQuery`, `InvalidImageQuery`, `QueryImageSource` (port) |
 | `index` | `embedding`, `image`, `post`, `text` | `IndexedPost`, `IndexedChunk`, `IndexedImage` and `IndexEntry` (phase 3), `ImageIndexing` and `ImageAttempt` (phase 3), `PostIndexer`, `PostToIndex`, `Completeness`, `PostMatch`, `EntryHit` (was `ChunkHit`), `ContentFingerprint`, `IndexRecipe`, `IndexChange`, `IndexDecision`, `IndexOutcome`, `IndexWork`, `InvalidIndexedPost`, `VectorIndex` (port) |
-| `query` | `index`, `post`, `text` | `SearchQuery`, `QueryText`, `InvalidSearchQuery`, `ResultLimit`, `PublishedDateRange`, `SiteFilter`, `SearchFilters`, `SearchResults` |
+| `query` | `index`, `post`, `text`; (phase 4) `embedding`, `image` | `SearchQuery`, `QueryText`, `InvalidSearchQuery`, `ResultLimit`, `PublishedDateRange`, `SiteFilter`, `SearchFilters`, `SearchResults`; (phase 4) `SearchScope`, `ImageSearchQuery` |
 | `reconcile` | `index`, `post` | `CatalogEntry`, `ReconcilePlan` |
 
 Nothing in the domain depends on `query`. `PostToIndex`, `Completeness` and `PostMatch` live in `index`,
@@ -588,6 +716,11 @@ Outside the domain:
   by `SearchFilters`, then `bestMatch` for each post, then `SearchResults.rank(limit)`.
   A `PostMatch` carries the post ID, site ID, canonical URL, title, tags, published at, updated at, score,
   snippet and (phase 3) the optional matched image. It has **no completeness**, because every indexed post is `FULL`.
+  (phase 4) The filtering and ranking move to `SearchScope.rank`, which this use case and
+  `FindPostsLikeImage` both call (3.8).
+- (phase 4) `FindPostsLikeImage.find(ImageSearchQuery)` returns an `ImageSearch`: load the image
+  through `QueryImageSource`, then either rank with the image embedding or report the refusal or
+  unavailability (3.8). It does not take the index write lock and never calls the query embedder.
 - `ReconcileIndex.run()` returns a `ReconcileReport`, with per-post outcomes, failure reasons and the
   orphan-removal-suppressed flag. It reads as a straight line: read the entries, plan, then apply each decision.
 - Port `PostCatalog`: `List<CatalogEntry> currentPosts()`. A malformed state becomes an `Unreadable` or
@@ -1246,6 +1379,87 @@ When it is fetched,
 Then the result is `Unavailable` with a detail naming the cause.
 And when the server answers 404, 403 or 410, the result is `Rejected(HTTP_STATUS)`.
 
+### Searching by image (ADR 0011, phase 4; draft)
+
+Where the tests live:
+- **Domain and application** (under PIT): AC-SRCH-81 to 83. AC-SRCH-81 uses real files in a
+  temporary directory (JDK `Files`, which we don't own). AC-SRCH-82 and 83 use the `FakeEmbedder`
+  (which already implements `ImageEmbedder`) and an in-memory `QueryImageSource` fake that returns a
+  scripted `ImageFetch` per path or URL.
+- **Adapter**: AC-SRCH-84 uses real files and real `ImageIO`. AC-SRCH-85 uses WireMock over https
+  and the `HostResolver` seam, as AC-SRCH-77 to 80 do.
+- The rules of the lower types are not repeated: decoding and the caps (AC-SRCH-76, 79, 80),
+  `AddressCategory` (AC-SRCH-78) and ranking (AC-SRCH-22 to 27, 73).
+
+**AC-SRCH-81: Image query text parses to a local or a remote image, and a bad local file is refused at once.**
+Given a temporary directory `<d>` holding `Swan.PNG`, `a.jpeg` and `a.gif` (each 100 bytes), a
+directory `folder.png`, an unreadable file `locked.png`, a file `big.png` of 10,485,761 bytes and a file
+`edge.png` of exactly 10,485,760 bytes,
+When ` <d>/Swan.PNG `, `<d>/a.jpeg`, `<d>/a.gif`, `<d>/edge.png` and
+`https://images.example.com/photo?id=7` are parsed with `ImageQuery.parse`,
+Then the first four are `LocalImage` with the trimmed absolute path, and the last is `RemoteImage`
+(a URL needs no extension and is not resolved when parsed).
+And `swan.png`, `~/swan.png`, an empty text and `data:image/png;base64,AAAA` are rejected with
+`NOT_ABSOLUTE_PATH`; `<d>/a.webp`, `<d>/notes.txt` and `<d>/a` with `UNSUPPORTED_EXTENSION` (whether
+or not they exist); `<d>/missing.png`, `<d>/folder.png` and `<d>/locked.png` with
+`NOT_A_READABLE_FILE` (the `locked.png` case is skipped when the tests run as root, for whom every
+file is readable); `<d>/big.png` with `FILE_TOO_LARGE`; `http://example.com/a.png`,
+`file:///tmp/a.png` and `ftp://example.com/a.png` with `NOT_HTTPS`; and `https:///a.png` and
+`https://exa mple.com/a.png` with `MALFORMED_URL`.
+And each `InvalidImageQuery` message quotes the text and says what is wrong, e.g. "image must be an
+absolute path to a .jpg, .jpeg, .png or .gif file, or an https URL", "no readable file at …" and "…
+is larger than 10 MB".
+(The parser checks only syntax and file attributes. `fake.jpg` holding text parses, and is refused
+when decoded, AC-SRCH-84.)
+
+**AC-SRCH-82: An image query is ranked like a text query.**
+Given an index with post A (site `sounie-wp`, published 2024-05-01) whose image
+`https://x.example/swan.jpg` scores 0.95 against the query image's embedding and whose chunk scores
+0.40; post B (`sounie-wp`, 2024-06-01) whose chunk scores 0.70; and post C (site `elegant`) whose chunk
+scores 0.99,
+When `FindPostsLikeImage` is asked for an image that the source returns as `Fetched`, with
+`OnlySite(sounie-wp)`, `unbounded()` and limit 10,
+Then the outcome is `Ranked` with `[A (0.95), B (0.70)]`. A's snippet is the image's description and
+its matched image is `https://x.example/swan.jpg`. C is filtered out.
+So one image query matches both kinds of entry: A through its image, and B through its text.
+And `embedImage` was called once with the fetched pixels, and the query embedder was never called.
+And with limit 1 the result is `[A]`, and with an empty index it is `Ranked` with no matches.
+And `SearchPosts` still passes AC-SRCH-22 to 27 after its ranking moves to `SearchScope.rank`.
+
+**AC-SRCH-83: A refused or unavailable query image is reported, and nothing is embedded.**
+Given a query image source that returns `Rejected(TOO_LARGE)` (and, separately,
+`Unavailable("connect timed out")`),
+When `FindPostsLikeImage` is asked for that image,
+Then the outcome is `ImageRefused(TOO_LARGE)` (or `ImageUnavailable("connect timed out")`), and the
+image embedder is not called.
+And given `Fetched` pixels and an image embedder that throws `EmbedderUnavailable`, the exception
+propagates unchanged, as it does from `SearchPosts`.
+And every `ImageRejection` constant has a non-blank explanation, and `TOO_LARGE`, `UNSUPPORTED_TYPE`
+and `TOO_SMALL` have the texts in 3.8.
+
+**AC-SRCH-84: A local image is decoded, and a file that changed since parsing is still capped.**
+Given a temporary directory holding a copy of `black-swan-in-reeds.png`, a text file named `fake.jpg`
+and a 32 × 32 PNG `tiny.png`, each parsed as a `LocalImage`,
+When `QueryImageLoader.readFile` reads each,
+Then the copy is `Fetched` with the fixture's dimensions, `fake.jpg` is `Rejected(UNDECODABLE)` and
+`tiny.png` is `Rejected(TOO_SMALL)` (the 64 px floor applies to queries, Q-IMG 11).
+And given a `LocalImage` whose file then grows to 10,485,761 bytes, the read is `Rejected(TOO_LARGE)`
+after reading at most 10,485,761 bytes; given one whose file is then deleted, the read is
+`Unavailable` with a detail naming the path.
+
+**AC-SRCH-85: A remote query image may be on any address while stdio-only, and the phase 3 caps still apply.**
+Given `QueryImageLoader` over an `HttpImageSource` with a test `HostResolver`, and WireMock over https
+serving a 100 × 80 PNG,
+When it fetches image URLs whose host the resolver maps to `93.184.216.34`, `127.0.0.1`,
+`192.168.1.1` and `169.254.169.254` (each served by WireMock),
+Then every result is `Fetched`, and no post URL is resolved (Q-IMG 12).
+And a public host that redirects to a host resolving to `10.1.2.3` is followed and `Fetched`.
+And a redirect to an `http` URL is `Rejected(NOT_HTTPS)`, a 4th redirect is
+`Rejected(TOO_MANY_REDIRECTS)`, a response of type `image/webp` is `Rejected(UNSUPPORTED_TYPE)`, a
+declared `Content-Length: 10485761` is `Rejected(TOO_LARGE)`, and a 503 or a response past the
+timeout is `Unavailable`.
+And none of these fetches writes to stderr.
+
 ## 9. Decisions
 
 Model decisions (approved with the model by the owner on 2026-10-02):
@@ -1368,6 +1582,50 @@ Owner decisions on the phase 3 questions (all resolved 2026-10-14, owner):
   Addresses are checked after resolving, but the HTTP client resolves again when it connects. The
   blog category rule bounds what a fetch may reach, and link-local addresses are permitted only for a
   blog whose own host is non-routable.
+
+Searching by image decisions (ADR 0011 phase 4, AC-SRCH-81 to 85; owner answers applied
+2026-10-15; the model as a whole still awaits approval):
+- The fixed decisions (separate tool, absolute path or https URL, 10 MB, results only scores and
+  snippets) are not reopened. The one exception is the query URL address rule, which the owner changed
+  (Q-IMG 12).
+- **Ranking is moved, not copied.** `SearchScope.rank` is the one implementation of filtering, best
+  entry, ranking and the limit for both text and image queries.
+- **Fetching is reused.** Remote query images go through `HttpImageSource`'s existing request path,
+  with the constant `BlogCategory.PERMIT_ALL` in place of the post host's category. Local files go
+  through the same `ImageDecoding` and the same byte cap.
+- **No new result type for loading.** Loading a query image returns the existing `ImageFetch`, and
+  `ImageRejection` gains no constant, only `explanation()`. File problems are found when the image is
+  parsed (`InvalidImageQuery`).
+- **Results, not exceptions.** A refused or unavailable image is an `ImageSearch` variant. Only
+  malformed input (`InvalidImageQuery`) and a model failure (`EmbedderUnavailable`) are exceptions,
+  as for text search.
+- **No retry and no stderr line** for a query image. The person searching sees the reason at once.
+
+Owner decisions on the phase 4 questions (all resolved 2026-10-15, owner):
+- **Q-IMG 11 (resolved): the 64 px floor applies to query images.** `ImageDecoding` is reused
+  unchanged (AC-SRCH-84).
+- **Q-IMG 12 (resolved, changes a fixed decision): while the server is stdio-only, query URLs may
+  resolve to any address**, including loopback, private and link-local ones, because the person
+  running the client is the local user. https only, the redirect limit, the size and content-type
+  caps and the timeouts still apply. This is `BlogCategory.PERMIT_ALL`, with no new address machinery
+  (AC-SRCH-85). Post images keep the blog category rule (3.7). It amends ADR 0011 decision 8's URL
+  rule and the plan's "Untrusted input" fixed decision. **Revisit when the transport moves from stdio
+  to HTTP**, together with the concurrency hardening deferred by ADR 0010 decision 7. At that point a
+  remote caller could make the server reach internal addresses.
+- **Q-IMG 13 (resolved): problems are detected as early as possible.** `LocalImage` checks absolute
+  path, extension, readable regular file and size when it is created, in the tool's argument reader,
+  before the use case or any model load. The read-time byte cap stays, because the file can change
+  in between (3.8; AC-SRCH-81, 84).
+- **Q-IMG 14 (resolved): the jar test covers both kinds of match.** A post whose wording describes the
+  query image must match, and so must a post containing a related but different image (AC-APP-54).
+  At the search level, AC-SRCH-82 already covers one image query matching an image entry and a text
+  chunk.
+  - The six phase 0 images in `core/src/test/resources` show different subjects, and only one of
+    them is a swan, so a second photograph was needed (Q-IMG 15).
+- **Q-IMG 15 (resolved 2026-10-15, owner): the related image is the owner's photo `black-swans.png`.**
+  It is a different photograph of black swans (4032×3024 PNG, about 9.4 MB, so under the 10 MiB
+  cap), copied into `core/src/test/resources`. It carries camera EXIF/XMP metadata but no location.
+  No derived variant is used.
 
 Owner decisions (all resolved 2026-10-02, owner):
 - **Q1 (resolved): the catalog change is in this slice.** It adds `shared.query.CatalogPosts` / `CatalogPostState` and
