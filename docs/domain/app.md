@@ -6,7 +6,7 @@ Status:
 - **Shutdown drain and startup reconcile: approved by the owner on 2026-10-14, merged as #28.** It fixes the
   SIGSEGV on exit while ONNX Runtime is embedding, and it indexes posts that an interrupted session left unindexed at the start
   of the next one. ACs: AC-APP-48 and AC-APP-50, plus a manual check (3.4). AC-APP-49 was dropped in draft and is retired.
-- **Search by image (ADR 0011 phase 4): draft awaiting owner approval** on `feature/find-posts-like-image`. It adds the
+- **Search by image (ADR 0011 phase 4): approved by the owner on 2026-10-15** and implemented on `feature/find-posts-like-image`. It adds the
   `find_posts_like_image` tool for providers with an image embedder (3.9). ACs: AC-APP-51 to 54, plus AC-SRCH-81 to 85.
 - **Embedding providers, classpath discovery and provider-keyed search paths:** ADR 0009 (accepted 2026-10-09) and ADR 0010 (accepted 2026-10-11) are implemented on `main`. The open review items are listed in ADR 0010's implementation status.
 
@@ -373,7 +373,7 @@ file keeps working.
 **strictly older than 24 hours**. With the default 24-hour fixed delay, each run is in practice a reconcile. With a shorter interval
 (e.g. 6 hours), most runs are incremental, and about one a day is a reconcile.
 
-### 3.9 Search by image: `find_posts_like_image` (ADR 0011 phase 4; draft for owner approval)
+### 3.9 Search by image: `find_posts_like_image` (ADR 0011 phase 4; approved 2026-10-15)
 
 The search side is modelled in search.md 3.8. The tool is a thin inbound adapter like `search_posts`:
 parse the arguments, call `FindPostsLikeImage`, present the outcome.
@@ -530,7 +530,7 @@ Then the first run records `reconcile`, `sync(INCREMENTAL)` (or `sync(RECONCILE)
 And given a startup reconcile that throws, the error is logged to stderr, and the sync and the second reconcile of that run still run.
 (That a reconcile indexes a stored post with no entry, or with pending images, is already covered by search's reconcile ACs; this AC only fixes when it runs.)
 
-### Search by image (ADR 0011 phase 4; draft)
+### Search by image (ADR 0011 phase 4; approved 2026-10-15)
 
 Handler-level tests (AC-APP-51 to 53) use the real SDK types, a fake provider whose image embedder is the `FakeEmbedder`, and the
 in-memory `QueryImageSource` fake. The parsing rules of `ImageQuery` and the loading rules are tested in search (AC-SRCH-81 to 85),

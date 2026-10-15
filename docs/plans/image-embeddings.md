@@ -16,7 +16,7 @@ the single source of truth for progress across sessions. Each phase's PR updates
 | 1 Provider image embedding | `feature/gemma2-image-embedding` | Done | Merged as #22. AC-SRCH-53 to 65 done; Java vs official 0.99908 to 0.99980, 6 of 6 rankings |
 | 2 Catalog post images | `feature/post-images` | Done | On `main` as 2e3d3d8, 55d78da, 153fdc3. AC-CAT-33 to 41 done; format 1 read as no images (Q9); https only (Q10) |
 | 3 Search indexes images | `feature/search-image-entries` | Done | Merged as #26. AC-SRCH-66 to 80 done; no host allow-list, image addresses must be permitted by the post host's address category. Follow-up #28: shutdown waits for a running embedding (no SIGSEGV on exit), a startup reconcile, and reliable rejection of cut image bodies. By-hand "black swan" check passed 2026-10-14 |
-| 4 Search by image | `feature/find-posts-like-image` | In progress | Model approved 2026-10-15: search.md 3.8 (AC-SRCH-81 to 85) and app.md 3.9 (AC-APP-51 to 54). Q-IMG 11 to 15 answered (query URLs may use any address while stdio-only; related-image fixture `black-swans.png`) |
+| 4 Search by image | `feature/find-posts-like-image` | Done | AC-SRCH-81 to 85 and AC-APP-51 to 54 done. Query URLs may use any address while stdio-only (Q-IMG 12; revisit with HTTP); local files checked when the query is parsed. Jar test on real gemma2 for `black-swan-in-reeds.png`: related-image post 0.886, wording post 0.816, decoy 0.562 |
 
 ## Fixed decisions (don't reopen without the owner)
 

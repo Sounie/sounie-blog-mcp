@@ -12,8 +12,8 @@ Indexing post images (ADR 0011, phase 3; section 3.7, glossary "Post image (sear
 image", AC-SRCH-66 to 80) was **approved by the owner on 2026-10-14** and merged as #26. The provider
 shutdown (AC-APP-48) and the cut-body fix for `HttpImageSource` followed in #28.
 Searching by image (ADR 0011, phase 4; section 3.8, glossary "Image query" to "Image search",
-AC-SRCH-81 to 85, plus AC-APP-51 to 54 in `docs/domain/app.md`) is a **draft awaiting owner
-approval** on `feature/find-posts-like-image`.
+AC-SRCH-81 to 85, plus AC-APP-51 to 54 in `docs/domain/app.md`) was **approved by the owner
+on 2026-10-15** and is implemented on `feature/find-posts-like-image`.
 Package: `nz.sounie.blogmcp.search`
 Feature tag for acceptance criteria: `SRCH`
 
