@@ -87,7 +87,11 @@ The owner wants two features:
    - A failed image skips only that image.
 8. **Search by image is a separate MCP tool, `find_posts_like_image`.**
    - Local paths must be regular image files of at most 10 MB.
-   - URLs must be HTTPS and must not resolve to loopback, link-local or private addresses.
+   - URLs must be HTTPS. *Amended by the owner on 2026-10-15:* while the server is stdio-only, a
+     query URL may resolve to any address, including loopback, private and link-local ones, because
+     the caller is the local user. The redirect limit, the size and content-type caps and the
+     timeouts still apply. Revisit when the transport moves from stdio to HTTP. (Previously: "must
+     not resolve to loopback, link-local or private addresses".)
    - The tool returns only scores and snippets.
 
 ## Parity
