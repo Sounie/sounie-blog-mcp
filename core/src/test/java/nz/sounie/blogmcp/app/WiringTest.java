@@ -10,7 +10,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,12 +28,21 @@ import nz.sounie.blogmcp.catalog.adapter.out.FixedSiteDirectory;
 import nz.sounie.blogmcp.catalog.adapter.out.JsonFileSiteDirectory;
 import nz.sounie.blogmcp.catalog.adapter.out.StorageHealth;
 import nz.sounie.blogmcp.catalog.application.SiteDirectory;
+import nz.sounie.blogmcp.catalog.domain.post.PostSnapshotBuilder;
 import nz.sounie.blogmcp.catalog.domain.site.Platform;
 import nz.sounie.blogmcp.catalog.domain.sync.ChangeOrder;
 import nz.sounie.blogmcp.catalog.domain.sync.SourceEntry;
 import nz.sounie.blogmcp.search.adapter.out.FakeEmbedder;
 import nz.sounie.blogmcp.search.adapter.out.FakeTokenCounter;
+import nz.sounie.blogmcp.search.adapter.out.InMemoryImageSource;
+import nz.sounie.blogmcp.search.application.ImageSearch;
+import nz.sounie.blogmcp.search.domain.image.ImageQuery;
 import nz.sounie.blogmcp.search.domain.index.PostMatch;
+import nz.sounie.blogmcp.search.domain.query.ImageSearchQuery;
+import nz.sounie.blogmcp.search.domain.query.PublishedDateRange;
+import nz.sounie.blogmcp.search.domain.query.ResultLimit;
+import nz.sounie.blogmcp.search.domain.query.SearchScope;
+import nz.sounie.blogmcp.search.domain.query.SiteFilter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -171,6 +182,76 @@ class WiringTest {
                 assertThat(request.changedSince().isPresent())
                     .as("incremental (changedSince present)")
                     .isEqualTo(incremental));
+  }
+
+  @Test
+  @DisplayName("AC-APP-51: a text-only provider gets no FindPostsLikeImage")
+  void a_text_only_provider_builds_no_image_search() {
+    Wiring wiring = wiring(wordPressServing(page(recordsPost())), new FakeEmbedder(), NOW);
+
+    assertThat(wiring.findPostsLikeImage()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "AC-APP-51: an image-capable provider gets FindPostsLikeImage over the index, its image"
+          + " embedder and local files; post images come from the adapters' image source")
+  void an_image_capable_provider_finds_posts_like_a_local_image() throws IOException {
+    String imageUrl = "https://images.example/swan.png";
+    InMemoryImageSource postImages =
+        new InMemoryImageSource()
+            .fetching(imageUrl, InMemoryImageSource.pixelsOfResource("/black-swan-in-reeds.png"));
+    FakeBlogSource wordPress =
+        wordPressServing(
+            page(
+                new SourceEntry.Available(
+                    aSnapshot()
+                        .sourcePostId("1")
+                        .title("Records in Java")
+                        .body("Records in Java are transparent carriers for immutable data.")
+                        .images(PostSnapshotBuilder.image(imageUrl, "A black swan", ""))
+                        .build())));
+    Adapters adapters =
+        Adapters.withProvider(
+                Map.of(
+                    Platform.WORDPRESS,
+                    wordPress,
+                    Platform.BLOGGER,
+                    new FakeBlogSource(ChangeOrder.NEWEST_FIRST)),
+                new ImageCapableTestProvider(new FakeEmbedder()),
+                Clock.fixed(NOW, ZoneOffset.UTC))
+            .withPostImages(postImages);
+    Wiring wiring = Wiring.assemble(dataDirectory, ONE_SITE, adapters, errors);
+    wiring.job().run();
+    Path query = dataDirectory.resolve("query.png");
+    try (InputStream in = WiringTest.class.getResourceAsStream("/black-swan-in-reeds.png")) {
+      Files.copy(in, query);
+    }
+
+    ImageSearch outcome =
+        wiring
+            .findPostsLikeImage()
+            .orElseThrow()
+            .find(
+                new ImageSearchQuery(
+                    ImageQuery.parse(query.toString()),
+                    new SearchScope(
+                        new SiteFilter.AnySite(),
+                        PublishedDateRange.unbounded(),
+                        ResultLimit.defaultLimit())));
+
+    assertThat(postImages.fetchedUrls()).containsExactly(URI.create(imageUrl));
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            ImageSearch.Ranked.class,
+            ranked ->
+                assertThat(ranked.results().matches())
+                    .singleElement()
+                    .satisfies(
+                        match -> {
+                          assertThat(match.postId().external()).isEqualTo("sounie-wp:1");
+                          assertThat(match.matchedImage()).contains(URI.create(imageUrl));
+                        }));
   }
 
   @ParameterizedTest

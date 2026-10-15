@@ -511,6 +511,125 @@ class HttpImageSourceTest {
     }
   }
 
+  /**
+   * AC-SRCH-85: query images go through the same request path through {@link QueryImageLoader},
+   * with every address permitted while the server is stdio-only (Q-IMG 12). The caps are tested
+   * above (AC-SRCH-77 to 80); only their wiring is checked again here.
+   */
+  @Nested
+  class QueryImages {
+
+    private ImageFetch fetchQuery(String path, FixedHostResolver resolver) {
+      return new QueryImageLoader(source(resolver)).fetch(url(path));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"93.184.216.34", "127.0.0.1", "192.168.1.1", "169.254.169.254"})
+    @DisplayName(
+        "AC-SRCH-85: a query image is fetched from any address, and no post URL is resolved")
+    void a_query_image_may_be_on_any_address(String address) {
+      serve("/q.png", image("image/png", TestImages.png(100, 80)));
+      FixedHostResolver resolver = new FixedHostResolver().resolving("localhost", address);
+
+      ImagePixels pixels = fetched(fetchQuery("/q.png", resolver));
+
+      assertThat(pixels.width()).isEqualTo(100);
+      assertThat(pixels.height()).isEqualTo(80);
+      assertThat(resolver.resolvedHosts()).containsOnly("localhost");
+      assertThat(stderrLines()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("AC-SRCH-85: a public host redirecting to a private-network address is followed")
+    void a_redirect_to_a_private_address_is_followed() {
+      serve("/final.png", image("image/png", TestImages.png(100, 80)));
+      redirect("/q.png", "https://127.0.0.1:" + server.getHttpsPort() + "/final.png");
+      FixedHostResolver resolver =
+          new FixedHostResolver()
+              .resolving("localhost", "93.184.216.34")
+              .resolving("127.0.0.1", "10.1.2.3");
+
+      assertThat(fetchQuery("/q.png", resolver)).isInstanceOf(ImageFetch.Fetched.class);
+      assertThat(resolver.resolvedHosts()).containsExactly("localhost", "127.0.0.1");
+      assertThat(stderrLines()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("AC-SRCH-85: a redirect to http is still NOT_HTTPS")
+    void a_redirect_to_http_is_rejected() {
+      redirect("/q.png", "http://localhost:" + server.getHttpsPort() + "/b.png");
+
+      assertRejected(fetchQuery("/q.png", resolver()), ImageRejection.NOT_HTTPS);
+      assertThat(stderrLines()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("AC-SRCH-85: a fourth redirect is still TOO_MANY_REDIRECTS")
+    void a_fourth_redirect_is_rejected() {
+      redirect("/q1", url("/q2").toString());
+      redirect("/q2", url("/q3").toString());
+      redirect("/q3", url("/q4").toString());
+      redirect("/q4", url("/final.png").toString());
+      serve("/final.png", image("image/png", TestImages.png(64, 64)));
+
+      assertRejected(fetchQuery("/q1", resolver()), ImageRejection.TOO_MANY_REDIRECTS);
+      server.verify(0, getRequestedFor(urlEqualTo("/final.png")));
+      assertThat(stderrLines()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("AC-SRCH-85: a WebP response is still UNSUPPORTED_TYPE")
+    void webp_is_rejected() {
+      serve("/q.webp", image("image/webp", TestImages.png(64, 64)));
+
+      assertRejected(fetchQuery("/q.webp", resolver()), ImageRejection.UNSUPPORTED_TYPE);
+      assertThat(stderrLines()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("AC-SRCH-85: a declared length over 10 MiB is still TOO_LARGE")
+    void a_declared_length_over_the_cap_is_rejected() {
+      serve(
+          "/q.png",
+          image("image/png", TestImages.paddedTo(TestImages.png(64, 64), MAX_BYTES + 1))
+              .withHeader("Content-Length", String.valueOf(MAX_BYTES + 1)));
+
+      assertRejected(fetchQuery("/q.png", resolver()), ImageRejection.TOO_LARGE);
+      assertThat(stderrLines()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("AC-SRCH-85: a 503 is still unavailable")
+    void a_server_error_is_unavailable() {
+      serve("/q.png", aResponse().withStatus(503));
+
+      assertThat(fetchQuery("/q.png", resolver())).isInstanceOf(ImageFetch.Unavailable.class);
+      assertThat(stderrLines()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("AC-SRCH-85: no answer within the response timeout is still unavailable")
+    void a_timeout_is_unavailable() {
+      serve(
+          "/q.png",
+          image("image/png", TestImages.png(64, 64))
+              .withFixedDelay((int) RESPONSE_TIMEOUT.multipliedBy(3).toMillis()));
+
+      assertThat(fetchQuery("/q.png", resolver())).isInstanceOf(ImageFetch.Unavailable.class);
+      assertThat(stderrLines()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("AC-SRCH-85: a host that does not resolve is unavailable")
+    void an_unresolvable_host_is_unavailable() {
+      ImageFetch fetch =
+          new QueryImageLoader(source(resolver())).fetch(URI.create("https://gone.example/q.png"));
+
+      assertThat(fetch).isInstanceOf(ImageFetch.Unavailable.class);
+      assertThat(stderrLines()).isEmpty();
+    }
+  }
+
   @Nested
   class Failures {
 

@@ -7,7 +7,7 @@ It syncs posts from WordPress and Blogger sites, stores them as plain text on di
 local embedding model. Each embedding provider has its own runnable jar, and you choose a provider by choosing which jar
 to run; provider details stay outside the core search domain. Search runs entirely on your machine:
 no API keys, and no calls to hosted models. The only network traffic is fetching the blogs' public feeds and,
-with the `gemma2` jar, the images inside their posts.
+with the `gemma2` jar, the images inside their posts and any image URL you search with.
 
 ## Tools
 
@@ -15,9 +15,10 @@ with the `gemma2` jar, the images inside their posts.
 |---|---|
 | `search_posts` | Semantic search over all configured sites. You can limit it to one `site`, a `from`/`to` publication date range (`yyyy-MM-dd`, New Zealand time) and a `limit` of 1–20 results (default 10). Each result has a title, URL, date, relevance score and snippet, plus a `postId`. When the post matched through one of its images, the result also has `matchedImage` (the image's URL), and the snippet comes from the image's alt text or caption. |
 | `get_post` | Returns one post in full as plain text, looked up by `postId` (e.g. `sounie-wp:123`) or by URL. |
+| `find_posts_like_image` | (`gemma2` jar only) Finds the posts whose text or images are most like a given image. `image` is an absolute path to a local `.jpg`, `.jpeg`, `.png` or `.gif` file of at most 10 MB, or an `https` URL of a JPEG, PNG or GIF image. It takes the same `site`, `from`, `to` and `limit` as `search_posts` and returns results in the same shape. |
 
-Both tools are marked read-only. Their descriptions tell the model to treat post text as data, never as
-instructions.
+All tools are marked read-only. `find_posts_like_image` is also marked open-world, because it may fetch
+a URL. The descriptions tell the model to treat post text as data, never as instructions.
 
 ## Requirements
 
@@ -59,7 +60,17 @@ post's text, so a text query can find a post by what its pictures show. A post s
   reconcile. One that can never be indexed, such as a 404 or an unsupported format, is not retried until
   the post changes.
 
-The `onnx` and `gemma2-server` jars index text only.
+The `gemma2` jar also offers `find_posts_like_image`, which searches with an image instead of text:
+- A local file is checked before anything else runs: it must be an absolute path to a readable
+  `.jpg`, `.jpeg`, `.png` or `.gif` file of at most 10 MB. There is no `~` expansion.
+- A URL goes through the same checks as post images (https only, at most 3 redirects, 10 MiB, JPEG,
+  PNG or GIF, and images of at least 64 px), but may point at any address, including localhost and
+  private networks, because the server only talks to the local user over stdio.
+- A refused or unreachable image is a tool error that says why. The tool returns only posts, never
+  anything read from the image.
+- The first image search of a session loads the vision model, so it takes a few seconds longer.
+
+The `onnx` and `gemma2-server` jars index text only, and don't offer `find_posts_like_image`.
 
 ## Configure
 

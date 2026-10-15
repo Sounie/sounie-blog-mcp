@@ -5,6 +5,7 @@ import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Stream;
 
 /**
@@ -19,6 +20,7 @@ import java.util.stream.Stream;
 final class FixedHostResolver implements HostResolver {
 
   private final Map<String, List<InetAddress>> answers = new HashMap<>();
+  private final List<String> resolved = new CopyOnWriteArrayList<>();
 
   /** {@code host} resolves to these address literals. */
   FixedHostResolver resolving(String host, String... addresses) {
@@ -28,6 +30,7 @@ final class FixedHostResolver implements HostResolver {
 
   @Override
   public List<InetAddress> resolve(String host) throws UnknownHostException {
+    resolved.add(host);
     List<InetAddress> answer = answers.get(host);
     if (answer != null) {
       return answer;
@@ -36,6 +39,11 @@ final class FixedHostResolver implements HostResolver {
       return List.of(literal(host));
     }
     throw new UnknownHostException(host + " (not known to the test resolver)");
+  }
+
+  /** Every host asked for, in order. */
+  List<String> resolvedHosts() {
+    return List.copyOf(resolved);
   }
 
   private static boolean isLiteral(String host) {

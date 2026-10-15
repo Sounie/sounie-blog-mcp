@@ -65,6 +65,27 @@ public final class InMemoryImageSource implements ImageSource {
   }
 
   /**
+   * The pixels of an image file on the test classpath, decoded exactly as a fetched post image is
+   * (real ImageIO through {@code ImageDecoding}), for tests that index a real photograph without
+   * HTTP.
+   */
+  public static ImagePixels pixelsOfResource(String resource) {
+    try (java.io.InputStream in = InMemoryImageSource.class.getResourceAsStream(resource)) {
+      if (in == null) {
+        throw new IllegalStateException("No test resource " + resource);
+      }
+      return switch (ImageDecoding.decode(in.readAllBytes())) {
+        case ImageFetch.Fetched fetched -> fetched.pixels();
+        case ImageFetch rejectedOrUnavailable ->
+            throw new IllegalStateException(
+                resource + " does not decode: " + rejectedOrUnavailable);
+      };
+    } catch (java.io.IOException e) {
+      throw new java.io.UncheckedIOException(e);
+    }
+  }
+
+  /**
    * Distinct, valid 64 × 64 pixels for a seed, so each test image embeds to its own vector in
    * {@link FakeEmbedder}.
    */

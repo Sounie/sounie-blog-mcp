@@ -12,6 +12,12 @@ import java.util.Set;
  */
 record BlogCategory(Set<AddressCategory> permitted) {
 
+  /**
+   * The query address rule (search.md 3.8, owner decision Q-IMG 12): a query image may come from
+   * every address category while the server is stdio-only. Revisit when stdio moves to HTTP.
+   */
+  static final BlogCategory PERMIT_ALL = new BlogCategory(EnumSet.allOf(AddressCategory.class));
+
   BlogCategory {
     permitted = Set.copyOf(permitted);
   }

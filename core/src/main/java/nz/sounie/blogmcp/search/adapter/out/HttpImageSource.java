@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import javax.net.ssl.SSLContext;
 import nz.sounie.blogmcp.search.domain.image.ImageFetch;
+import nz.sounie.blogmcp.search.domain.image.ImageQuery;
 import nz.sounie.blogmcp.search.domain.image.ImageRejection;
 import nz.sounie.blogmcp.search.domain.image.ImageSource;
 
@@ -41,8 +42,10 @@ import nz.sounie.blogmcp.search.domain.image.ImageSource;
  *       otherwise the exchange is cancelled and the fetch is {@code Unavailable}.
  * </ul>
  *
- * <p>Each outcome other than {@code Fetched} writes one line, with the URL and the reason, to the
- * error stream.
+ * <p>For a post image, each outcome other than {@code Fetched} writes one line, with the URL and
+ * the reason, to the error stream. A query image ({@link #fetchQueryImage}) takes the same request
+ * path, with every address permitted while the server is stdio-only ({@link
+ * BlogCategory#PERMIT_ALL}), and writes nothing: its outcome goes back to the caller.
  *
  * <p>The address check uses {@link HostResolver}, while the client connects through the system
  * resolver, so a host whose DNS answer changes between the two is not caught (accepted residual
@@ -50,7 +53,7 @@ import nz.sounie.blogmcp.search.domain.image.ImageSource;
  */
 public final class HttpImageSource implements ImageSource {
 
-  static final int MAX_BYTES = 10 * 1024 * 1024;
+  static final int MAX_BYTES = ImageQuery.MAX_FILE_BYTES;
   static final int MAX_REDIRECTS = 3;
 
   private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
@@ -103,14 +106,28 @@ public final class HttpImageSource implements ImageSource {
 
   @Override
   public ImageFetch fetch(URI imageUrl, URI postUrl) {
-    ImageFetch outcome = attempt(imageUrl, postUrl);
+    ImageFetch outcome = attempt(imageUrl, () -> BlogCategory.of(addressesOf(postUrl)));
     warning(imageUrl, outcome).ifPresent(errors::println);
     return outcome;
   }
 
-  private ImageFetch attempt(URI imageUrl, URI postUrl) {
+  /**
+   * Fetches a query image: the same request path as a post image, under the query address rule
+   * ({@link BlogCategory#PERMIT_ALL}). No post host is resolved and nothing is written.
+   */
+  ImageFetch fetchQueryImage(URI url) {
+    return attempt(url, () -> BlogCategory.PERMIT_ALL);
+  }
+
+  /** Which image addresses the fetch permits; may resolve a host. */
+  @FunctionalInterface
+  private interface PermittedAddresses {
+    BlogCategory category() throws UnknownHostException;
+  }
+
+  private ImageFetch attempt(URI imageUrl, PermittedAddresses permitted) {
     try {
-      return hop(imageUrl, BlogCategory.of(addressesOf(postUrl)), MAX_REDIRECTS);
+      return hop(imageUrl, permitted.category(), MAX_REDIRECTS);
     } catch (IOException e) {
       // Includes timeouts, refused connections and hosts that do not resolve.
       return new ImageFetch.Unavailable(e.toString());

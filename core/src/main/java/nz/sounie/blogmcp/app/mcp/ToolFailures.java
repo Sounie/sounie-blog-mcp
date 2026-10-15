@@ -8,6 +8,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import nz.sounie.blogmcp.catalog.domain.post.InvalidPostReference;
 import nz.sounie.blogmcp.search.domain.embedding.EmbedderUnavailable;
+import nz.sounie.blogmcp.search.domain.image.InvalidImageQuery;
 import nz.sounie.blogmcp.search.domain.query.InvalidSearchQuery;
 
 /**
@@ -30,6 +31,7 @@ public final class ToolFailures {
         List.of(
             new Rule(InvalidToolArgument.class, ToolFailures::ownMessage),
             new Rule(InvalidSearchQuery.class, ToolFailures::ownMessage),
+            new Rule(InvalidImageQuery.class, ToolFailures::ownMessage),
             new Rule(InvalidPostReference.class, ToolFailures::ownMessage),
             new Rule(EmbedderUnavailable.class, this::modelFailed));
   }
