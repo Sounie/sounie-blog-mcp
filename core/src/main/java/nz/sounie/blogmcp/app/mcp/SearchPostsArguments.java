@@ -1,38 +1,28 @@
 package nz.sounie.blogmcp.app.mcp;
 
-import java.time.LocalDate;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
-import nz.sounie.blogmcp.search.domain.query.PublishedDateRange;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import nz.sounie.blogmcp.search.domain.query.QueryText;
-import nz.sounie.blogmcp.search.domain.query.ResultLimit;
 import nz.sounie.blogmcp.search.domain.query.SearchQuery;
-import nz.sounie.blogmcp.search.domain.query.SiteFilter;
+import nz.sounie.blogmcp.search.domain.query.SearchScope;
 
 /** The arguments of a {@code search_posts} call, and their mapping to a {@link SearchQuery}. */
 public final class SearchPostsArguments {
 
   static final String QUERY = "query";
-  static final String SITE = "site";
-  static final String FROM = "from";
-  static final String TO = "to";
-  static final String LIMIT = "limit";
 
-  private static final Set<String> NAMES = Set.of(QUERY, SITE, FROM, TO, LIMIT);
+  private static final Set<String> NAMES =
+      Stream.concat(Stream.of(QUERY), ScopeArguments.NAMES.stream())
+          .collect(Collectors.toUnmodifiableSet());
 
   private final String query;
-  private final Optional<String> site;
-  private final Optional<LocalDate> from;
-  private final Optional<LocalDate> to;
-  private final Optional<Integer> limit;
+  private final ScopeArguments scope;
 
   private SearchPostsArguments(ToolArguments arguments) {
     this.query = arguments.requiredString(QUERY);
-    this.site = arguments.optionalString(SITE);
-    this.from = arguments.optionalDate(FROM);
-    this.to = arguments.optionalDate(TO);
-    this.limit = arguments.optionalInteger(LIMIT);
+    this.scope = ScopeArguments.read(arguments);
   }
 
   /**
@@ -50,10 +40,8 @@ public final class SearchPostsArguments {
    *     {@code from} after {@code to}
    */
   public SearchQuery toQuery(SiteChoices sites) {
-    return new SearchQuery(
-        new QueryText(query),
-        site.map(sites::filterFor).orElseGet(SiteFilter.AnySite::new),
-        PublishedDateRange.between(from.orElse(LocalDate.MIN), to.orElse(LocalDate.MAX)),
-        limit.map(ResultLimit::of).orElseGet(ResultLimit::defaultLimit));
+    QueryText text = new QueryText(query);
+    SearchScope within = scope.toScope(sites);
+    return new SearchQuery(text, within.site(), within.dates(), within.limit());
   }
 }

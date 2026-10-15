@@ -24,8 +24,8 @@ public final class BlogMcpServer implements AutoCloseable {
 
   /**
    * Builds and starts the server on the given streams: server info {@code blog-mcp} and the
-   * version, the instructions, the tools capability, both tools, and the SDK's input validation
-   * switched off.
+   * version, the instructions, the tools capability, every tool the provider supports, and the
+   * SDK's input validation switched off.
    */
   public static BlogMcpServer start(
       InputStream in, OutputStream out, String version, BlogMcpTools tools) {
@@ -35,7 +35,7 @@ public final class BlogMcpServer implements AutoCloseable {
             .serverInfo(NAME, version)
             .instructions(ToolDefinitions.instructions())
             .capabilities(ServerCapabilities.builder().tools(true).build())
-            .tools(tools.searchPosts(), tools.getPost())
+            .tools(tools.specifications())
             .validateToolInputs(false)
             .build());
   }

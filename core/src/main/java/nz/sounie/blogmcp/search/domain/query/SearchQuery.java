@@ -13,7 +13,12 @@ public record SearchQuery(
     Objects.requireNonNull(limit, "limit");
   }
 
+  /** The site filter, the date range and the limit: everything but the text. */
+  public SearchScope scope() {
+    return new SearchScope(site, dates, limit);
+  }
+
   public SearchFilters filters() {
-    return SearchFilters.of(site, dates);
+    return scope().filters();
   }
 }

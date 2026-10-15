@@ -43,9 +43,12 @@ public final class Main {
     // Covers every exit: end of input (System.exit), SIGTERM and SIGINT (app.md 3.4).
     Runtime.getRuntime()
         .addShutdownHook(new Thread(new ShutdownDrain(provider, System.err), "shutdown-drain"));
-    BlogMcpTools tools =
+    BlogMcpTools textTools =
         new BlogMcpTools(
             wiring.searchPosts(), wiring.getPost(), siteChoices(configuration), System.err);
+    // find_posts_like_image only for a provider that can embed images (app.md 3.9).
+    BlogMcpTools tools =
+        wiring.findPostsLikeImage().map(textTools::withImageSearch).orElse(textTools);
     EndOfInputWatch input = EndOfInputWatch.wrap(System.in);
     BlogMcpServer server = BlogMcpServer.start(input.stream(), protocol, version(), tools);
     try (ExecutorJobTimer timer = new ExecutorJobTimer()) {
