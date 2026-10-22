@@ -16,7 +16,7 @@ langchain4j = "1.22.0"
 djl = "0.38.0"
 # ADR 0010: the q8 EmbeddingGemma 2 graph needs 1.31+ (1.20, via LangChain4j, rejects it).
 onnxruntime = "1.31.0"
-mcp = "2.0.1"
+mcp = "2.1.0"
 slf4j = "2.0.20"
 spotbugs = "4.10.4"
 findsecbugs = "1.14.0"
@@ -46,4 +46,4 @@ findsecbugs = { module = "com.h3xstream.findsecbugs:findsecbugs-plugin", version
 spotless = { id = "com.diffplug.spotless", version = "8.10.4" }
 pitest = { id = "info.solidsoft.pitest", version = "1.19.0" }
 shadow = { id = "com.gradleup.shadow", version = "9.6.1" }
-spotbugs = { id = "com.github.spotbugs", version = "6.5.12" }
+spotbugs = { id = "com.github.spotbugs", version = "6.5.13" }
